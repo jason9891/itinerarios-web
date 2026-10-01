@@ -1,6 +1,14 @@
 <!doctype html>
 <html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#071525"><title>Itinerarios · RACIEMSA</title><link rel="stylesheet" href="/styles.css"><link rel="stylesheet" href="/itinerarios.css?v=19.1"></head>
-<body class="hub-body auth-pending"><header class="top"><div class="logo">R</div><div><b>RACIEMSA</b><small>PLATAFORMA DE ITINERARIOS</small></div><div class="grow"></div><button id="logout" class="ghost hidden">SALIR</button></header>
+<body class="hub-body auth-pending"><header class="top">
+  <div class="logo" id="platform-logo">R</div>
+  <div class="brand">
+    <b id="platform-brand">RACIEMSA</b>
+    <small id="platform-subtitle">PLATAFORMA DE ITINERARIOS</small>
+  </div>
+  <div class="grow"></div>
+  <button id="logout" class="ghost hidden">SALIR</button>
+</header>
 <main id="login" class="login"><div class="login-icon">▰</div><p class="eyebrow">CONTROL OPERATIVO</p><h1>Itinerarios</h1><p>Ingresa una vez y selecciona la operación que vas a trabajar.</p><div class="login-form"><label><span>USUARIO</span><input id="login-user" type="text" autocomplete="username" placeholder="PRUEBA" autocapitalize="characters"></label><label><span>CONTRASEÑA</span><input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••"></label><button id="user-login" class="primary">INGRESAR</button></div><div class="login-separator"><span>o</span></div><button id="google-login" class="ghost login-google">CONTINUAR CON GOOGLE</button><p id="login-message" class="message"></p></main>
 <main id="itinerary-hub" class="hub hidden"><div class="hub-heading"><div><p class="eyebrow">PLATAFORMA DE SEGUIMIENTO</p><h1>Selecciona un itinerario</h1><p>Operaciones y herramientas comunes, con datos independientes por itinerario.</p></div><span class="hub-status">SISTEMA ACTIVO</span></div><section class="itinerary-grid" aria-label="Itinerarios y herramientas disponibles">
 <a class="itinerary-card cemento" href="/cemento.html"><span class="itinerary-code">C</span><div><small>OPERACIÓN</small><h2>Cemento</h2><p>Seguimiento diario, rutas y reporte autorizado.</p><b>ABRIR ITINERARIO →</b></div></a>

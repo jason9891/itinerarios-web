@@ -7,6 +7,7 @@ import {
   signInWithRedirect,
   signInWithEmailAndPassword,
 } from "/vendor/firebase-auth.js";
+import { queryClocator } from "/shared/clocator-client.js";
 const firebaseConfig = {
     apiKey: "AIzaSyAeTPLS3r-199T__22TKrPMpZVZFe8IZI8",
     authDomain: "itinerarios-2fa6f.firebaseapp.com",
@@ -81,24 +82,18 @@ async function clocatorTest(
   hasta = "",
   signal,
 ) {
-  const r = await fetch(CLOCATOR_API, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${await auth.currentUser.getIdToken()}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        placa,
-        tracto,
-        include_map: includeMap,
-        desde,
-        hasta,
-      }),
-      signal,
-    }),
-    d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(d.error || `HTTP ${r.status}`);
-  return d;
+  // Usa el cliente unificado (shared/clocator-client.js).
+  // No reinventar fetch a CLocator en mapas ni en módulos nuevos.
+  return queryClocator({
+    endpoint: CLOCATOR_API,
+    token: await auth.currentUser.getIdToken(),
+    placa,
+    tracto,
+    desde,
+    hasta,
+    includeMap,
+    signal,
+  });
 }
 function gpsDB() {
   return new Promise((resolve, reject) => {
