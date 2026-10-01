@@ -10,6 +10,7 @@ const ORIGINS = new Set([
   "https://itinerarios-2fa6f.firebaseapp.com",
   "http://localhost:5000",
   "http://127.0.0.1:5000",
+  "https://jason9891.github.io",
 ]);
 const JWKS = createRemoteJWKSet(
   new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"),

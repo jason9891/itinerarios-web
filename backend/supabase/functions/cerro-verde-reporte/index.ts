@@ -4,8 +4,9 @@ import {createRemoteJWKSet,jwtVerify} from "npm:jose@6.1.0";
 import ExcelJS from "npm:exceljs@4.4.0";
 import {activeGroupRows,reportRowFromGroup,reportSort,text,norm,parseDate} from "../_shared/cv-operativa.js";
 
-const PROJECT="itinerarios-2fa6f",IT="CERRO VERDE",ORIGINS=new Set([
- "https://itinerarios-2fa6f.web.app","https://itinerarios-2fa6f.firebaseapp.com","https://itinerarios-2fa6f--prueba-fin-ciclo-t0s1424a.web.app","https://itinerarios-2fa6f--prueba-fin-ciclo-t0s1424a-dwhuohoz.web.app","http://localhost:5000","http://127.0.0.1:5000"
+const PROJECT="itinerarios-2fa6f",IT="CERRO VERDE",ORIGINS = new Set([
+ "https://itinerarios-2fa6f.web.app","https://itinerarios-2fa6f.firebaseapp.com","https://itinerarios-2fa6f--prueba-fin-ciclo-t0s1424a.web.app","https://itinerarios-2fa6f--prueba-fin-ciclo-t0s1424a-dwhuohoz.web.app","http://localhost:5000","http://127.0.0.1:5000",
+  "https://jason9891.github.io"
 ]),JWKS=createRemoteJWKSet(new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"));
 const COLORS={dark:"15344F",blue:"1F4E78",lightBlue:"D9EAF7",greenText:"166534",green:"E2F0D9",red:"FCE4D6",yellow:"FFF2CC",gray:"F3F6F9",grayText:"44546A",black:"111827",white:"FFFFFF",border:"B7C9DD"};
 const RAW_HEADERS=["LICENCIA","CONDUCTOR","CODIGO TRACTO","PLACA TRACTO","CODIGO CARRETA","ESTADO","FECHA DE CARGA","SALIDA DE BASE RACIEMSA","LLEGADA A CARACOTO","INGRESO A CARGUIO","SALIDA DE CARGUIO","SALIDA DE CARACOTO","LLEGADA A BASE RACIEMSA","SALIDA DE BASE RACIEMSA CARGADO","INGRESO A SMCV","SALIDA DE SMCV","LLEGADA A BASE RACIEMSA VACIO","MONITOREO","OBSERVACION","ENTREGA SAP","TRANSPORTE SAP","NRO PEDIDO SAP","GUIA SAP","GRE-R SAP","TIMESTAMP INGRESO SAP","TIMESTAMP SALIDA SAP","PLACA TRACTO","PLACA CARRETA","MATERIAL SAP","DESCRIPCION MATERIAL SAP","CANTIDAD SAP","ESTADO CICLO","FECHA ALTA SEGUIMIENTO","FECHA CIERRE SEGUIMIENTO","ORIGEN REGISTRO","OBSERVACION SISTEMA","CONTROL INTERNO PERNOCTE"];

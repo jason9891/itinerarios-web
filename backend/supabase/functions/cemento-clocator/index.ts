@@ -16,7 +16,8 @@ const ORIGINS = new Set([
   "https://itinerarios-2fa6f.firebaseapp.com",
   "http://localhost:5000",
   "http://127.0.0.1:5000",
-  "https://5000-cs-a2a47bf9-3b6a-4a54-b115-36fc3cb753b5.cs-us-east1-vpcf.cloudshell.dev"
+  "https://5000-cs-a2a47bf9-3b6a-4a54-b115-36fc3cb753b5.cs-us-east1-vpcf.cloudshell.dev",
+  "https://jason9891.github.io"
 ]);
 const JWKS = createRemoteJWKSet(new URL("https://www.googleapis.com/service_accounts/v1/jwk/securetoken@system.gserviceaccount.com"));
 const BASE = "https://clocatorplus.comsatel.com.pe/CL", LOGIN = `${BASE}/faces/seguridad/login.xhtml`, MAIN = `${BASE}/faces/page/main.xhtml`, RPC = `${BASE}/JSON-RPC`;

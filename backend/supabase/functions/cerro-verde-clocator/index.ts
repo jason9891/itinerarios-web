@@ -13,6 +13,7 @@ const ORIGINS = new Set([
   "https://itinerarios-2fa6f--prueba-fin-ciclo-t0s1424a.web.app",
   "http://localhost:5000",
   "http://127.0.0.1:5000",
+  "https://jason9891.github.io",
 ]);
 const JWKS = createRemoteJWKSet(
   new URL(
