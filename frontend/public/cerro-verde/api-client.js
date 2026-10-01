@@ -2,7 +2,7 @@
  * Cliente HTTP exclusivo de CERRO VERDE.
  * Independiente de Cemento.
  */
-import { auth } from "/shared/auth.js";
+import { auth } from "../shared/auth.js";
 import { API } from "./registry.js";
 
 async function token() {

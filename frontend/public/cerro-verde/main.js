@@ -2,9 +2,9 @@
  * Entry point de CERRO VERDE.
  * Completamente independiente de Cemento.
  */
-import { applyPlatformShell } from "/shared/platform-shell.js";
-import { auth, onAuthStateChanged, wireLoginForm } from "/shared/auth.js";
-import { createItineraryRuntime, loadModule } from "/shared/module-runtime.js";
+import { applyPlatformShell } from "../shared/platform-shell.js";
+import { auth, onAuthStateChanged, wireLoginForm } from "../shared/auth.js";
+import { createItineraryRuntime, loadModule } from "../shared/module-runtime.js";
 import { modules, API } from "./registry.js";
 
 applyPlatformShell({ itinerary: "cerro-verde", subtitle: "CERRO VERDE" });

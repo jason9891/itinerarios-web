@@ -1,11 +1,11 @@
-import { initializeApp } from "/vendor/firebase-app.js";
+import { initializeApp } from "./vendor/firebase-app.js";
 import {
   getAuth,
   GoogleAuthProvider,
   onAuthStateChanged,
   signInWithPopup,
   signInWithRedirect,
-} from "/vendor/firebase-auth.js";
+} from "./vendor/firebase-auth.js";
 
 const FIREBASE = {
   apiKey: "AIzaSyAeTPLS3r-199T__22TKrPMpZVZFe8IZI8",

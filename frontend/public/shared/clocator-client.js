@@ -9,7 +9,7 @@
  *   formato de respuesta es el mismo.
  *
  * Uso:
- *   import { queryClocator } from "/shared/clocator-client.js";
+ *   import { queryClocator } from "./clocator-client.js";
  *
  *   const result = await queryClocator({
  *     endpoint: "https://..../functions/v1/cemento-clocator",

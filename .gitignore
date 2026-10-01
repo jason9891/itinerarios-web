@@ -56,3 +56,7 @@ __pycache__/
 *.py[cod]
 .venv/
 venv/
+
+# Deploy keys (never commit)
+.ssh-deploy/
+../.ssh-deploy/

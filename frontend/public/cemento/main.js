@@ -3,9 +3,9 @@
  * Solo: shell + auth + router de módulos.
  * La lógica de cada pantalla vive en cemento/modules/*.js
  */
-import { applyPlatformShell } from "/shared/platform-shell.js";
-import { auth, onAuthStateChanged, wireLoginForm } from "/shared/auth.js";
-import { createItineraryRuntime, loadModule } from "/shared/module-runtime.js";
+import { applyPlatformShell } from "../shared/platform-shell.js";
+import { auth, onAuthStateChanged, wireLoginForm } from "../shared/auth.js";
+import { createItineraryRuntime, loadModule } from "../shared/module-runtime.js";
 import { modules, API } from "./registry.js";
 
 applyPlatformShell({ itinerary: "cemento", subtitle: "OPERADOR LOGÍSTICO" });

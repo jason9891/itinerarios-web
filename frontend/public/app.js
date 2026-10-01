@@ -1,4 +1,4 @@
-import { initializeApp } from "/vendor/firebase-app.js";
+import { initializeApp } from "./vendor/firebase-app.js";
 import {
   getAuth,
   GoogleAuthProvider,
@@ -6,8 +6,8 @@ import {
   signInWithPopup,
   signInWithRedirect,
   signInWithEmailAndPassword,
-} from "/vendor/firebase-auth.js";
-import { queryClocator } from "/shared/clocator-client.js";
+} from "./vendor/firebase-auth.js";
+import { queryClocator } from "./shared/clocator-client.js";
 const firebaseConfig = {
     apiKey: "AIzaSyAeTPLS3r-199T__22TKrPMpZVZFe8IZI8",
     authDomain: "itinerarios-2fa6f.firebaseapp.com",

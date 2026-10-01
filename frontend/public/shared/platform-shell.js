@@ -14,11 +14,11 @@
  *       <small id="platform-subtitle">OPERADOR LOGÍSTICO</small>
  *     </div>
  *     <div class="grow"></div>
- *     <a class="itinerary-link" href="/">VOLVER A ITINERARIOS</a>
+ *     <a class="itinerary-link" href="index.html">VOLVER A ITINERARIOS</a>
  *   </header>
  *
  * Luego en el JS del módulo:
- *   import { applyPlatformShell } from "/shared/platform-shell.js";
+ *   import { applyPlatformShell } from "./platform-shell.js";
  *   applyPlatformShell({ itinerary: "cemento", subtitle: "CEMENTO · CONTROL OPERATIVO" });
  */
 
@@ -76,6 +76,6 @@ export const HEADER_TEMPLATE = `
     <small id="platform-subtitle">PLATAFORMA DE ITINERARIOS</small>
   </div>
   <div class="grow"></div>
-  <a class="itinerary-link" href="/">VOLVER A ITINERARIOS</a>
+  <a class="itinerary-link" href="index.html">VOLVER A ITINERARIOS</a>
 </header>
 `.trim();

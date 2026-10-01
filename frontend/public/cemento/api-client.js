@@ -2,7 +2,7 @@
  * Cliente HTTP exclusivo de CEMENTO.
  * Cerro Verde tiene el suyo. No compartir este archivo entre itinerarios.
  */
-import { auth } from "/shared/auth.js";
+import { auth } from "../shared/auth.js";
 import { API } from "./registry.js";
 
 async function token() {

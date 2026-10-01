@@ -2,7 +2,7 @@
  * Auth compartido de la plataforma.
  * Los itinerarios usan esto; no redefinen Firebase config ni login.
  */
-import { initializeApp } from "/vendor/firebase-app.js";
+import { initializeApp } from "../vendor/firebase-app.js";
 import {
   getAuth,
   GoogleAuthProvider,
@@ -11,7 +11,7 @@ import {
   signInWithRedirect,
   signInWithEmailAndPassword,
   signOut,
-} from "/vendor/firebase-auth.js";
+} from "../vendor/firebase-auth.js";
 
 const firebaseConfig = {
   apiKey: "AIzaSyAeTPLS3r-199T__22TKrPMpZVZFe8IZI8",

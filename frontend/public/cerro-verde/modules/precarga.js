@@ -4,7 +4,7 @@
  */
 import { apiGet, apiPost, esc, fechaPE, moduleHead } from "../api-client.js";
 import { API } from "../registry.js";
-import { queryClocator } from "/shared/clocator-client.js";
+import { queryClocator } from "../../shared/clocator-client.js";
 
 let cleanup = [];
 
