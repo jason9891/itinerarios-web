@@ -62,15 +62,6 @@
 </div>
 
 <script src="/vendor/jszip.min.js"></script>
-<script type="module">
-  import { applyPlatformShell } from "/shared/platform-shell.js";
-  applyPlatformShell({ itinerary: "cemento", subtitle: "OPERADOR LOGÍSTICO" });
-
-  import("/app.js?v=cemento-shell-01").catch(e => {
-    const m = document.getElementById("login-message");
-    if (m) m.textContent = "No se pudo iniciar la aplicación: " + (e?.message || e);
-    console.error(e);
-  });
-</script>
+<script type="module" src="/cemento/main.js?v=modular-01"></script>
 </body>
 </html>
