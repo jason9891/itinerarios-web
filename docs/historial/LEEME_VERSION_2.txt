@@ -1,0 +1,90 @@
+PLATAFORMA ITINERARIOS WEB - VERSION 2
+======================================
+Base directa: DETALLES_1.
+No reconstruye versiones anteriores.
+
+CAMBIOS VALIDOS INCLUIDOS
+-------------------------
+1. SEGUIMIENTO - REVISADAS PERSISTENTES
+   - REVISADA se guarda en seguimiento_sesion_web.revisada.
+   - PAUSAR Y VOLVER no elimina las revisadas.
+   - Al reabrir Seguimiento se recuperan desde el temporal de Supabase.
+   - SIN MOVIMIENTO sigue pudiendo quedar revisada automaticamente y ahora se persiste.
+   - TERMINAR SEGUIMIENTO valida las revisadas almacenadas en servidor.
+
+2. PRECARGA -> SEGUIMIENTO EN VIVO
+   - Si una placa termina de precargarse mientras Seguimiento esta abierto,
+     el recorrido y el analisis visibles se actualizan cuando corresponde a la placa actual.
+   - No es necesario salir y volver a entrar para ver la precarga terminada.
+
+3. ACTUALIZAR RECORRIDO
+   - Barra DESDE | HASTA | ACTUALIZAR RECORRIDO sobre el mapa.
+   - Consulta nuevamente CLocator solo para la placa visible.
+   - Sustituye el temporal de esa placa en la ejecucion vigente.
+   - Repite TODO el analisis: geocercas, visitas, ubicacion en red,
+     rutas madre/candidatas y secuencia GPS.
+   - La cartografia se usa en el Edge Function; no se dibuja permanentemente en el mapa.
+
+4. MAPA LIMPIO
+   - Rutas madre y geocercas NO se dibujan por defecto en Seguimiento.
+   - Se mantiene trayectoria GPS, inicio/final, ultimos puntos y VER HORAS.
+   - La cartografia continua activa internamente para el analisis.
+
+5. INTERFAZ DE SEGUIMIENTO
+   - Columna central con tipografia mayor.
+   - Boton compacto: REVISADA.
+   - Columna Secuencia conserva 20% del ancho, pero usa tipografia mayor y todo su ancho util.
+   - Se reducen espacios/contenedores innecesarios.
+
+6. CERRAR OC
+   - Al preparar CERRAR OC, la tarjeta se oculta inmediatamente.
+   - No se elimina de la base; queda preparada en el temporal hasta TERMINAR SEGUIMIENTO.
+   - Opcion MOSTRAR CERRADAS permite verificar las OCs ocultas.
+
+7. EDITOR DE GEOCERCAS PARA TODOS LOS USUARIOS ACTIVOS
+   - Guardar, editar, validar, publicar/subir y eliminar ya no son exclusivos de ADMIN.
+   - Todo usuario ACTIVO de la plataforma puede utilizar el Editor Maestro.
+   - ELIMINAR GEOCERCA / RUTA MADRE / GEOCERCA DE RUTA elimina el objeto del Maestro
+     y sus asignaciones. Luego se debe GUARDAR -> VALIDAR -> SUBIR el itinerario afectado.
+
+8. CONTINUIDAD DE SESION
+   - VOLVER A ITINERARIOS, PAUSAR Y VOLVER, abrir otro itinerario o salir del Editor
+     no muestran la pantalla de login mientras Firebase comprueba una sesion ya existente.
+   - Se muestra un estado COMPROBANDO SESION y se entra directamente a la vista autenticada.
+   - SALIR sigue siendo la accion que cierra la sesion.
+
+DESPLIEGUE
+----------
+No requiere SQL nuevo para esta version: se reutiliza la columna revisada ya existente
+en seguimiento_sesion_web.
+
+Desde Cloud Shell:
+
+cd ~
+unzip -o PLATAFORMA_ITINERARIOS_WEB_VERSION_2.zip
+cd ~/PLATAFORMA_ITINERARIOS_WEB_VERSION_2
+
+npx supabase@latest functions deploy editor-geocercas \
+  --project-ref otvdwqbrqvxahyzfkhds \
+  --no-verify-jwt
+
+npx supabase@latest functions deploy cemento-seguimiento \
+  --project-ref otvdwqbrqvxahyzfkhds \
+  --no-verify-jwt
+
+npx supabase@latest functions deploy cemento-clocator \
+  --project-ref otvdwqbrqvxahyzfkhds \
+  --no-verify-jwt
+
+firebase deploy --only hosting
+
+PRUEBA RECOMENDADA
+------------------
+A. Entrar a Seguimiento, marcar 2 placas REVISADA, PAUSAR Y VOLVER, volver a entrar.
+   Deben continuar verdes/revisadas.
+B. Dejar una precarga trabajando y abrir Seguimiento. Cuando termine la placa visible,
+   mapa y secuencia deben actualizarse sin reabrir la pantalla.
+C. Cambiar DESDE/HASTA y pulsar ACTUALIZAR RECORRIDO. Deben cambiar el recorrido Y el analisis.
+D. CERRAR OC: la tarjeta debe ocultarse; MOSTRAR CERRADAS debe recuperarla como solo lectura.
+E. Volver a Itinerarios y abrir otro itinerario: no debe aparecer/parpadear el login.
+F. Con un usuario EDITOR/no ADMIN: guardar, validar, eliminar una geocerca de prueba y SUBIR.

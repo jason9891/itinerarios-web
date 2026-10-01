@@ -1,0 +1,90 @@
+CERRO VERDE WEB · DETALLES 4 FINAL
+==================================
+
+ALCANCE
+-------
+Parche acumulativo EXCLUSIVO de CERRO VERDE.
+NO modifica CEMENTO, Editor de Geocercas, portada, Firebase Auth global ni otros itinerarios.
+Parte de la base completa CV DETALLES 1 + DETALLES 2 + DETALLES 3.
+
+CORRECCION PRINCIPAL DE ESTA ENTREGA
+------------------------------------
+La precarga de 91 unidades terminaba en REINTENTO / ERROR porque
+cerro-verde-clocator exigía una publicación de cartografía CERRO VERDE en
+editor_geocercas_proyectos antes incluso de consultar CLocator.
+
+En el proyecto remoto actual no existe esa publicación CERRO VERDE, por lo que
+la función fallaba antes del login/recorrido aunque CEMENTO sí pudiera consultar
+CLocator con los mismos secretos del proyecto.
+
+DETALLES 4 corrige ese desacoplamiento:
+1. CLocator usa los mismos secretos de Supabase del proyecto.
+2. Antes de arrancar 91 descargas se ejecuta una verificación real de login CLocator.
+3. Si la publicación del editor existe y es válida, se usa.
+4. Si aún no existe, se usa GEOCERCAS.json incluido en la función, sin bloquear GPS.
+5. La descarga GPS ya no depende de haber publicado cartografía en el editor.
+6. Cada unidad muestra el motivo concreto de REINTENTO / ERROR FINAL.
+7. El mapa aparece cuando la unidad ya tiene recorrido en IndexedDB.
+8. ACTUALIZAR RECORRIDO vuelve a descargar Y vuelve a analizar la unidad.
+
+SE CONSERVA DE DETALLES 2 Y 3
+-----------------------------
+- Precarga desde GRUPO_SMCV completo, no sólo ciclos abiertos.
+- Lista 1/N, placa, tracto, puntos, estado, barra y segundo intento.
+- Precarga que continúa al navegar.
+- Caché IndexedDB de la ejecución vigente.
+- Tres columnas en Seguimiento.
+- SIN MOVIMIENTO / marcador U / última posición.
+- Fecha y hora del último seguimiento editable y confirmada desde servidor.
+- SAP .xls y .xlsx: seleccionar, validar, comparar y aplicar.
+- Estructura visual de SAP separada y legible.
+- Seguimiento de unidades del grupo aunque no tengan entrega abierta.
+
+AJUSTES DE SEGURIDAD DE INTERFAZ
+--------------------------------
+- CERRO VERDE deja de depender de alert/confirm nativos en el flujo principal
+  de Seguimiento y SAP; usa cuadros propios de la aplicación.
+- Encabezado central de Seguimiento reorganizado para no comprimir TRACTO,
+  PLACA, ENTREGA, CONDUCTOR, LICENCIA y FECHA DE CARGA.
+- La pantalla de Precarga muestra CLOCATOR CONECTADO o el error real antes de
+  empezar a recorrer todas las unidades.
+
+ARCHIVOS INCLUIDOS
+------------------
+public/cerro-verde.html
+public/cerro-verde.js
+public/cerro-verde.css
+public/cerro-verde-tracking.js
+public/cerro-verde-tracking.css
+supabase/functions/cerro-verde-clocator/index.ts
+supabase/functions/cerro-verde-clocator/GEOCERCAS.json
+
+APLICACION EN CLOUD SHELL
+-------------------------
+Aplicar SIEMPRE sobre la base completa que ya contiene la plataforma:
+
+cd ~/PLATAFORMA_ITINERARIOS_WEB_BASE_COMPLETA_CV_DETALLES_1
+unzip -o ~/CERRO_VERDE_WEB_DETALLES_4_FINAL.zip
+
+npx supabase@latest functions deploy cerro-verde-clocator \
+  --project-ref otvdwqbrqvxahyzfkhds \
+  --no-verify-jwt
+
+firebase deploy --only hosting --project itinerarios-2fa6f
+
+NO ejecutar db push. No hay migración SQL en este parche.
+
+PRUEBA RECOMENDADA
+------------------
+1. Abrir CERRO VERDE > Precargar rutas.
+2. Pulsar INICIAR / REANUDAR.
+3. Antes de comenzar la lista debe aparecer CLOCATOR CONECTADO.
+4. Verificar que la primera unidad pase de PROCESANDO a COMPLETO o SIN MOVIMIENTO.
+5. Si una unidad falla, revisar el motivo mostrado en la misma fila.
+6. Navegar a Seguimiento sin detener la precarga.
+7. Abrir una unidad ya precargada: debe aparecer mapa y análisis.
+8. Probar ACTUALIZAR RECORRIDO con rango manual y confirmar que también cambia el análisis.
+
+IMPORTANTE
+----------
+CEMENTO NO FUE MODIFICADO EN ESTA ENTREGA.

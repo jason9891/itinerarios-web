@@ -1,0 +1,100 @@
+CEMENTO WEB · REASIGNACIÓN DE OC · PRUEBA 01
+================================================
+
+ALCANCE
+-------
+Este paquete modifica exclusivamente CEMENTO:
+- public/app.js: clasificación y avisos al cargar SAP.
+- supabase/functions/cemento-sap/index.ts
+- supabase/functions/cemento-sap/reasignacion.js
+- supabase/functions/cemento-sap/RUTAS_SAP.json (copia intacta requerida para compilar)
+- supabase/migrations/20260915192223_cemento_reasignacion_oc.sql
+
+No contiene archivos ni funciones de Cerro Verde.
+No desplegar cemento-seguimiento, cemento-reporte ni funciones cerro-verde-*.
+
+REGLA IMPLEMENTADA
+------------------
+Una fila repetida se identifica por:
+  OC + FECHA SAP + CONDUCTOR + PLACA TRACTO + PLACA CARRETA
+
+1. Todo coincide:
+   Es la misma OC de un SAP anterior. No se vuelve a mostrar.
+
+2. La OC coincide, pero cambia fecha, conductor o alguna placa:
+   Es una OC reasignada.
+
+3. OC reasignada cerrada sin horas operativas:
+   - vuelve limpia a DIARIO;
+   - usa los nuevos datos SAP;
+   - avisa: OC XXXXX VACÍA REASIGNADA.
+
+4. OC reasignada cerrada con alguna hora operativa:
+   - vuelve a DIARIO;
+   - conserva las horas anteriores;
+   - actualiza asignación, conductor, unidad y ruta desde SAP;
+   - avisa: OC XXXXX YA EXISTE CON INFORMACIÓN; SE REABRE PARA VALIDACIÓN.
+
+5. OC que sigue abierta:
+   No se duplica ni se reemplaza automáticamente.
+
+Se consideran horas operativas:
+- FECHA DE SALIDA PLANTA YURA/CARACOTO
+- FECHA LLEGADA A DESTINO
+- FECHA INICIO DE RETORNO
+- FECHA FIN DE RETORNO AQP/YURA/CRCT
+
+INSTALACIÓN SOBRE LA BASE COMPLETA
+----------------------------------
+cd ~
+unzip -o CEMENTO_WEB_REASIGNACION_OC_PRUEBA_01.zip \
+  -d ~/PLATAFORMA_ITINERARIOS_WEB_BASE_COMPLETA_CV_DETALLES_1
+
+cd ~/PLATAFORMA_ITINERARIOS_WEB_BASE_COMPLETA_CV_DETALLES_1
+
+# Prueba local de la regla
+node tests/test_cemento_reasignacion.mjs
+
+# Vincular Supabase
+npx supabase@latest link --project-ref otvdwqbrqvxahyzfkhds
+
+# Vista previa obligatoria. Debe mostrar SOLAMENTE:
+# 20260915192223_cemento_reasignacion_oc.sql
+npx supabase@latest db push --dry-run
+
+# Si aparece cualquier otra migración, DETENERSE y no continuar.
+# Aplicar únicamente las migraciones posteriores pendientes del proyecto vinculado.
+npx supabase@latest migration up --linked \
+  --project-ref otvdwqbrqvxahyzfkhds
+
+# Desplegar SOLO la función SAP de CEMENTO
+npx supabase@latest functions deploy cemento-sap \
+  --project-ref otvdwqbrqvxahyzfkhds \
+  --no-verify-jwt
+
+# Publicar la interfaz
+firebase deploy --only hosting --project itinerarios-2fa6f
+
+Después del despliegue: Ctrl+Shift+R.
+
+VALIDACIÓN OPERATIVA
+--------------------
+1. Cargar un SAP que contenga OCs del día anterior sin cambios.
+   Deben aparecer como cerradas sin cambios o ya abiertas; no se aplican otra vez.
+
+2. Cargar una OC cerrada cuyo conductor, fecha o placas hayan cambiado.
+   Debe aparecer como VACÍA REASIGNADA o CON INFORMACIÓN.
+
+3. Aplicar el SAP y abrir Seguimiento.
+   La OC reasignada debe volver a DIARIO y aparecer una sola vez.
+
+4. Confirmar que CEMENTO conserva Guardar parcial, reporte ZIP y placas revisadas.
+
+5. Confirmar que Cerro Verde abre normalmente. Este paquete no lo modifica.
+
+IMPORTANTE
+----------
+- No ejecutar db push sin revisar primero --dry-run.
+- No usar --include-all.
+- No desplegar funciones de Cerro Verde.
+- La migración se ejecuta una sola vez.

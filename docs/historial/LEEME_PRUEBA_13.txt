@@ -1,0 +1,12 @@
+CEMENTO WEB - PRUEBA 13 - SEGUIMIENTO OPERATIVO
+
+- Estructura visual de escritorio 40/40/20.
+- Selector de tres unidades, mapa persistente y secuencia GPS.
+- Campos reales de Cemento; pegado rápido en UBICACION.
+- GUARDAR OC y CERRAR OC preparan una sesión recuperable.
+- GUARDAR TODO consolida Diario/Historico en una transacción.
+- Auditoría por campo y usuario.
+- GPS leído únicamente desde IndexedDB del navegador.
+- CEMENTO NO USA PERNOCTES NI PAUSAS ACTIVAS.
+
+IMPORTANTE: CERRAR OC no mueve la fila hasta pulsar GUARDAR TODO.

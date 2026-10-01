@@ -1,0 +1,58 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Environment and secrets
+.env
+.env.*
+!.env.example
+*.pem
+secrets/
+.firebase/
+
+# Build / cache
+dist/
+build/
+.cache/
+.parcel-cache/
+.next/
+out/
+
+# OS / editor
+.DS_Store
+Thumbs.db
+*.swp
+*.swo
+*~
+.idea/
+.vscode/
+*.sublime-*
+
+# Logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Supabase local
+supabase/.branches
+supabase/.temp
+supabase/.env.local
+
+# Large dumps (keep schema, ignore full data if desired)
+# backend/database/data.sql   # uncomment if you don't want the 11MB dump in git
+
+# Temporary / backup artifacts (should not exist in clean tree)
+*.bak
+*.bak_*
+BACKUP_*
+.integracion_backups/
+*.zip
+*.sha256
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/

@@ -1,0 +1,15 @@
+CEMENTO WEB - PRUEBA 14 - FLUJO COMPLETO DE SEGUIMIENTO
+
+- Conserva las correcciones visuales y funcionales de PRUEBA 13.
+- Precarga independiente de la pantalla y visible dentro de Seguimiento.
+- Solicita persistencia del almacenamiento local IndexedDB.
+- Tiempo máximo de 120 segundos por consulta CLocator.
+- Máximo exacto de dos intentos por placa: cola inicial y un reintento al final.
+- Después del segundo fallo queda ERROR FINAL para evaluación manual.
+- DETENER cancela la petición activa y permite reanudar sin perder las completas.
+- Orden de Seguimiento: con movimiento, pendientes sin caché y sin movimiento.
+- Las unidades sin movimiento se marcan revisadas automáticamente.
+- PAUSAR Y VOLVER conserva caché, borradores y revisadas.
+- TERMINAR SEGUIMIENTO prepara cambios visibles, consolida y regresa a Inicio.
+- SALIR DE LA APLICACIÓN permanece únicamente en la pantalla principal.
+- CEMENTO no usa pernoctes ni pausas activas.

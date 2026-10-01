@@ -1,0 +1,4 @@
+-- HISTORY BRIDGE ONLY.
+-- Esta version YA esta aplicada en Supabase remoto.
+-- Archivo local creado unicamente para alinear el historial de migraciones.
+-- NO contiene cambios y NO debe marcarse como reverted en remoto.

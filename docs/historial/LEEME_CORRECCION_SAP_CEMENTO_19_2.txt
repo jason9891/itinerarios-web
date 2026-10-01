@@ -1,0 +1,42 @@
+CORRECCIÓN 19.2 · FILTRO SAP CEMENTO
+====================================
+
+CORRECCIÓN
+----------
+- Replica el filtro del 02_sap_filtro.py entregado.
+- Rango: FecIniReal desde HOY - 7 días hasta HOY, ambos incluidos.
+- Clasificación por Descripción Ruta usando el rutas_sap.json aprobado:
+  73 rutas registradas, 33 SI y 40 NO.
+- Una descripción nueva debe recibir una decisión explícita:
+  SI · CONSIDERAR o NO · DESCARTAR.
+- La decisión nueva se guarda como regla compartida para las siguientes cargas.
+- El resumen se recalcula antes de habilitar APLICAR.
+- El servidor vuelve a comprobar rango, ruta SI, duplicados y OCs existentes.
+- El archivo SAP completo continúa solamente en el temporal del navegador.
+
+DESPLIEGUE
+----------
+1. En Supabase SQL Editor abrir y ejecutar EL CONTENIDO de:
+   supabase/migrations/20260912104044_cemento_sap_rutas_reglas.sql
+
+2. Desde esta carpeta desplegar solamente la función modificada:
+   npx supabase@latest functions deploy cemento-sap \
+     --project-ref otvdwqbrqvxahyzfkhds \
+     --no-verify-jwt
+
+3. Actualizar Firebase Hosting:
+   firebase deploy --only hosting --project itinerarios-2fa6f
+
+4. Abrir evitando caché:
+   https://itinerarios-2fa6f.web.app/cemento.html?v=19.2
+
+No es necesario desplegar nuevamente las demás funciones.
+
+PRUEBA CONTROLADA
+-----------------
+1. Seleccionar el mismo Excel que anteriormente mostraba 685 OCs nuevas.
+2. Confirmar que aparezcan FUERA DEL RANGO, RUTAS NO y RUTAS SI.
+3. Si aparece una ruta desconocida, decidir SI o NO.
+4. Confirmar que la ruta deje de estar pendiente y el resumen se recalcule.
+5. Aplicar únicamente cuando el nuevo total sea coherente.
+

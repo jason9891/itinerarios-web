@@ -1,0 +1,45 @@
+CERRO VERDE WEB - DETALLES 2
+============================
+
+Este ZIP es un parche exclusivo para Cerro Verde.
+No contiene ni reemplaza Cemento, el Editor de Geocercas, la portada ni funciones de Supabase.
+
+CORRECCIONES INCLUIDAS
+- Precarga real de todas las unidades del grupo SMCV, no sólo de entregas abiertas.
+- Lista de placas, barra de avance, contador, puntos y estado por unidad.
+- Precarga en segundo plano al navegar a Inicio o Seguimiento.
+- Indicador visible de precarga en Inicio y Seguimiento.
+- Caché persistente de la ejecución vigente en IndexedDB.
+- Timeout y exactamente dos intentos por unidad; después queda ERROR FINAL para revisión manual.
+- SIN MOVIMIENTO se ordena al final y se marca revisado automáticamente.
+- Si no existe recorrido, se muestra el último punto disponible con marcador U, fecha y hora.
+- Seguimiento en tres columnas: mapa, horas/ciclo y paradas candidatas/pernoctes.
+- Corrección del selector CSS que apilaba las tres columnas en PC.
+- Inicio visualmente alineado con la estructura de Cemento.
+- Resolución de sesión Firebase sin mostrar momentáneamente el acceso durante navegación interna.
+
+APLICACIÓN EN CLOUD SHELL
+1. Suba este ZIP al directorio principal de Cloud Shell.
+2. Ejecute exactamente:
+
+cd ~/PLATAFORMA_ITINERARIOS_WEB_BASE_COMPLETA_CV_DETALLES_1
+unzip -o ~/CERRO_VERDE_WEB_DETALLES_2.zip
+firebase deploy --only hosting --project itinerarios-2fa6f
+
+No ejecute el deploy desde la carpeta del parche: el deploy debe hacerse desde la base completa,
+para que Firebase conserve todos los demás módulos de la plataforma.
+
+VALIDACIÓN RECOMENDADA
+1. Abra Cerro Verde > Precargar rutas.
+2. Confirme que aparece la lista completa de unidades y que la barra avanza.
+3. Sin detener la precarga, vaya a Seguimiento y confirme que el indicador continúa avanzando.
+4. Verifique que en PC se vean las tres columnas en una sola fila.
+5. Abra una unidad SIN MOVIMIENTO: debe verse el punto U y su última fecha/hora.
+6. Una unidad sin respuesta sólo debe pasar a SEGUNDO INTENTO y luego a ERROR FINAL.
+
+ARCHIVOS DEL PARCHE
+- public/cerro-verde.html
+- public/cerro-verde.js
+- public/cerro-verde.css
+- public/cerro-verde-tracking.js
+- public/cerro-verde-tracking.css

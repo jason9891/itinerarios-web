@@ -1,0 +1,14 @@
+CORRECCIÓN VISUAL 19.1
+======================
+
+Corrige exclusivamente la pantalla inicial de acceso:
+- Usuario y contraseña en filas separadas.
+- Etiquetas encima de los campos.
+- Botones alineados y al ancho del formulario.
+- Adaptación para celular.
+- Versionado de itinerarios.css para impedir que el navegador reutilice la
+  hoja antigua almacenada en caché.
+
+No requiere ejecutar SQL ni volver a desplegar funciones Supabase.
+Sólo debe desplegarse Firebase Hosting desde esta carpeta.
+

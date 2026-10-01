@@ -1,0 +1,11 @@
+npm notice run npx
+npm notice run 'supabase' db dump --linked -f database/schema.sql --debug
+NotFound: FileSystem.readFile (/home/jasontupayachihurtado/.supabase/profile)
+Using access token from file: /home/jasontupayachihurtado/.supabase/access-token
+Supabase CLI 2.118.0
+Using profile: supabase (supabase.co)
+Using access token from file: /home/jasontupayachihurtado/.supabase/access-token
+Initialising login role...
+2026/09/26 11:04:10 HTTP POST: https://api.supabase.com/v1/projects/otvdwqbrqvxahyzfkhds/cli/login-role
+Dumping schemas from remote database...
+Dumped schema to /home/jasontupayachihurtado/ITINERARIOS_BACKUP_SUPABASE/database/schema.sql.

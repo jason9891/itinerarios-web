@@ -1,0 +1,109 @@
+CEMENTO WEB · PRUEBA 16 OPERATIVA
+=================================
+
+ALCANCE INTEGRADO
+-----------------
+1. ACTUALIZAR SAP permite seleccionar .xlsx o el .xls de texto exportado por SAP.
+   - El contenido completo se procesa y conserva únicamente en IndexedDB del navegador.
+   - El archivo temporal anterior se reemplaza.
+   - Solo las OCs que faltan se envían al servidor.
+   - Supabase vuelve a comprobar las OCs y actualiza SAP histórico + Seguimiento Diario
+     en una sola transacción.
+   - Teléfono se toma de la columna Teléfono del SAP cuando el valor existe.
+   - GESTOR se conserva por OC si el SAP incorpora una columna GESTOR; no se inventa.
+
+2. La fecha/hora del último seguimiento es editable desde INICIO.
+   Cambiarla elimina únicamente los recorridos temporales del navegador y define el inicio
+   de la siguiente consulta CLocator.
+
+3. PRECARGAR RUTAS usa el rango editable hasta el momento de inicio de la ejecución.
+   - Continúa en segundo plano al entrar a Seguimiento.
+   - Máximo dos intentos por placa: intento normal y un reintento al final.
+   - No existe un bucle infinito.
+   - Solo se conserva la ejecución vigente.
+   - Unidades con movimiento primero; sin movimiento al final y revisadas automáticamente.
+
+4. SEGUIMIENTO conserva la réplica operativa de escritorio:
+   - posición PLACA n/total y contador REVISADAS n/total;
+   - mapa, flechas de dirección, últimos tres puntos en rojo y VER HORAS;
+   - lista de horas para puntos o pasadas superpuestas;
+   - ingreso/salida y copia rápida de geocercas;
+   - GUARDAR OC, CERRAR OC, PAUSAR Y VOLVER y TERMINAR SEGUIMIENTO;
+   - un campo vacío no modifica Supabase; borrar un valor existente se registra como
+     eliminación explícita;
+   - CEMENTO no usa pernoctes ni paradas de pausa activa.
+
+5. ARCHIVOS contiene solo dos Excel: SEGUIMIENTO_DIARIO y SEGUIMIENTO_HISTORICO.
+
+6. CREAR REPORTE queda habilitado únicamente con todas las placas reales revisadas y el
+   seguimiento terminado. GENERAR REPORTE COMPLETO descarga:
+   - Excel operativo de 31 columnas;
+   - RESUMEN_CORREO_DATOS.png;
+   - RESUMEN_CORREO_BARRAS.png.
+   Las columnas C y D son solo fecha. Los cuatro tiempos se calculan desde los hitos.
+   Al finalizar los tres archivos se libera SAP/GPS temporal y el fin de la ejecución pasa
+   a ser el siguiente punto de control.
+   - GESTOR se cruza con el maestro por Placa Tracto.
+   - Celular se cruza OC -> LicencCond del SAP -> teléfono del maestro.
+   - Si una licencia tiene varios teléfonos, se conservan todos sin duplicar, separados por /.
+
+7. La migración optimiza Supabase sin borrar el snapshot base ni confundir una reasignación
+   con un duplicado. Retira GPS de pruebas antiguas, filas de preview ya aplicadas y solo
+   duplicados SAP completamente idénticos. Agrega índices y restringe RPCs a service_role.
+
+ORDEN DE IMPLEMENTACIÓN EN CLOUD SHELL / CONSOLAS WEB
+------------------------------------------------------
+No se abre ningún ejecutable en la computadora.
+
+A. En Supabase > SQL Editor, copie y ejecute una sola vez:
+   supabase/migrations/20260911_prueba16_operativa_optimizada.sql
+   El resultado normal es: Success. No rows returned.
+
+B. En Cloud Shell:
+
+   cd ~/CEMENTO_WEB_FIREBASE_PRUEBA_16
+
+   npx supabase@latest functions deploy cemento-sap \
+     --project-ref otvdwqbrqvxahyzfkhds --no-verify-jwt
+
+   npx supabase@latest functions deploy cemento-clocator \
+     --project-ref otvdwqbrqvxahyzfkhds --no-verify-jwt
+
+   npx supabase@latest functions deploy cemento-consulta \
+     --project-ref otvdwqbrqvxahyzfkhds --no-verify-jwt
+
+   npx supabase@latest functions deploy cemento-seguimiento \
+     --project-ref otvdwqbrqvxahyzfkhds --no-verify-jwt
+
+   npx supabase@latest functions deploy cemento-reporte \
+     --project-ref otvdwqbrqvxahyzfkhds --no-verify-jwt
+
+   firebase deploy --only hosting --project itinerarios-2fa6f
+
+Si la CLI solicita acceso, ejecute antes: npx supabase@latest login
+
+C. Abra https://itinerarios-2fa6f.web.app y haga una recarga forzada una vez.
+
+PRUEBA OPERATIVA RECOMENDADA
+----------------------------
+1. INICIO: confirmar o editar el último punto de control.
+2. ACTUALIZAR SAP: subir el archivo, revisar conteos y aplicar OCs nuevas.
+3. PRECARGAR RUTAS: iniciar; entrar a Seguimiento mientras continúa.
+4. Revisar una placa con movimiento, una sin movimiento y una con segundo intento.
+5. Confirmar que PAUSAR Y VOLVER mantiene el progreso.
+6. Completar todas las placas y pulsar TERMINAR SEGUIMIENTO.
+7. Descargar los dos archivos del módulo ARCHIVOS.
+8. GENERAR REPORTE COMPLETO y verificar Excel + dos PNG.
+
+ACTUALIZACIÓN MAESTRO GESTOR / TELÉFONO
+---------------------------------------
+El archivo ADICIONAR AL MASTER.xlsx fue normalizado dentro de:
+supabase/functions/cemento-reporte/MAESTROS_CEMENTO.ts
+
+Contiene 602 relaciones de placa para GESTOR y 857 licencias con al menos un teléfono.
+No ocupa filas de base de datos ni Supabase Storage. Para aplicar esta corrección sobre una
+PRUEBA 16 ya desplegada solo se vuelve a desplegar cemento-reporte:
+
+   cd ~/CEMENTO_WEB_FIREBASE_PRUEBA_16
+   npx supabase@latest functions deploy cemento-reporte \
+     --project-ref otvdwqbrqvxahyzfkhds --no-verify-jwt

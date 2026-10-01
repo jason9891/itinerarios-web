@@ -1,0 +1,21 @@
+
+  
+   ID                                   | NAME                                | SLUG                                | STATUS | VERSION | UPDATED_AT (UTC)    
+  --------------------------------------|-------------------------------------|-------------------------------------|--------|---------|---------------------
+   552e2f77-1ffb-4fb7-9d0b-9c847ad5fbf2 | cemento-estado                      | cemento-estado                      | ACTIVE | 5       | 2026-09-20 11:49:24 
+   0ff027c1-5d47-4dfa-9e8b-b45db74e6d39 | cemento-consulta                    | cemento-consulta                    | ACTIVE | 8       | 2026-09-20 11:49:29 
+   162fc16d-b907-449a-9dde-54c7721a9d96 | cemento-clocator                    | cemento-clocator                    | ACTIVE | 13      | 2026-09-20 11:59:28 
+   002d6101-ac2d-4dd1-8a44-b8e015749bbd | cemento-seguimiento                 | cemento-seguimiento                 | ACTIVE | 15      | 2026-09-20 17:39:06 
+   f3217a75-440a-4f02-b6a0-d1c75e8def99 | cemento-reporte                     | cemento-reporte                     | ACTIVE | 7       | 2026-09-15 22:05:13 
+   5c78340e-6d04-457e-9c8d-7857a97ffd84 | cemento-sap                         | cemento-sap                         | ACTIVE | 6       | 2026-09-16 16:21:27 
+   a6d8c1da-f4a7-4ef0-b6d1-90bc4c3593d3 | cemento-admin                       | cemento-admin                       | ACTIVE | 3       | 2026-09-11 15:35:36 
+   78b87772-572b-4909-85c1-8e877d5fbf81 | cemento-manual                      | cemento-manual                      | ACTIVE | 2       | 2026-09-11 15:35:41 
+   ff05e6be-4d26-42fd-b512-633e61ace964 | cerro-verde-consulta                | cerro-verde-consulta                | ACTIVE | 4       | 2026-09-14 10:05:58 
+   8af2722a-e94c-4ea6-a47e-34f70b28f146 | cerro-verde-clocator                | cerro-verde-clocator                | ACTIVE | 7       | 2026-09-21 15:06:12 
+   cfc80427-d69d-40e8-be8e-6e82342454d3 | cerro-verde-seguimiento             | cerro-verde-seguimiento             | ACTIVE | 9       | 2026-09-21 15:05:40 
+   40075c2d-80a2-461f-9bab-db7017310847 | cerro-verde-sap                     | cerro-verde-sap                     | ACTIVE | 10      | 2026-09-21 13:09:26 
+   1388bb29-826b-447c-ba5d-329c694525d8 | cerro-verde-reporte                 | cerro-verde-reporte                 | ACTIVE | 13      | 2026-09-25 16:54:25 
+   fc839130-8f01-4263-a4df-032102f12ca7 | editor-geocercas                    | editor-geocercas                    | ACTIVE | 5       | 2026-09-12 14:03:35 
+   7c47298a-e4ff-40c1-96b0-e37f84857991 | chatgpt-cemento-sap-export-20260918 | chatgpt-cemento-sap-export-20260918 | ACTIVE | 2       | 2026-09-18 12:40:23 
+   ab5d0fe9-e022-49a2-8525-3cdd8f55929c | cemento-montados                    | cemento-montados                    | ACTIVE | 1       | 2026-09-25 19:33:10 
+

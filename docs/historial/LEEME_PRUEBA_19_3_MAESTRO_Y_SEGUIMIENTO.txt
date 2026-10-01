@@ -1,0 +1,55 @@
+PRUEBA 19.3 - MAESTRO UNICO DE GEOCERCAS + VISUAL CEMENTO
+============================================================
+
+CONTENIDO
+1. Maestro consolidado desde MAESTRO.zip:
+   - 20 geocercas únicas.
+   - 44 rutas madre exclusivas del editor.
+   - Asignaciones separadas para CEMENTO y CERRO VERDE.
+2. Clave de asignación: ITINERARIO + ID_MAESTRO.
+   La misma geometría puede existir en ambos itinerarios sin conflicto.
+3. Nombre maestro y nombre operativo por itinerario son independientes.
+4. La publicación se realiza por itinerario seleccionado.
+5. Solo se publican GEOCERCAS y GEOCERCA_TRAMO.
+   RUTAS_MADRE nunca se envía a los itinerarios.
+6. Al publicar CEMENTO se invalida únicamente su precarga GPS local.
+7. Seguimiento Cemento recupera la legibilidad de escritorio:
+   - fecha de creación en cada OC;
+   - eventos GPS grandes y separados;
+   - fecha/hora clicable sin textos COPIAR INGRESO/SALIDA;
+   - sin botón COPIAR NOMBRE duplicado;
+   - VER/OCULTAR HORAS arriba a la derecha del mapa;
+   - cierre de ventana de horas sencillo, sin círculo grande.
+
+ARCHIVOS QUE CAMBIAN
+- supabase/migrations/20260912111514_maestro_geocercas_unico.sql
+- supabase/functions/editor-geocercas/index.ts
+- supabase/functions/editor-geocercas/seed/MAESTRO_GEOCERCAS.json
+- supabase/functions/cemento-clocator/index.ts
+- public/editor-geocercas.html
+- public/editor-geocercas.js
+- public/editor-geocercas.css
+- public/cemento.html
+- public/app.js
+- public/seguimiento19.css
+
+ORDEN DE INSTALACION
+1. Ejecutar en Supabase SQL Editor el CONTENIDO del archivo:
+   supabase/migrations/20260912111514_maestro_geocercas_unico.sql
+   No escribir el nombre o la ruta del archivo como una consulta SQL.
+2. Desde esta carpeta en Cloud Shell:
+   npx supabase@latest functions deploy editor-geocercas --project-ref otvdwqbrqvxahyzfkhds --no-verify-jwt
+   npx supabase@latest functions deploy cemento-clocator --project-ref otvdwqbrqvxahyzfkhds --no-verify-jwt
+   firebase deploy --only hosting --project itinerarios-2fa6f
+
+PRIMERA CARGA DEL MAESTRO
+1. Abrir Editor de Geocercas desde la lista de itinerarios.
+2. En MAESTRO GENERAL, presionar GUARDAR MAESTRO.
+3. Presionar VALIDAR.
+4. Elegir ASIGNACIONES - CEMENTO.
+5. Revisar nombres; ya se carga PLANTA YURA sin COPIA.
+6. Presionar SUBIR A CEMENTO.
+7. Repetir para CERRO VERDE únicamente cuando sus asignaciones estén revisadas.
+
+La publicación no modifica Seguimiento Diario ni Histórico. CEMENTO deberá
+realizar una nueva precarga GPS porque la anterior se invalida al publicar.

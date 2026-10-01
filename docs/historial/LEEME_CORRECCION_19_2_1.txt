@@ -1,0 +1,13 @@
+CORRECCIÓN 19.2.1 · SÓLO FIREBASE HOSTING
+=========================================
+
+Corrige un paréntesis faltante en el cálculo visual de NUEVAS DIARIO.
+No cambia la migración ni la función cemento-sap de la versión 19.2.
+
+Si ya se ejecutó el SQL y se desplegó cemento-sap, sólo ejecutar:
+
+firebase deploy --only hosting --project itinerarios-2fa6f
+
+Abrir:
+https://itinerarios-2fa6f.web.app/cemento.html?v=19.2.1
+

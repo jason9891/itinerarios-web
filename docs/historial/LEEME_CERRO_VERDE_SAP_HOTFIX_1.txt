@@ -1,0 +1,22 @@
+CERRO VERDE · SAP HOTFIX 1
+==========================
+
+ALCANCE
+- SOLO modifica supabase/functions/cerro-verde-sap/index.ts
+- NO modifica CEMENTO.
+- NO modifica Seguimiento, CLocator, geocercas ni Hosting.
+- NO requiere db push.
+
+CORRECCION
+El SAP puede contener varias ENTREGAS nuevas de una misma unidad. SAP y DIARIO
+conservan todas las Entregas, pero cerro_verde_grupo_smcv solo admite una fila
+por codigo_tracto. La version anterior enviaba varias filas con la misma clave
+en un mismo INSERT ... ON CONFLICT, lo que puede abortar toda la transaccion.
+
+Ahora el payload del grupo se consolida por unidad y conserva la Entrega mas
+reciente para el estado operativo, mientras SAP/DIARIO reciben todas las filas.
+
+DESPLIEGUE
+npx supabase@latest functions deploy cerro-verde-sap \
+  --project-ref otvdwqbrqvxahyzfkhds \
+  --no-verify-jwt
