@@ -125,15 +125,16 @@ function montadosHtml(unit) {
   return parts.length ? `<div style="margin:6px 0 0">${parts.join("")}</div>` : "";
 }
 
-function fieldInput(id, suffix, label, value, original) {
-  return `<div style="display:block;width:100%;margin:0 0 10px 0;box-sizing:border-box">
-  <div style="display:block;font-size:12px;font-weight:800;color:#0f172a;margin:0 0 4px 0">${label}</div>
-  <div style="display:flex;gap:6px;align-items:stretch;width:100%">
-    <input type="text" data-f="${id}-${suffix}" data-original="${esc(original)}" value="${esc(value)}"
-      autocomplete="off"
-      style="flex:1 1 auto;width:100%;min-width:0;min-height:40px;height:40px;box-sizing:border-box;padding:8px 10px;border:2px solid #334155;border-radius:6px;background:#fff;color:#0f172a;font-size:15px;font-weight:600">
-    <button type="button" data-paste="${id}-${suffix}" title="Pegar"
-      style="flex:0 0 40px;width:40px;height:40px;border:1px solid #cbd5e1;border-radius:6px;background:#f1f5f9;cursor:pointer">📋</button>
+function fieldCell(id, suffix, label, value, original, withPaste) {
+  const pasteBtn = withPaste
+    ? `<button type="button" data-paste="${id}-${suffix}" title="Pegar" style="flex:0 0 28px;width:28px;height:28px;border:1px solid #cbd5e1;border-radius:4px;background:#f1f5f9;cursor:pointer;font-size:12px;padding:0">📋</button>`
+    : "";
+  return `<div style="min-width:0;padding:6px 8px;box-sizing:border-box">
+  <div style="font-size:10px;font-weight:900;color:#142f4b;margin:0 0 3px 0;letter-spacing:.02em">${label}</div>
+  <div style="display:flex;gap:4px;align-items:center">
+    <input type="text" data-f="${id}-${suffix}" data-original="${esc(original)}" value="${esc(value)}" autocomplete="off"
+      style="flex:1 1 auto;min-width:0;width:100%;height:30px;box-sizing:border-box;padding:4px 8px;border:1px solid #7a93ad;border-radius:4px;background:#fff;color:#132f4c;font-size:13px;font-weight:600">
+    ${pasteBtn}
   </div>
 </div>`;
 }
@@ -146,66 +147,97 @@ function ocRowHtml(oc, unitIndex, ocIndex, totalOcs, unit) {
   const draft = oc.borrador?.accion ? String(oc.borrador.accion) : "";
   const reviewed = state.reviewed.has(nplate(unit.placa));
   const estado = field(p, "ESTADO") || p.ESTADO || "";
-  const bg = parihuelas ? "#fffbeb" : "#ffffff";
-  const border = parihuelas ? "#eab308" : "#64748b";
+  const bg = parihuelas ? "#fffbeb" : "#fff";
+  const borderCol = parihuelas ? "#d97706" : "#829bb6";
+  const isFirst = ocIndex === 0;
+  const isLast = ocIndex === totalOcs - 1;
+  const radius = totalOcs === 1
+    ? "10px"
+    : isFirst
+      ? "10px 10px 0 0"
+      : isLast
+        ? "0 0 10px 10px"
+        : "0";
+  const borderTop = isFirst ? `2px solid ${borderCol}` : "0";
 
-  const head =
-    ocIndex === 0
-      ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:0 0 10px 0;padding:8px 10px;background:#eff6ff;border-radius:8px 8px 0 0;border:2px solid ${border};border-bottom:0">
-          <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
-            <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:999px;background:#dbeafe;color:#1e3a8a;font-weight:900;font-size:13px">${unitIndex}</span>
-            <strong style="font-size:20px;color:#0f172a">${esc(shortTracto(unit.tracto || unit.placa))}</strong>
-            <span style="font-size:12px;color:#64748b">${totalOcs} OC</span>
-            ${reviewed ? `<span style="color:#16a34a;font-weight:900">✓ REVISADA</span>` : ""}
-            ${parihuelas ? `<span style="background:#fde68a;border:1px solid #d97706;color:#78350f;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:900">PARIHUELAS</span>` : ""}
-          </div>
-          <button type="button" data-review="${esc(unit.placa)}"
-            style="background:${reviewed ? "#dcfce7" : "#16a34a"};color:${reviewed ? "#166534" : "#fff"};border:1px solid #15803d;border-radius:6px;padding:8px 12px;font-weight:800;font-size:12px;cursor:pointer">
-            ${reviewed ? "✓ REVISADA" : "VALIDAR REVISADA"}
-          </button>
-        </div>`
-      : "";
+  // Pestaña tipo navegador (solo en la primera OC de la unidad)
+  const tab = isFirst
+    ? `<div style="position:relative;height:0;z-index:5">
+        <div style="position:absolute;left:8px;top:-30px;height:30px;display:flex;align-items:stretch;border:2px solid #385978;border-bottom:0;border-radius:9px 9px 0 0;overflow:hidden;background:#f5f9fd">
+          <span style="display:flex;align-items:center;justify-content:center;min-width:32px;padding:0 8px;font-size:13px;font-weight:900;color:#173e70;background:#e8f0fa;border-right:1px solid #9fb4cb">${unitIndex}</span>
+          <span style="display:flex;align-items:center;padding:0 12px;font-size:15px;font-weight:900;color:#0f172a;white-space:nowrap">${esc(shortTracto(unit.tracto || unit.placa))}</span>
+          <button type="button" data-review="${esc(unit.placa)}" title="Marcar revisada"
+            style="display:flex;align-items:center;justify-content:center;min-width:34px;border:0;border-left:1px solid #9fb4cb;background:${reviewed ? "#16a34a" : "#fff"};color:${reviewed ? "#fff" : "#16a34a"};font-size:16px;font-weight:900;cursor:pointer;padding:0 10px">✓</button>
+        </div>
+      </div>`
+    : "";
 
   return `
-  <div style="margin:0 0 12px 0">
-    ${head}
+  <div style="margin:${isFirst ? "34px" : "0"} 0 ${isLast ? "12px" : "0"} 0;position:relative">
+    ${tab}
     <article data-oc-id="${id}" data-placa="${esc(nplate(unit.placa))}"
-      style="display:block;width:100%;box-sizing:border-box;padding:12px;background:${bg};border:2px solid ${border};border-radius:${ocIndex === 0 ? "0 0 8px 8px" : "8px"}">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin:0 0 12px 0">
-        <div>
-          <div style="font-size:16px;font-weight:900;color:#0f172a">OC ${esc(oc.orden_carga || "—")}
-            <span style="color:#1d4ed8;font-weight:700;margin-left:8px">${esc(p.Ruta || "—")}</span>
-          </div>
-          <div style="font-size:12px;color:#64748b;margin-top:3px">FECHA CARGA REAL: ${esc(ocCreationDate(p))}${draft ? " · " + esc(draft) : ""}</div>
+      style="display:block;width:100%;box-sizing:border-box;background:${bg};border:${borderTop};border-right:2px solid ${borderCol};border-bottom:2px solid ${borderCol};border-left:2px solid ${borderCol};border-radius:${radius};overflow:hidden">
+      
+      <!-- Cabecera OC -->
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;padding:6px 10px;border-bottom:1px solid rgba(110,135,160,.28);min-height:40px;box-sizing:border-box">
+        <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;min-width:0">
+          <span style="font-size:11px;font-weight:900;color:#314a65">OC</span>
+          <strong style="font-size:16px;font-weight:950;color:#101f33">${esc(oc.orden_carga || "—")}</strong>
+          <b style="font-size:13px;font-weight:700;color:#103f73;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px">${esc(p.Ruta || "—")}</b>
+          ${parihuelas ? `<span style="background:#fde68a;border:1px solid #d97706;color:#78350f;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:900">PARIHUELAS</span>` : ""}
+          ${draft ? `<em style="color:#b45309;font-size:11px;font-weight:800">${esc(draft)}</em>` : ""}
         </div>
-        <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          <span style="font-size:11px;color:#64748b;white-space:nowrap">FECHA CARGA REAL: <b style="color:#334155">${esc(ocCreationDate(p))}</b></span>
           <button type="button" data-save="${id}"
-            style="background:#2563eb;color:#fff;border:1px solid #1d4ed8;border-radius:6px;padding:10px 14px;font-weight:800;font-size:13px;cursor:pointer">GUARDAR</button>
+            style="display:inline-flex;align-items:center;gap:4px;background:#edf5ff;color:#124f95;border:1px solid #7ea6d7;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:900;cursor:pointer">💾 GUARDAR</button>
           <button type="button" data-close="${id}"
-            style="background:#fff;color:#b91c1c;border:1px solid #fca5a5;border-radius:6px;padding:10px 14px;font-weight:800;font-size:13px;cursor:pointer">FIN DE CICLO</button>
+            style="display:inline-flex;align-items:center;gap:4px;background:#fff5f5;color:#b91c1c;border:1px solid #fca5a5;border-radius:5px;padding:4px 10px;font-size:11px;font-weight:900;cursor:pointer">🚩 FIN DE CICLO</button>
         </div>
       </div>
-      <div style="display:block;width:100%">
-        <div style="display:block;width:100%;margin:0 0 10px 0">
-          <div style="font-size:12px;font-weight:800;color:#0f172a;margin:0 0 4px 0">ESTADO</div>
+
+      <!-- Grilla compacta 5 columnas × 2 filas de campos -->
+      <div style="display:grid;grid-template-columns:minmax(110px,.85fr) minmax(140px,1.1fr) minmax(140px,1.1fr) minmax(140px,1.1fr) minmax(160px,1.25fr);grid-template-rows:auto auto;width:100%;box-sizing:border-box">
+        
+        <!-- ESTADO (columna 1, ambas filas) -->
+        <div style="grid-column:1;grid-row:1/3;padding:8px;border-right:1px solid #d5e0eb;box-sizing:border-box">
+          <div style="font-size:10px;font-weight:900;color:#142f4b;margin:0 0 4px 0">ESTADO</div>
           <select data-f="${id}-estado" data-original="${esc(field(o, "ESTADO") || "")}"
-            style="display:block;width:100%;min-height:40px;height:40px;box-sizing:border-box;padding:8px 10px;border:2px solid #334155;border-radius:6px;background:#fff;color:#0f172a;font-size:15px;font-weight:600">
+            style="display:block;width:100%;height:54px;box-sizing:border-box;padding:4px 6px;border:1px solid #7a93ad;border-radius:4px;background:#fff;color:#132f4c;font-size:12px;font-weight:700">
             ${stateOptions(estado)}
           </select>
         </div>
-        ${fieldInput(id, "salida", "SALIDA DE PLANTA", field(p, "FECHA DE SALIDA PLANTA YURA/CARACOTO"), field(o, "FECHA DE SALIDA PLANTA YURA/CARACOTO"))}
-        ${fieldInput(id, "llegada", "LLEGADA A DESTINO", field(p, "FECHA LLEGADA A DESTINO"), field(o, "FECHA LLEGADA A DESTINO"))}
-        ${fieldInput(id, "carga", "CARGA DE RETORNO", field(p, "CARGA DE RETORNO"), field(o, "CARGA DE RETORNO"))}
-        ${fieldInput(id, "retorno", "INICIO DE RETORNO", field(p, "FECHA INICIO DE RETORNO"), field(o, "FECHA INICIO DE RETORNO"))}
-        ${fieldInput(id, "fin", "FIN DE RETORNO", field(p, "FECHA FIN DE RETORNO AQP/YURA/CRCT"), field(o, "FECHA FIN DE RETORNO AQP/YURA/CRCT"))}
-        ${fieldInput(id, "ubi", "UBICACIÓN", field(p, "UBICACIÓN"), field(o, "UBICACIÓN"))}
-        <div style="display:block;width:100%;margin:0 0 10px 0">
-          <div style="font-size:12px;font-weight:800;color:#0f172a;margin:0 0 4px 0">OBSERVACIONES</div>
+
+        <!-- Fila superior de fechas -->
+        <div style="grid-column:2;grid-row:1;border-right:1px solid #d5e0eb;border-bottom:1px solid #d5e0eb">
+          ${fieldCell(id, "salida", "SALIDA DE PLANTA", field(p, "FECHA DE SALIDA PLANTA YURA/CARACOTO"), field(o, "FECHA DE SALIDA PLANTA YURA/CARACOTO"), true)}
+        </div>
+        <div style="grid-column:3;grid-row:1;border-right:1px solid #d5e0eb;border-bottom:1px solid #d5e0eb">
+          ${fieldCell(id, "llegada", "LLEGADA A DESTINO", field(p, "FECHA LLEGADA A DESTINO"), field(o, "FECHA LLEGADA A DESTINO"), true)}
+        </div>
+        <div style="grid-column:4;grid-row:1;border-right:1px solid #d5e0eb;border-bottom:1px solid #d5e0eb">
+          ${fieldCell(id, "carga", "CARGA DE RETORNO", field(p, "CARGA DE RETORNO"), field(o, "CARGA DE RETORNO"), false)}
+        </div>
+
+        <!-- OBSERVACIONES (columna 5, ambas filas) -->
+        <div style="grid-column:5;grid-row:1/3;padding:6px 8px;box-sizing:border-box">
+          <div style="font-size:10px;font-weight:900;color:#142f4b;margin:0 0 3px 0">OBSERVACIONES</div>
           <textarea data-f="${id}-obs" data-original="${esc(field(o, "OBSERVACIONES"))}"
-            style="display:block;width:100%;min-height:72px;box-sizing:border-box;padding:8px 10px;border:2px solid #334155;border-radius:6px;background:#fff;color:#0f172a;font-size:15px;font-weight:600;resize:vertical">${esc(field(p, "OBSERVACIONES"))}</textarea>
+            style="display:block;width:100%;height:calc(100% - 18px);min-height:72px;box-sizing:border-box;padding:6px 8px;border:1px solid #7a93ad;border-radius:4px;background:#fff;color:#132f4c;font-size:13px;font-weight:600;resize:none">${esc(field(p, "OBSERVACIONES"))}</textarea>
+        </div>
+
+        <!-- Fila inferior -->
+        <div style="grid-column:2;grid-row:2;border-right:1px solid #d5e0eb">
+          ${fieldCell(id, "retorno", "INICIO DE RETORNO", field(p, "FECHA INICIO DE RETORNO"), field(o, "FECHA INICIO DE RETORNO"), true)}
+        </div>
+        <div style="grid-column:3;grid-row:2;border-right:1px solid #d5e0eb">
+          ${fieldCell(id, "fin", "FIN DE RETORNO", field(p, "FECHA FIN DE RETORNO AQP/YURA/CRCT"), field(o, "FECHA FIN DE RETORNO AQP/YURA/CRCT"), true)}
+        </div>
+        <div style="grid-column:4;grid-row:2;border-right:1px solid #d5e0eb">
+          ${fieldCell(id, "ubi", "UBICACIÓN", field(p, "UBICACIÓN"), field(o, "UBICACIÓN"), true)}
         </div>
       </div>
-      <p data-save-hint="${id}" hidden style="color:#15803d;font-weight:800;margin:6px 0 0">✓ Guardado</p>
+      <p data-save-hint="${id}" hidden style="color:#15803d;font-weight:800;margin:0;padding:4px 10px;font-size:12px">✓ Guardado</p>
     </article>
   </div>`;
 }
@@ -213,17 +245,20 @@ function ocRowHtml(oc, unitIndex, ocIndex, totalOcs, unit) {
 function unitGroupHtml(unit, ordinal) {
   const ocs = unit.ocs || [];
   if (!ocs.length) {
-    return `<div style="margin:0 0 12px 0;padding:12px;border:2px solid #cbd5e1;border-radius:8px;background:#fff">
-      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap">
-        <strong style="font-size:18px">${ordinal}. ${esc(shortTracto(unit.tracto || unit.placa))}</strong>
-        <button type="button" data-review="${esc(unit.placa)}"
-          style="background:#16a34a;color:#fff;border:0;border-radius:6px;padding:8px 12px;font-weight:800;cursor:pointer">VALIDAR REVISADA</button>
+    const reviewed = state.reviewed.has(nplate(unit.placa));
+    return `<div style="margin:34px 0 12px;position:relative">
+      <div style="position:absolute;left:8px;top:-30px;height:30px;display:flex;align-items:stretch;border:2px solid #385978;border-bottom:0;border-radius:9px 9px 0 0;overflow:hidden;background:#f5f9fd;z-index:5">
+        <span style="display:flex;align-items:center;justify-content:center;min-width:32px;padding:0 8px;font-size:13px;font-weight:900;color:#173e70;background:#e8f0fa;border-right:1px solid #9fb4cb">${ordinal}</span>
+        <span style="display:flex;align-items:center;padding:0 12px;font-size:15px;font-weight:900">${esc(shortTracto(unit.tracto || unit.placa))}</span>
+        <button type="button" data-review="${esc(unit.placa)}" style="display:flex;align-items:center;justify-content:center;min-width:34px;border:0;border-left:1px solid #9fb4cb;background:${reviewed ? "#16a34a" : "#fff"};color:${reviewed ? "#fff" : "#16a34a"};font-size:16px;font-weight:900;cursor:pointer;padding:0 10px">✓</button>
       </div>
-      <p style="color:#64748b;margin:8px 0 0">SIN OC ABIERTA</p>
-      ${montadosHtml(unit)}
+      <div style="border:2px solid #cbd5e1;border-radius:0 10px 10px 10px;padding:14px;background:#fff">
+        <p style="color:#64748b;margin:0">SIN OC ABIERTA</p>
+        ${montadosHtml(unit)}
+      </div>
     </div>`;
   }
-  return `<div style="margin:0 0 16px 0" data-placa="${esc(nplate(unit.placa))}">
+  return `<div style="margin:0 0 4px 0" data-placa="${esc(nplate(unit.placa))}">
     ${ocs.map((oc, i) => ocRowHtml(oc, ordinal, i, ocs.length, unit)).join("")}
     ${montadosHtml(unit)}
   </div>`;
@@ -797,7 +832,7 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-15";
+  st.id = "cem-sg-v3-style-16";
   st.textContent = `
     body.tracking-active { overflow: hidden !important; }
     body.tracking-active .desktop-tracking.grid-03 {
