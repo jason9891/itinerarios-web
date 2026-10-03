@@ -126,15 +126,17 @@ function montadosHtml(unit) {
   return parts.length ? `<div class="sg-mont-row">${parts.join("")}</div>` : "";
 }
 
-function pasteField(id, suffix, label, value, original) {
-  return `
-    <label class="pg-field">
-      <span>${label}</span>
-      <div class="pg-input-paste">
-        <input id="f-${id}-${suffix}" data-f="${id}-${suffix}" data-original="${esc(original)}" value="${esc(value)}" autocomplete="off">
-        <button type="button" data-paste="${id}-${suffix}" title="Pegar" aria-label="Pegar">📋</button>
-      </div>
-    </label>`;
+function fieldInput(id, suffix, label, value, original) {
+  return `<div style="display:block;width:100%;margin:0 0 10px 0;box-sizing:border-box">
+  <div style="display:block;font-size:12px;font-weight:800;color:#0f172a;margin:0 0 4px 0">${label}</div>
+  <div style="display:flex;gap:6px;align-items:stretch;width:100%">
+    <input type="text" data-f="${id}-${suffix}" data-original="${esc(original)}" value="${esc(value)}"
+      autocomplete="off"
+      style="flex:1 1 auto;width:100%;min-width:0;min-height:40px;height:40px;box-sizing:border-box;padding:8px 10px;border:2px solid #334155;border-radius:6px;background:#fff;color:#0f172a;font-size:15px;font-weight:600">
+    <button type="button" data-paste="${id}-${suffix}" title="Pegar"
+      style="flex:0 0 40px;width:40px;height:40px;border:1px solid #cbd5e1;border-radius:6px;background:#f1f5f9;cursor:pointer">📋</button>
+  </div>
+</div>`;
 }
 
 function ocRowHtml(oc, unitIndex, ocIndex, totalOcs, unit) {
@@ -144,99 +146,89 @@ function ocRowHtml(oc, unitIndex, ocIndex, totalOcs, unit) {
   const parihuelas = isParihuelas(p);
   const draft = oc.borrador?.accion ? String(oc.borrador.accion) : "";
   const reviewed = state.reviewed.has(nplate(unit.placa));
-  const single = totalOcs === 1;
-  const shapeClass = single
-    ? "pg-single-oc"
-    : ocIndex === 0
-      ? "pg-first-oc"
-      : ocIndex === totalOcs - 1
-        ? "pg-last-oc"
-        : "pg-middle-oc";
+  const estado = field(p, "ESTADO") || p.ESTADO || "";
+  const bg = parihuelas ? "#fffbeb" : "#ffffff";
+  const border = parihuelas ? "#eab308" : "#64748b";
 
-  const tab =
+  const head =
     ocIndex === 0
-      ? `<div class="pg-oc-tab ${reviewed ? "done" : ""}">
-          <b class="pg-tab-number">${unitIndex}</b>
-          <button type="button" class="pg-unit-code" data-select="${esc(nplate(unit.placa))}" title="${esc(unit.placa)}">
-            ${esc(shortTracto(unit.tracto || unit.placa))}
+      ? `<div style="display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin:0 0 10px 0;padding:8px 10px;background:#eff6ff;border-radius:8px 8px 0 0;border:2px solid ${border};border-bottom:0">
+          <div style="display:flex;align-items:center;gap:10px">
+            <span style="display:inline-flex;align-items:center;justify-content:center;width:28px;height:28px;border-radius:999px;background:#dbeafe;color:#1e3a8a;font-weight:900;font-size:13px">${unitIndex}</span>
+            <strong style="font-size:20px;color:#0f172a">${esc(shortTracto(unit.tracto || unit.placa))}</strong>
+            <span style="font-size:12px;color:#64748b">${totalOcs} OC</span>
+            ${reviewed ? `<span style="color:#16a34a;font-weight:900">✓ REVISADA</span>` : ""}
+            ${parihuelas ? `<span style="background:#fde68a;border:1px solid #d97706;color:#78350f;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:900">PARIHUELAS</span>` : ""}
+          </div>
+          <button type="button" data-review="${esc(unit.placa)}"
+            style="background:${reviewed ? "#dcfce7" : "#16a34a"};color:${reviewed ? "#166534" : "#fff"};border:1px solid #15803d;border-radius:6px;padding:8px 12px;font-weight:800;font-size:12px;cursor:pointer">
+            ${reviewed ? "✓ REVISADA" : "VALIDAR REVISADA"}
           </button>
-          <button type="button" class="pg-review-action ${reviewed ? "done" : ""}" data-review="${esc(unit.placa)}" title="Validar revisada">✓</button>
         </div>`
       : "";
 
-  const estado = field(p, "ESTADO") || p.ESTADO || "";
-
   return `
-    <article class="pg-oc-row ${shapeClass} ${reviewed ? "pg-reviewed" : ""} ${parihuelas ? "pg-parihuelas" : ""}"
-      data-oc-id="${id}" data-grid-oc-id="${id}" data-placa="${esc(nplate(unit.placa))}">
-      ${tab}
-      <div class="pg-oc-top">
-        <div class="pg-oc-heading">
-          <span>OC</span>
-          <strong>${esc(oc.orden_carga || "—")}</strong>
-          <b class="pg-route-inline">${esc(p.Ruta || "—")}</b>
-        </div>
-        <small class="oc-created">FECHA CARGA REAL: ${esc(ocCreationDate(p))}</small>
-        ${parihuelas ? `<span class="pg-special-tag">PARIHUELAS</span>` : ""}
-        ${draft ? `<em>${esc(draft)}</em>` : ""}
-        <div class="pg-top-actions">
-          <button type="button" class="pg-save-action" data-save="${id}"><b>💾</b><span>GUARDAR</span></button>
-          <button type="button" class="pg-close-action" data-close="${id}"><b>🚩</b><span>FIN DE CICLO</span></button>
-        </div>
-      </div>
-      <div class="pg-state">
-        <label>
-          <span>ESTADO</span>
-          <div class="pg-state-select-wrap">
-            <span class="pg-state-selected">${esc(estado || "-")}</span>
-            <select data-f="${id}-estado" data-original="${esc(field(o, "ESTADO") || "")}">
-              ${stateOptions(estado)}
-            </select>
+  <div style="margin:0 0 12px 0">
+    ${head}
+    <article class="pg-oc-row" data-oc-id="${id}" data-placa="${esc(nplate(unit.placa))}"
+      style="display:block!important;width:100%!important;box-sizing:border-box;padding:12px;background:${bg};border:2px solid ${border};border-radius:${ocIndex === 0 ? "0 0 8px 8px" : "8px"};min-width:0!important;grid-template-columns:none!important;grid-template-rows:none!important">
+      <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:8px;flex-wrap:wrap;margin:0 0 12px 0">
+        <div>
+          <div style="font-size:16px;font-weight:900;color:#0f172a">OC ${esc(oc.orden_carga || "—")}
+            <span style="color:#1d4ed8;font-weight:700;margin-left:8px">${esc(p.Ruta || "—")}</span>
           </div>
-        </label>
+          <div style="font-size:12px;color:#64748b;margin-top:3px">FECHA CARGA REAL: ${esc(ocCreationDate(p))}${draft ? " · " + esc(draft) : ""}</div>
+        </div>
+        <div style="display:flex;gap:8px">
+          <button type="button" data-save="${id}"
+            style="background:#2563eb;color:#fff;border:1px solid #1d4ed8;border-radius:6px;padding:10px 14px;font-weight:800;font-size:13px;cursor:pointer">GUARDAR</button>
+          <button type="button" data-close="${id}"
+            style="background:#fff;color:#b91c1c;border:1px solid #fca5a5;border-radius:6px;padding:10px 14px;font-weight:800;font-size:13px;cursor:pointer">FIN DE CICLO</button>
+        </div>
       </div>
-      <div class="pg-salida">
-        ${pasteField(id, "salida", "SALIDA DE PLANTA", field(p, "FECHA DE SALIDA PLANTA YURA/CARACOTO"), field(o, "FECHA DE SALIDA PLANTA YURA/CARACOTO"))}
+
+      <div style="display:block;width:100%">
+        <div style="display:block;width:100%;margin:0 0 10px 0">
+          <div style="font-size:12px;font-weight:800;color:#0f172a;margin:0 0 4px 0">ESTADO</div>
+          <select data-f="${id}-estado" data-original="${esc(field(o, "ESTADO") || "")}"
+            style="display:block;width:100%;min-height:40px;height:40px;box-sizing:border-box;padding:8px 10px;border:2px solid #334155;border-radius:6px;background:#fff;color:#0f172a;font-size:15px;font-weight:600">
+            ${stateOptions(estado)}
+          </select>
+        </div>
+        ${fieldInput(id, "salida", "SALIDA DE PLANTA", field(p, "FECHA DE SALIDA PLANTA YURA/CARACOTO"), field(o, "FECHA DE SALIDA PLANTA YURA/CARACOTO"))}
+        ${fieldInput(id, "llegada", "LLEGADA A DESTINO", field(p, "FECHA LLEGADA A DESTINO"), field(o, "FECHA LLEGADA A DESTINO"))}
+        ${fieldInput(id, "carga", "CARGA DE RETORNO", field(p, "CARGA DE RETORNO"), field(o, "CARGA DE RETORNO"))}
+        ${fieldInput(id, "retorno", "INICIO DE RETORNO", field(p, "FECHA INICIO DE RETORNO"), field(o, "FECHA INICIO DE RETORNO"))}
+        ${fieldInput(id, "fin", "FIN DE RETORNO", field(p, "FECHA FIN DE RETORNO AQP/YURA/CRCT"), field(o, "FECHA FIN DE RETORNO AQP/YURA/CRCT"))}
+        ${fieldInput(id, "ubi", "UBICACIÓN", field(p, "UBICACIÓN"), field(o, "UBICACIÓN"))}
+        <div style="display:block;width:100%;margin:0 0 10px 0">
+          <div style="font-size:12px;font-weight:800;color:#0f172a;margin:0 0 4px 0">OBSERVACIONES</div>
+          <textarea data-f="${id}-obs" data-original="${esc(field(o, "OBSERVACIONES"))}"
+            style="display:block;width:100%;min-height:72px;box-sizing:border-box;padding:8px 10px;border:2px solid #334155;border-radius:6px;background:#fff;color:#0f172a;font-size:15px;font-weight:600;resize:vertical">${esc(field(p, "OBSERVACIONES"))}</textarea>
+        </div>
       </div>
-      <div class="pg-llegada">
-        ${pasteField(id, "llegada", "LLEGADA A DESTINO", field(p, "FECHA LLEGADA A DESTINO"), field(o, "FECHA LLEGADA A DESTINO"))}
-      </div>
-      <div class="pg-return-load">
-        <label class="pg-field">
-          <span>CARGA DE RETORNO</span>
-          <input class="pg-normal-input" data-f="${id}-carga" data-original="${esc(field(o, "CARGA DE RETORNO"))}" value="${esc(field(p, "CARGA DE RETORNO"))}" autocomplete="off">
-        </label>
-      </div>
-      <div class="pg-retorno">
-        ${pasteField(id, "retorno", "INICIO DE RETORNO", field(p, "FECHA INICIO DE RETORNO"), field(o, "FECHA INICIO DE RETORNO"))}
-      </div>
-      <div class="pg-fin">
-        ${pasteField(id, "fin", "FIN DE RETORNO", field(p, "FECHA FIN DE RETORNO AQP/YURA/CRCT"), field(o, "FECHA FIN DE RETORNO AQP/YURA/CRCT"))}
-      </div>
-      <div class="pg-location">
-        ${pasteField(id, "ubi", "UBICACIÓN", field(p, "UBICACIÓN"), field(o, "UBICACIÓN"))}
-      </div>
-      <label class="pg-observation">
-        <span>OBSERVACIONES</span>
-        <textarea data-f="${id}-obs" data-original="${esc(field(o, "OBSERVACIONES"))}">${esc(field(p, "OBSERVACIONES"))}</textarea>
-      </label>
-    </article>`;
+      <p class="pg-save-hint" data-save-hint="${id}" hidden style="color:#15803d;font-weight:800;margin:6px 0 0">✓ Guardado</p>
+    </article>
+  </div>`;
 }
 
 function unitGroupHtml(unit, ordinal) {
   const ocs = unit.ocs || [];
-  return `
-    <section class="pg-unit-group ${state.reviewed.has(nplate(unit.placa)) ? "pg-unit-reviewed" : ""}"
-      data-placa="${esc(nplate(unit.placa))}" data-grid-group="${ordinal}">
-      <div class="pg-unit-ocs">
-        ${
-          ocs.length
-            ? ocs.map((oc, i) => ocRowHtml(oc, ordinal, i, ocs.length, unit)).join("")
-            : `<div class="pg-empty">SIN OC ABIERTA · <button type="button" class="btn-validar" data-review="${esc(unit.placa)}">VALIDAR REVISADA</button></div>`
-        }
+  if (!ocs.length) {
+    return `<div style="margin:0 0 12px 0;padding:12px;border:2px solid #cbd5e1;border-radius:8px;background:#fff">
+      <div style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+        <strong style="font-size:18px">${ordinal}. ${esc(shortTracto(unit.tracto || unit.placa))}</strong>
+        <button type="button" data-review="${esc(unit.placa)}"
+          style="background:#16a34a;color:#fff;border:0;border-radius:6px;padding:8px 12px;font-weight:800;cursor:pointer">VALIDAR REVISADA</button>
       </div>
+      <p style="color:#64748b;margin:8px 0 0">SIN OC ABIERTA</p>
       ${montadosHtml(unit)}
-    </section>`;
+    </div>`;
+  }
+  return `<div style="margin:0 0 16px 0" data-placa="${esc(nplate(unit.placa))}">
+    ${ocs.map((oc, i) => ocRowHtml(oc, ordinal, i, ocs.length, unit)).join("")}
+    ${montadosHtml(unit)}
+  </div>`;
 }
 
 function filteredUnits() {
@@ -252,19 +244,10 @@ function paintUnitList(container) {
   if (!list) return;
   const units = filteredUnits();
   if (!units.length) {
-    list.innerHTML = `<p class="sg-empty-msg">No hay unidades en este filtro.</p>`;
+    list.innerHTML = `<p style="padding:16px;color:#64748b">No hay unidades en este filtro.</p>`;
     return;
   }
-  list.innerHTML = `
-    <div class="pg-flow-section pg-section-active">
-      <header class="pg-flow-active-title">
-        <b>ACTIVAS</b>
-        <span><strong>${units.filter((u) => !state.reviewed.has(nplate(u.placa))).length}</strong> PLACAS</span>
-      </header>
-      <div class="pg-section-body">
-        ${units.map((u, i) => unitGroupHtml(u, i + 1)).join("")}
-      </div>
-    </div>`;
+  list.innerHTML = units.map((u, i) => unitGroupHtml(u, i + 1)).join("");
 }
 
 async function focusUnit(container, key, runtime) {
@@ -603,7 +586,7 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-12";
+  st.id = "cem-sg-v3-style-13";
   st.textContent = `
     body.tracking-active {
       overflow: hidden !important;
@@ -786,6 +769,23 @@ function ensureStyles() {
 
 
     
+
+
+    body.tracking-active article.pg-oc-row {
+      display: block !important;
+      grid-template-columns: none !important;
+      grid-template-rows: none !important;
+      min-width: 0 !important;
+      height: auto !important;
+      max-height: none !important;
+      overflow: visible !important;
+    }
+    body.tracking-active #unit-list,
+    body.tracking-active .plate-grid-scroll {
+      overflow: auto !important;
+      flex: 1 1 auto !important;
+      min-height: 200px !important;
+    }
 
     @media (max-width: 1100px) {
       body.tracking-active .desktop-tracking.grid-03 > main { grid-template-columns: 1fr !important; overflow: auto !important; }
