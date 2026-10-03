@@ -1,16 +1,18 @@
 /**
  * Mapa de recorrido GPS para CEMENTO · Seguimiento
- * Carga Maps API vía map_config de cemento-clocator y dibuja polilínea.
+ * map_config se consulta UNA sola vez; luego solo se dibujan líneas desde caché.
  */
 import { API } from "./registry.js";
 
 let mapsReady = null;
 let mapInstance = null;
+let mapConfigLoaded = false;
 let overlays = [];
 let inspectionMarkers = [];
 let inspectionEnabled = false;
 let infoWindow = null;
 let currentPoints = [];
+let unitLabelEl = null;
 
 function normalizeGpsPoint(p, index) {
   const lat = Number(p?.lat ?? p?.latitude);
@@ -22,6 +24,14 @@ function normalizeGpsPoint(p, index) {
     fecha: String(p?.fecha || p?.fecha_hora || p?.time || ""),
     index,
   };
+}
+
+function shortTime(fecha) {
+  const s = String(fecha || "").trim();
+  // 03/10/2026 14:30:00 → 14:30
+  const m = s.match(/(\d{2}):(\d{2})(?::\d{2})?/);
+  if (m) return `${m[1]}:${m[2]}`;
+  return s || "—";
 }
 
 export function loadMaps(apiKey) {
@@ -39,9 +49,18 @@ export function loadMaps(apiKey) {
   return mapsReady;
 }
 
+/** Solo consulta map_config la primera vez. */
 export async function ensureTrackingMap(mapEl, getToken) {
   if (!mapEl) return null;
-  if (mapInstance) return mapInstance;
+  if (mapInstance && mapConfigLoaded) {
+    if (mapEl.dataset.mapsBound !== "1") {
+      mapEl.innerHTML = "";
+      mapEl.dataset.mapsBound = "1";
+      // reparent is not needed; map stays on original node
+      google.maps.event.trigger(mapInstance, "resize");
+    }
+    return mapInstance;
+  }
   const token = await getToken();
   const r = await fetch(API.clocator, {
     method: "POST",
@@ -64,6 +83,7 @@ export async function ensureTrackingMap(mapEl, getToken) {
     fullscreenControl: false,
     gestureHandling: "greedy",
   });
+  mapConfigLoaded = true;
   return mapInstance;
 }
 
@@ -75,42 +95,57 @@ function clearOverlays() {
   infoWindow?.close();
 }
 
-export function drawTrackingRoute(gps, mapEl, captionEl) {
+function setUnitBadge(mapEl, label) {
+  if (!mapEl) return;
+  let badge = mapEl.parentElement?.querySelector(".map-unit-badge");
+  if (!badge && mapEl.parentElement) {
+    badge = document.createElement("div");
+    badge.className = "map-unit-badge";
+    badge.style.cssText =
+      "position:absolute;left:8px;top:8px;z-index:5;background:#0f172a;color:#fff;padding:6px 12px;border-radius:8px;font-size:14px;font-weight:900;box-shadow:0 2px 8px rgba(0,0,0,.25);pointer-events:none";
+    mapEl.parentElement.style.position = "relative";
+    mapEl.parentElement.appendChild(badge);
+  }
+  if (badge) badge.textContent = label || "—";
+  unitLabelEl = badge;
+}
+
+/**
+ * Dibuja solo desde caché local. No consulta CLocator.
+ * @param {object} gps
+ * @param {HTMLElement} mapEl
+ * @param {HTMLElement|null} captionEl
+ * @param {string} [unitLabel]
+ */
+export function drawTrackingRoute(gps, mapEl, captionEl, unitLabel = "") {
   clearOverlays();
   inspectionEnabled = false;
+  if (unitLabel) setUnitBadge(mapEl, unitLabel);
+
   const raw = gps?.puntos_gps || gps?.puntos_lista || gps?.puntos || [];
-  const data = (Array.isArray(raw) ? raw : [])
-    .map(normalizeGpsPoint)
-    .filter(Boolean);
+  const data = (Array.isArray(raw) ? raw : []).map(normalizeGpsPoint).filter(Boolean);
   currentPoints = data;
 
   if (!data.length) {
-    if (captionEl) captionEl.textContent = "Sin recorrido temporal en este navegador.";
-    if (mapEl && !mapInstance) {
-      mapEl.innerHTML = `<div style="padding:12px;text-align:center;color:#94a3b8">Sin puntos GPS en caché.</div>`;
+    if (captionEl) {
+      captionEl.textContent = unitLabel
+        ? `${unitLabel} · Sin recorrido en caché`
+        : "Sin recorrido temporal en este navegador.";
     }
     return { points: 0 };
   }
 
   if (captionEl) {
-    captionEl.textContent = `${data.length} puntos · ${gps?.desde || ""} → ${gps?.hasta || ""}`;
+    captionEl.textContent = `${unitLabel ? unitLabel + " · " : ""}${data.length} puntos · ${gps?.desde || ""} → ${gps?.hasta || ""}`;
   }
 
   if (!mapInstance || !window.google?.maps) {
-    if (mapEl) {
-      mapEl.innerHTML = `<div style="padding:12px;font-size:13px;color:#94a3b8;text-align:left">
-        <b style="color:#e2e8f0">${data.length} puntos</b> listos · mapa aún no inicializado<br>
-        <span>Seleccione EN MAPA de nuevo si no aparece la polilínea.</span>
-      </div>`;
-    }
     return { points: data.length };
   }
 
-  // Asegurar que el div del mapa esté vacío para Google
   if (mapEl && mapEl.dataset.mapsBound !== "1") {
     mapEl.innerHTML = "";
     mapEl.dataset.mapsBound = "1";
-    // re-attach map to element if needed
     google.maps.event.trigger(mapInstance, "resize");
   }
 
@@ -139,27 +174,83 @@ export function drawTrackingRoute(gps, mapEl, captionEl) {
   overlays.push(line);
   path.forEach((p) => bounds.extend(p));
 
-  [
-    [path[0], "I", "#2563eb"],
-    [path[path.length - 1], "F", "#dc2626"],
-  ].forEach(([p, l, c]) => {
-    overlays.push(
-      new google.maps.Marker({
-        map: mapInstance,
-        position: p,
-        label: { text: l, color: "white" },
-        icon: {
-          path: google.maps.SymbolPath.CIRCLE,
-          scale: 11,
-          fillColor: c,
-          fillOpacity: 1,
-          strokeColor: "white",
-          strokeWeight: 3,
-        },
-        zIndex: 300,
-      }),
-    );
-  });
+  // I y F con hora visible
+  const ends = [
+    { pos: path[0], letter: "I", color: "#2563eb", time: shortTime(data[0]?.fecha), full: data[0]?.fecha || "" },
+    {
+      pos: path[path.length - 1],
+      letter: "F",
+      color: "#dc2626",
+      time: shortTime(data[data.length - 1]?.fecha),
+      full: data[data.length - 1]?.fecha || "",
+    },
+  ];
+  for (const e of ends) {
+    const m = new google.maps.Marker({
+      map: mapInstance,
+      position: e.pos,
+      title: `${e.letter} · ${e.full}`,
+      label: { text: e.letter, color: "white", fontWeight: "700" },
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 12,
+        fillColor: e.color,
+        fillOpacity: 1,
+        strokeColor: "white",
+        strokeWeight: 3,
+      },
+      zIndex: 300,
+    });
+    overlays.push(m);
+    // etiqueta de hora junto al marcador
+    const timeMarker = new google.maps.Marker({
+      map: mapInstance,
+      position: e.pos,
+      clickable: false,
+      label: {
+        text: e.time,
+        color: e.color,
+        fontSize: "12px",
+        fontWeight: "bold",
+      },
+      icon: {
+        path: google.maps.SymbolPath.CIRCLE,
+        scale: 0,
+        fillOpacity: 0,
+        strokeOpacity: 0,
+      },
+      zIndex: 301,
+    });
+    // offset visual: use custom overlay via InfoWindow-like static
+    overlays.push(timeMarker);
+  }
+
+  // Labels de hora como InfoWindow no-auto-close would clutter; use Marker with label below via pixelOffset simulation:
+  // Better: custom OverlayView-lite with div
+  for (const e of ends) {
+    const div = document.createElement("div");
+    div.textContent = e.time;
+    div.style.cssText = `background:${e.color};color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:800;white-space:nowrap;transform:translate(-50%,8px);box-shadow:0 1px 3px rgba(0,0,0,.3)`;
+    const overlay = new google.maps.OverlayView();
+    overlay.onAdd = function () {
+      const panes = this.getPanes();
+      panes.floatPane.appendChild(div);
+    };
+    overlay.draw = function () {
+      const proj = this.getProjection();
+      if (!proj) return;
+      const pt = proj.fromLatLngToDivPixel(new google.maps.LatLng(e.pos.lat, e.pos.lng));
+      if (!pt) return;
+      div.style.left = pt.x + "px";
+      div.style.top = pt.y + "px";
+      div.style.position = "absolute";
+    };
+    overlay.onRemove = function () {
+      div.remove();
+    };
+    overlay.setMap(mapInstance);
+    overlays.push({ setMap: (m) => overlay.setMap(m) });
+  }
 
   if (path.length >= 2) {
     const last3 = path.slice(-3);
@@ -205,8 +296,7 @@ export function toggleInspection(button) {
   }
   if (!inspectionEnabled || !mapInstance || !currentPoints.length) return;
 
-  const step =
-    currentPoints.length > 2500 ? 3 : currentPoints.length > 1200 ? 2 : 1;
+  const step = currentPoints.length > 2500 ? 3 : currentPoints.length > 1200 ? 2 : 1;
   for (let i = 0; i < currentPoints.length; i += step) {
     const p = currentPoints[i];
     const m = new google.maps.Marker({
@@ -237,6 +327,8 @@ export function toggleInspection(button) {
 export function resetMapState() {
   clearOverlays();
   mapInstance = null;
+  mapConfigLoaded = false;
   inspectionEnabled = false;
   currentPoints = [];
+  unitLabelEl = null;
 }

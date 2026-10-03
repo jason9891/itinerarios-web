@@ -130,10 +130,10 @@ function fieldCell(id, suffix, label, value, original, withPaste) {
     ? `<button type="button" data-paste="${id}-${suffix}" title="Pegar" style="flex:0 0 28px;width:28px;height:28px;border:1px solid #cbd5e1;border-radius:4px;background:#f1f5f9;cursor:pointer;font-size:12px;padding:0">📋</button>`
     : "";
   return `<div style="min-width:0;padding:6px 8px;box-sizing:border-box">
-  <div style="font-size:10px;font-weight:900;color:#142f4b;margin:0 0 3px 0;letter-spacing:.02em">${label}</div>
+  <div style="font-size:11px;font-weight:900;color:#142f4b;margin:0 0 3px 0;letter-spacing:.02em">${label}</div>
   <div style="display:flex;gap:4px;align-items:center">
     <input type="text" data-f="${id}-${suffix}" data-original="${esc(original)}" value="${esc(value)}" autocomplete="off"
-      style="flex:1 1 auto;min-width:0;width:100%;height:30px;box-sizing:border-box;padding:4px 8px;border:1px solid #7a93ad;border-radius:4px;background:#fff;color:#132f4c;font-size:13px;font-weight:600">
+      style="flex:1 1 auto;min-width:0;width:100%;height:34px;box-sizing:border-box;padding:5px 8px;border:1px solid #7a93ad;border-radius:4px;background:#fff;color:#132f4c;font-size:14px;font-weight:700">
     ${pasteBtn}
   </div>
 </div>`;
@@ -165,7 +165,8 @@ function ocRowHtml(oc, unitIndex, ocIndex, totalOcs, unit) {
     ? `<div style="position:relative;height:0;z-index:5">
         <div style="position:absolute;left:8px;top:-30px;height:30px;display:flex;align-items:stretch;border:2px solid #385978;border-bottom:0;border-radius:9px 9px 0 0;overflow:hidden;background:#f5f9fd">
           <span style="display:flex;align-items:center;justify-content:center;min-width:32px;padding:0 8px;font-size:13px;font-weight:900;color:#173e70;background:#e8f0fa;border-right:1px solid #9fb4cb">${unitIndex}</span>
-          <span style="display:flex;align-items:center;padding:0 12px;font-size:15px;font-weight:900;color:#0f172a;white-space:nowrap">${esc(shortTracto(unit.tracto || unit.placa))}</span>
+          <button type="button" data-map="${esc(nplate(unit.placa))}" title="Ver en mapa"
+            style="display:flex;align-items:center;padding:0 12px;font-size:15px;font-weight:900;color:#0f172a;white-space:nowrap;border:0;background:transparent;cursor:pointer">${esc(shortTracto(unit.tracto || unit.placa))}</button>
           <button type="button" data-review="${esc(unit.placa)}" title="Marcar revisada"
             style="display:flex;align-items:center;justify-content:center;min-width:34px;border:0;border-left:1px solid #9fb4cb;background:${reviewed ? "#16a34a" : "#fff"};color:${reviewed ? "#fff" : "#16a34a"};font-size:16px;font-weight:900;cursor:pointer;padding:0 10px">✓</button>
         </div>
@@ -285,28 +286,77 @@ function paintUnitList(container) {
 
 function renderEventsHtml(gps) {
   if (!gps?.ok && !gps?.analisis) {
-    return `<p style="color:#64748b;font-size:12px;padding:8px">Sin recorrido en caché. Use precarga o ACTUALIZAR RECORRIDO.</p>`;
+    return `<p style="color:#64748b;font-size:13px;padding:8px">Sin recorrido en caché. Use precarga o ACTUALIZAR RECORRIDO.</p>`;
   }
   const a = gps.analisis || {};
   const visitas = a.visitas_confirmadas || [];
+
+  // Nombres únicos de geocercas para copiar
+  const names = [];
+  const seen = new Set();
+  for (const v of visitas) {
+    const n = String(v.geocerca || "").trim();
+    if (n && !seen.has(n)) {
+      seen.add(n);
+      names.push(n);
+    }
+  }
+  // también desde otras claves comunes del análisis
+  for (const key of ["geocercas_tocadas", "geocercas", "nombres_geocerca"]) {
+    const arr = a[key];
+    if (Array.isArray(arr)) {
+      for (const x of arr) {
+        const n = String(typeof x === "string" ? x : x?.nombre || x?.geocerca || "").trim();
+        if (n && !seen.has(n)) {
+          seen.add(n);
+          names.push(n);
+        }
+      }
+    }
+  }
+
+  const chips = names.length
+    ? `<div style="margin:0 0 10px 0">
+        <div style="font-size:11px;font-weight:800;color:#334155;margin-bottom:6px">GEOCERCAS · CLIC PARA COPIAR</div>
+        <div style="display:flex;flex-wrap:wrap;gap:6px">
+          ${names
+            .map(
+              (n) =>
+                `<button type="button" data-copy="${esc(n)}" style="border:1px solid #94a3b8;background:#f8fafc;color:#0f172a;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer">${esc(n)}</button>`,
+            )
+            .join("")}
+        </div>
+      </div>`
+    : "";
+
   const events = visitas
     .map((v) => {
-      let html = `<article style="margin:6px 0;padding:6px 8px;border-left:3px solid #2563eb;background:#f8fafc;font-size:11px"><b>INGRESO ${esc(v.geocerca)}</b><br><button type="button" data-copy="${esc(v.ingreso)}" style="margin-top:4px">${esc(v.ingreso)}</button><em> ${esc(v.permanencia_minutos)} min</em></article>`;
+      let html = `<article style="margin:8px 0;padding:8px 10px;border-radius:8px;background:#dcfce7;border:1px solid #86efac">
+        <div style="font-size:13px;font-weight:900;color:#14532d;margin-bottom:4px">INGRESO ${esc(v.geocerca)}</div>
+        <button type="button" data-copy="${esc(v.ingreso)}" style="font-size:14px;font-weight:800;padding:4px 8px;border-radius:6px;border:1px solid #86efac;background:#fff;color:#14532d;cursor:pointer">${esc(v.ingreso)}</button>
+        <div style="font-size:12px;color:#166534;margin-top:4px">${esc(v.permanencia_minutos)} min · ${esc(v.puntos_dentro)} puntos</div>
+        <button type="button" data-copy="${esc(v.geocerca)}" style="margin-top:4px;font-size:11px;border:0;background:transparent;color:#15803d;cursor:pointer;text-decoration:underline">copiar nombre</button>
+      </article>`;
       if (v.salida) {
-        html += `<article style="margin:6px 0;padding:6px 8px;border-left:3px solid #64748b;background:#f8fafc;font-size:11px"><b>SALIDA ${esc(v.geocerca)}</b><br><button type="button" data-copy="${esc(v.salida)}">${esc(v.salida)}</button></article>`;
+        html += `<article style="margin:8px 0;padding:8px 10px;border-radius:8px;background:#fee2e2;border:1px solid #fca5a5">
+          <div style="font-size:13px;font-weight:900;color:#7f1d1d;margin-bottom:4px">SALIDA ${esc(v.geocerca)}</div>
+          <button type="button" data-copy="${esc(v.salida)}" style="font-size:14px;font-weight:800;padding:4px 8px;border-radius:6px;border:1px solid #fca5a5;background:#fff;color:#7f1d1d;cursor:pointer">${esc(v.salida)}</button>
+        </article>`;
       }
       return html;
     })
     .join("");
+
   return `
-    <div style="display:grid;grid-template-columns:auto 1fr;gap:2px 8px;font-size:11px;margin-bottom:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:8px">
-      <small>ESTADO GPS</small><b>${esc(a.estado_final || "—")}</b>
-      <small>ÚLTIMA GEOCERCA</small><b>${esc(a.ultima_geocerca || "—")}</b>
-      <small>UBICACIÓN EN RED</small><b>${esc(a.ubicacion_red || a.en_red || "—")}</b>
-      <small>FUENTE</small><b>${esc(gps.fuente || "PRECARGA")}</b>
+    <div style="display:grid;grid-template-columns:auto 1fr;gap:4px 10px;font-size:13px;margin-bottom:10px;background:#f8fafc;border:1px solid #e2e8f0;border-radius:8px;padding:10px">
+      <small style="font-weight:800;color:#64748b">ESTADO GPS</small><b style="font-size:14px">${esc(a.estado_final || "—")}</b>
+      <small style="font-weight:800;color:#64748b">ÚLTIMA GEOCERCA</small><b style="font-size:14px">${esc(a.ultima_geocerca || "—")}</b>
+      <small style="font-weight:800;color:#64748b">UBICACIÓN EN RED</small><b style="font-size:14px">${esc(a.ubicacion_red || a.en_red || "—")}</b>
+      <small style="font-weight:800;color:#64748b">FUENTE</small><b style="font-size:14px">${esc(gps.fuente || "PRECARGA")}</b>
     </div>
-    <div style="font-size:11px;font-weight:800;margin:8px 0 4px">SECUENCIA GPS · CLIC EN LA HORA PARA COPIAR</div>
-    ${events || "<p style='color:#64748b;font-size:12px'>Sin visitas confirmadas.</p>"}`;
+    ${chips}
+    <div style="font-size:12px;font-weight:900;margin:8px 0 4px;color:#334155">SECUENCIA GPS · CLIC EN LA HORA PARA COPIAR</div>
+    ${events || "<p style='color:#64748b;font-size:13px'>Sin visitas confirmadas.</p>"}`;
 }
 
 function loadTrackingSplit() {
@@ -533,7 +583,6 @@ async function bootstrap(container, runtime) {
           <small>Una placa por fila · inputs visibles</small>
         </div>
         <span id="preload-global">${isRunning() ? `PRECARGA ${c.done}/${meta?.total || state.units.length}` : `GPS ${c.ready}/${state.units.length}`}</span>
-        <span id="plate-position">PLACA 0/${state.units.length}</span>
         <span id="review-count">REVISADAS ${nRev}/${state.units.length}</span>
         <button type="button" id="save-partial">GUARDAR PARCIAL</button>
         <button type="button" id="save-all">TERMINAR SEGUIMIENTO</button>
@@ -579,12 +628,10 @@ async function bootstrap(container, runtime) {
 
 async function focusUnit(container, key, runtime) {
   state.selectedKey = key;
-  const idx = state.units.findIndex((u) => nplate(u.placa) === key);
-  const pos = container.querySelector("#plate-position");
-  if (pos) pos.textContent = `PLACA ${idx >= 0 ? idx + 1 : 0}/${state.units.length}`;
 
   const unit = state.units.find((u) => nplate(u.placa) === key);
   if (!unit) return;
+  const unitLabel = shortTracto(unit.tracto || unit.placa);
 
   const meta = loadMeta();
   const gps = await readGPS(gpsKey(meta?.id, unit.tracto, unit.placa));
@@ -592,11 +639,11 @@ async function focusUnit(container, key, runtime) {
   const statusEl = container.querySelector("#route-update-status");
   const cap = container.querySelector("#map-caption");
   if (gps?.ok) {
-    if (statusEl) statusEl.textContent = `ANÁLISIS LISTO · ${gps.puntos ?? st?.puntos ?? 0} PUNTOS`;
-    if (cap) cap.textContent = `${gps.desde || meta?.desde || ""} — ${gps.hasta || meta?.hasta || ""}`;
+    if (statusEl) statusEl.textContent = `${unitLabel} · ANÁLISIS LISTO · ${gps.puntos ?? st?.puntos ?? 0} PUNTOS`;
+    if (cap) cap.textContent = `${unitLabel} · ${gps.desde || meta?.desde || ""} — ${gps.hasta || meta?.hasta || ""}`;
   } else {
-    if (statusEl) statusEl.textContent = st ? `PRECARGA: ${st.estado}` : "SIN RECORRIDO PRECARGADO";
-    if (cap) cap.textContent = "Sin caché GPS para esta unidad";
+    if (statusEl) statusEl.textContent = st ? `${unitLabel} · PRECARGA: ${st.estado}` : `${unitLabel} · SIN RECORRIDO PRECARGADO`;
+    if (cap) cap.textContent = `${unitLabel} · Sin caché GPS`;
   }
 
   const events = container.querySelector("#gps-events");
@@ -606,6 +653,11 @@ async function focusUnit(container, key, runtime) {
       b.onclick = async () => {
         try {
           await navigator.clipboard.writeText(b.dataset.copy || "");
+          const old = b.textContent;
+          b.textContent = "✓";
+          setTimeout(() => {
+            b.textContent = old;
+          }, 800);
         } catch (_) {}
       };
     });
@@ -613,13 +665,16 @@ async function focusUnit(container, key, runtime) {
 
   const mapEl = container.querySelector("#tracking-map");
   try {
+    // Token sin forzar refresh (ahorra cuota Firebase). map_config solo 1 vez.
+    await ensureTrackingMap(mapEl, () => runtime.auth.currentUser.getIdToken(false));
     if (gps?.ok || (gps?.puntos_gps || gps?.puntos_lista || []).length) {
-      await ensureTrackingMap(mapEl, () => runtime.auth.currentUser.getIdToken(true));
       const mapNode = container.querySelector("#tracking-map");
-      drawTrackingRoute(gps, mapNode, cap);
+      drawTrackingRoute(gps, mapNode, cap, unitLabel);
     } else if (mapEl) {
-      mapEl.dataset.mapsBound = "";
-      mapEl.innerHTML = `<div style="padding:12px;text-align:center">Sin puntos GPS en caché para ${esc(shortTracto(unit.tracto))}.</div>`;
+      drawTrackingRoute({ ok: false }, mapEl, cap, unitLabel);
+      if (mapEl.dataset.mapsBound !== "1") {
+        mapEl.innerHTML = `<div style="padding:12px;text-align:center">Sin puntos GPS en caché para ${esc(unitLabel)}.</div>`;
+      }
     }
   } catch (e) {
     if (mapEl) {
@@ -700,7 +755,7 @@ function wire(container, runtime) {
     if (!desde) return alert("Indique DESDE válido.");
     $("route-update-status").textContent = "CONSULTANDO CLocator…";
     try {
-      const token = await runtime.auth.currentUser.getIdToken(true);
+      const token = await runtime.auth.currentUser.getIdToken(false);
       const data = await queryClocator({
         endpoint: API.clocator,
         token,
@@ -730,6 +785,11 @@ function wire(container, runtime) {
   const onCenter = async (ev) => {
     const btn = ev.target.closest("button");
     if (!btn) return;
+
+    if (btn.dataset.map) {
+      await focusUnit(container, btn.dataset.map, runtime);
+      return;
+    }
 
     if (btn.dataset.paste) {
       try {
@@ -832,7 +892,7 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-16";
+  st.id = "cem-sg-v3-style-17";
   st.textContent = `
     body.tracking-active { overflow: hidden !important; }
     body.tracking-active .desktop-tracking.grid-03 {
@@ -846,7 +906,8 @@ function ensureStyles() {
     }
     body.tracking-active .desktop-tracking.grid-03 > main {
       display: grid !important;
-      grid-template-columns: minmax(160px, 28fr) 7px minmax(280px, 57fr) 7px minmax(120px, 15fr) !important;
+      /* grid-template-columns lo controla JS (splitters); valor inicial abajo */
+      grid-template-columns: minmax(160px, 28fr) 7px minmax(280px, 57fr) 7px minmax(120px, 15fr);
       gap: 0 !important; padding: 8px !important; flex: 1 1 auto !important; min-height: 0 !important; overflow: hidden !important;
     }
     body.tracking-active .track-left,
