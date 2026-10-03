@@ -8,7 +8,7 @@ import { API } from "./registry.js";
 async function token() {
   const u = auth.currentUser;
   if (!u) throw new Error("No hay sesión activa");
-  return u.getIdToken();
+  return u.getIdToken(true);
 }
 
 export async function apiGet(path) {
@@ -43,6 +43,16 @@ export async function apiPost(url, body, { signal, binary = false } = {}) {
   const d = await r.json().catch(() => ({}));
   if (!r.ok) throw new Error(d.error || d.message || `HTTP ${r.status}`);
   return d;
+}
+
+/** SAP Edge Function */
+export function sapApi(body, opts) {
+  return apiPost(API.sap, body, opts);
+}
+
+/** Seguimiento diario Edge Function */
+export function trackApi(body, opts) {
+  return apiPost(API.track, body, opts);
 }
 
 export function esc(v) {
