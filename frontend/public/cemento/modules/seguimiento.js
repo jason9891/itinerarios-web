@@ -1,10 +1,7 @@
 /**
- * CEMENTO · Seguimiento definitivo (vista celdas)
- *
- * UNA ventana → todas las placas como celdas → OCs debajo → editar/guardar
- * Layout: mapa ~40% | grilla ~50% | GPS ~10% (redimensionable)
- * Secciones: ACTIVAS · REVISADAS · CERRADAS
- * Solo Cemento — no toca Cerro Verde.
+ * CEMENTO · Seguimiento
+ * Pestañas R-XXX (navegación) + panel detalle a ancho completo (inputs usables)
+ * Layout: mapa | detalle | GPS  — split 40/50/10 redimensionable
  */
 import { esc, trackApi, montadosApi } from "../api-client.js";
 import { API } from "../registry.js";
@@ -23,7 +20,6 @@ import { queryClocator } from "../../shared/clocator-client.js";
 
 let cleanup = [];
 let state = null;
-/** Default: mapa 40 · grilla 50 · GPS 10 */
 let trackingSplit = { mapa: 40, grilla: 50, gps: 10 };
 
 const STATES = [
@@ -105,22 +101,27 @@ function collectOcData(row) {
   return out;
 }
 
-function montadosHtml(unit) {
-  if (!state) return "";
+function montadosFor(unit) {
+  if (!state) return [];
   const keys = [unit.tracto, unit.placa, nplate(unit.placa)].map((x) => String(x || "").trim());
   const seen = new Set();
-  const parts = [];
+  const out = [];
   for (const k of keys) {
     for (const r of state.montadosMap.get(k) || []) {
       const id = `${r.tipo}|${r.relacionado}|${r.fecha}`;
       if (seen.has(id)) continue;
       seen.add(id);
-      const arrow = r.tipo === "MONTADO EN" ? "←" : "→";
-      parts.push(
-        `<span class="sg-mont ${r.tipo === "MONTADO EN" ? "in" : "out"}"><b>${esc(r.tipo)}</b> ${arrow} ${esc(shortTracto(r.relacionado))}</span>`,
-      );
+      out.push(r);
     }
   }
+  return out;
+}
+
+function montadosHtml(unit) {
+  const parts = montadosFor(unit).map((r) => {
+    const arrow = r.tipo === "MONTADO EN" ? "←" : "→";
+    return `<span class="sg-mont ${r.tipo === "MONTADO EN" ? "in" : "out"}"><b>${esc(r.tipo)}</b> ${arrow} ${esc(shortTracto(r.relacionado))}</span>`;
+  });
   return parts.length ? `<div class="sg-mont-row">${parts.join("")}</div>` : "";
 }
 
@@ -130,27 +131,22 @@ function ocRowHtml(oc) {
   const id = oc.id;
   const parihuelas = isParihuelas(p);
   const draft = oc.borrador?.accion ? String(oc.borrador.accion) : "";
-  const closedPrep = draft === "CERRAR";
 
-  // Campo con etiqueta siempre visible + pegar/copiar
-  const cell = (suffix, label, key, opts = {}) => {
-    const cls = ["pg-field", opts.wide ? "wide" : "", opts.short ? "short" : ""]
-      .filter(Boolean)
-      .join(" ");
+  const fieldBlock = (suffix, label, key) => {
     const val = field(p, key);
     return `
-    <div class="${cls}">
-      <label class="pg-label" for="f-${id}-${suffix}">${label}</label>
-      <div class="pg-control">
-        <input id="f-${id}-${suffix}" data-f="${id}-${suffix}" data-original="${esc(field(o, key))}" value="${esc(val)}" autocomplete="off">
-        <button type="button" class="pg-icon-btn" data-paste="${id}-${suffix}" title="Pegar">📋</button>
-        <button type="button" class="pg-icon-btn" data-copy-val="${esc(val)}" title="Copiar">⧉</button>
-      </div>
-    </div>`;
+      <div class="pg-field">
+        <label class="pg-label" for="f-${id}-${suffix}">${label}</label>
+        <div class="pg-control">
+          <input id="f-${id}-${suffix}" data-f="${id}-${suffix}" data-original="${esc(field(o, key))}" value="${esc(val)}" autocomplete="off">
+          <button type="button" class="pg-icon-btn" data-paste="${id}-${suffix}" title="Pegar">📋</button>
+          <button type="button" class="pg-icon-btn" data-copy-val title="Copiar">⧉</button>
+        </div>
+      </div>`;
   };
 
   return `
-    <article class="pg-oc-row ${parihuelas ? "pg-parihuelas" : ""} ${closedPrep ? "pg-closed" : ""}" data-oc-id="${id}">
+    <article class="pg-oc-row ${parihuelas ? "pg-parihuelas" : ""}" data-oc-id="${id}">
       <div class="pg-oc-top">
         <div class="pg-oc-title">
           <b>OC ${esc(oc.orden_carga)}</b>
@@ -164,9 +160,8 @@ function ocRowHtml(oc) {
           <button type="button" data-close="${id}" class="pg-close-action">FIN DE CICLO</button>
         </div>
       </div>
-
       <div class="pg-oc-form">
-        <div class="pg-field short">
+        <div class="pg-field">
           <label class="pg-label" for="f-${id}-estado">ESTADO</label>
           <div class="pg-control">
             <select id="f-${id}-estado" data-f="${id}-estado" data-original="${esc(field(o, "ESTADO") || p.ESTADO || "")}">
@@ -174,56 +169,23 @@ function ocRowHtml(oc) {
             </select>
           </div>
         </div>
-        ${cell("salida", "SALIDA DE PLANTA", "FECHA DE SALIDA PLANTA YURA/CARACOTO")}
-        ${cell("llegada", "LLEGADA A DESTINO", "FECHA LLEGADA A DESTINO")}
-        ${cell("carga", "CARGA DE RETORNO", "CARGA DE RETORNO")}
-        ${cell("retorno", "INICIO DE RETORNO", "FECHA INICIO DE RETORNO")}
-        ${cell("fin", "FIN DE RETORNO", "FECHA FIN DE RETORNO AQP/YURA/CRCT")}
-        ${cell("ubi", "UBICACIÓN", "UBICACIÓN")}
-        ${cell("obs", "OBSERVACIONES", "OBSERVACIONES", { wide: true })}
+        ${fieldBlock("salida", "SALIDA DE PLANTA", "FECHA DE SALIDA PLANTA YURA/CARACOTO")}
+        ${fieldBlock("llegada", "LLEGADA A DESTINO", "FECHA LLEGADA A DESTINO")}
+        ${fieldBlock("carga", "CARGA DE RETORNO", "CARGA DE RETORNO")}
+        ${fieldBlock("retorno", "INICIO DE RETORNO", "FECHA INICIO DE RETORNO")}
+        ${fieldBlock("fin", "FIN DE RETORNO", "FECHA FIN DE RETORNO AQP/YURA/CRCT")}
+        ${fieldBlock("ubi", "UBICACIÓN", "UBICACIÓN")}
+        <div class="pg-field pg-field-wide">
+          <label class="pg-label" for="f-${id}-obs">OBSERVACIONES</label>
+          <div class="pg-control">
+            <input id="f-${id}-obs" data-f="${id}-obs" data-original="${esc(field(o, "OBSERVACIONES"))}" value="${esc(field(p, "OBSERVACIONES"))}" autocomplete="off">
+            <button type="button" class="pg-icon-btn" data-paste="${id}-obs" title="Pegar">📋</button>
+            <button type="button" class="pg-icon-btn" data-copy-val title="Copiar">⧉</button>
+          </div>
+        </div>
       </div>
       <p class="pg-save-hint" data-save-hint="${id}" hidden>✓ Guardado</p>
     </article>`;
-}
-
-function unitBlockHtml(unit, ordinal, expanded) {
-  const k = nplate(unit.placa);
-  const reviewed = state.reviewed.has(k);
-  const active = state.selectedKey === k ? "active" : "";
-  const ocs = unit.ocs || [];
-  const hasParihuelas = ocs.some((x) => isParihuelas(x.payload || {}));
-  const open = !!expanded;
-
-  return `
-    <section class="pg-unit-group ${active} ${reviewed ? "reviewed" : ""} ${open ? "is-open" : "is-closed"}"
-      data-placa="${esc(k)}" data-open="${open ? "1" : "0"}">
-      <header class="pg-unit-bar">
-        <button type="button" class="pg-select-unit" data-toggle-unit="${esc(k)}" title="Desplegar / contraer">
-          <span class="pg-chevron">${open ? "▼" : "▶"}</span>
-          <span class="pg-num">${ordinal}</span>
-          <b>${esc(shortTracto(unit.tracto || unit.placa))}</b>
-          <small class="pg-oc-count">${ocs.length} OC</small>
-          ${reviewed ? `<span class="pg-check">✓</span>` : ""}
-          ${hasParihuelas ? `<span class="pg-special-tag">PARIHUELAS</span>` : ""}
-        </button>
-        <div class="pg-unit-actions">
-          <button type="button" class="secondary" data-map="${esc(k)}">EN MAPA</button>
-          <button type="button" class="secondary ${reviewed ? "done" : ""}" data-review="${esc(unit.placa)}">
-            ${reviewed ? "REVISADA ✓" : "MARCAR REVISADA"}
-          </button>
-        </div>
-      </header>
-      ${montadosHtml(unit)}
-      <div class="pg-unit-ocs ${open ? "" : "hidden"}">
-        ${
-          ocs.length
-            ? ocs.map(ocRowHtml).join("")
-            : unit.error
-              ? `<p class="muted">No se pudo cargar detalle: ${esc(unit.error)}</p>`
-              : `<p class="muted">SIN OC ABIERTA</p>`
-        }
-      </div>
-    </section>`;
 }
 
 function renderEventsHtml(gps) {
@@ -252,8 +214,6 @@ function renderEventsHtml(gps) {
     ${events || "<p class='muted'>Sin visitas confirmadas.</p>"}`;
 }
 
-/* ─── split redimensionable 40/50/10 ─── */
-
 function loadTrackingSplit() {
   try {
     const raw = localStorage.getItem("cemento_tracking_split_v3");
@@ -276,7 +236,7 @@ function applyTrackingSplit(container) {
   if (!main) return;
   main.style.gridTemplateColumns =
     `minmax(220px, ${trackingSplit.mapa}fr) 7px ` +
-    `minmax(320px, ${trackingSplit.grilla}fr) 7px ` +
+    `minmax(360px, ${trackingSplit.grilla}fr) 7px ` +
     `minmax(140px, ${trackingSplit.gps}fr)`;
 }
 
@@ -285,19 +245,15 @@ function initTrackingSplit(container) {
   const center = main?.querySelector(".track-center");
   const right = main?.querySelector(".track-right");
   if (!main || !center || !right) return;
-
   main.querySelectorAll(".tracking-splitter").forEach((x) => x.remove());
-
   const split1 = document.createElement("div");
   split1.className = "tracking-splitter";
-  split1.title = "Redimensionar mapa / lista";
+  split1.title = "Redimensionar mapa / detalle";
   const split2 = document.createElement("div");
   split2.className = "tracking-splitter";
-  split2.title = "Redimensionar lista / GPS";
-
+  split2.title = "Redimensionar detalle / GPS";
   main.insertBefore(split1, center);
   main.insertBefore(split2, right);
-
   loadTrackingSplit();
   applyTrackingSplit(container);
 
@@ -310,21 +266,21 @@ function initTrackingSplit(container) {
       if (usable <= 0) return;
       if (which === 1) {
         let mapa = ((ev.clientX - rect.left) / usable) * 100;
-        mapa = Math.max(20, Math.min(50, mapa));
+        mapa = Math.max(18, Math.min(48, mapa));
         let gps = trackingSplit.gps;
         let grilla = 100 - mapa - gps;
-        if (grilla < 30) {
-          grilla = 30;
+        if (grilla < 32) {
+          grilla = 32;
           mapa = 100 - grilla - gps;
         }
         trackingSplit = { mapa, grilla, gps };
       } else {
         let gps = ((rect.right - ev.clientX) / usable) * 100;
-        gps = Math.max(8, Math.min(25, gps));
+        gps = Math.max(8, Math.min(22, gps));
         let mapa = trackingSplit.mapa;
         let grilla = 100 - mapa - gps;
-        if (grilla < 30) {
-          grilla = 30;
+        if (grilla < 32) {
+          grilla = 32;
           gps = 100 - mapa - grilla;
         }
         trackingSplit = { mapa, grilla, gps };
@@ -340,12 +296,9 @@ function initTrackingSplit(container) {
     document.addEventListener("pointermove", move);
     document.addEventListener("pointerup", stop);
   };
-
   split1.onpointerdown = (e) => startDrag(1, e);
   split2.onpointerdown = (e) => startDrag(2, e);
 }
-
-/* ─── mount / unmount ─── */
 
 export async function mount(container, runtime) {
   cleanup = [];
@@ -354,7 +307,7 @@ export async function mount(container, runtime) {
     reviewed: new Set(),
     montadosMap: new Map(),
     selectedKey: "",
-    selectedGps: null,
+    filter: "activas", // activas | revisadas | todas
   };
   bindRuntime(runtime);
   document.body.classList.add("tracking-active");
@@ -430,9 +383,6 @@ async function loadData(onProgress) {
     const ra = reviewed.has(nplate(a.placa)) ? 1 : 0;
     const rb = reviewed.has(nplate(b.placa)) ? 1 : 0;
     if (ra !== rb) return ra - rb;
-    const ga = getStatus(a.placa)?.estado === "COMPLETO" ? 0 : 1;
-    const gb = getStatus(b.placa)?.estado === "COMPLETO" ? 0 : 1;
-    if (ga !== gb) return ga - gb;
     return String(a.tracto || "").localeCompare(String(b.tracto || ""));
   });
 
@@ -458,6 +408,14 @@ async function loadData(onProgress) {
   return { units, reviewed, montadosMap, total_ocs: lista.total_ocs || 0 };
 }
 
+function filteredUnits() {
+  if (state.filter === "revisadas") {
+    return state.units.filter((u) => state.reviewed.has(nplate(u.placa)));
+  }
+  if (state.filter === "todas") return state.units;
+  return state.units.filter((u) => !state.reviewed.has(nplate(u.placa)));
+}
+
 async function bootstrap(container, runtime) {
   ensureStyles();
   const data = await loadData((pct) => {
@@ -470,22 +428,25 @@ async function bootstrap(container, runtime) {
 
   const meta = loadMeta();
   const c = counts(meta, state.units.length);
-  const first = state.units.find((u) => !state.reviewed.has(nplate(u.placa))) || state.units[0];
+  const first =
+    state.units.find((u) => !state.reviewed.has(nplate(u.placa))) || state.units[0];
   state.selectedKey = first ? nplate(first.placa) : "";
 
   const desdeDef = meta?.desde || localStorage.getItem("cemento_rango_desde") || "";
   const hastaDef = meta?.hasta || formatPE(new Date());
+  const nAct = state.units.filter((u) => !state.reviewed.has(nplate(u.placa))).length;
+  const nRev = state.reviewed.size;
 
   container.innerHTML = `
     <section class="desktop-tracking v2 v3 grid-test grid-03">
       <header>
         <div>
           <b>CEMENTO · SEGUIMIENTO</b>
-          <small>Celdas por placa · OCs debajo · desplegar / contraer</small>
+          <small>Pestañas R-XXX · detalle a ancho completo · inputs usables</small>
         </div>
         <span id="preload-global">${isRunning() ? `PRECARGA ${c.done}/${meta?.total || state.units.length}` : `GPS ${c.ready}/${state.units.length}`}</span>
         <span id="plate-position">PLACA 0/${state.units.length}</span>
-        <span id="review-count">REVISADAS ${state.reviewed.size}/${state.units.length}</span>
+        <span id="review-count">REVISADAS ${nRev}/${state.units.length}</span>
         <button type="button" id="save-partial">GUARDAR PARCIAL</button>
         <button type="button" id="save-all">TERMINAR SEGUIMIENTO</button>
         <button type="button" id="exit-track">PAUSAR Y VOLVER</button>
@@ -499,7 +460,7 @@ async function bootstrap(container, runtime) {
             <small id="route-update-status">USA LA PRECARGA DISPONIBLE</small>
           </div>
           <div class="tracking-map-wrap">
-            <div id="tracking-map">Seleccione EN MAPA o despliegue una unidad con precarga.</div>
+            <div id="tracking-map">Seleccione una unidad con precarga.</div>
             <button type="button" id="view-hours">VER HORAS</button>
           </div>
           <footer>
@@ -508,24 +469,17 @@ async function bootstrap(container, runtime) {
           </footer>
         </section>
         <section class="track-center">
-          <div class="pg-center-toolbar">
-            <span class="pill">ACTIVAS · <b id="n-activas">0</b> PLACAS</span>
-            <span class="pill muted">REVISADAS · <b id="n-revisadas">0</b> PLACAS</span>
+          <div class="pg-filter-bar">
+            <button type="button" class="pg-filter active" data-filter="activas">ACTIVAS · ${nAct}</button>
+            <button type="button" class="pg-filter" data-filter="revisadas">REVISADAS · ${nRev}</button>
+            <button type="button" class="pg-filter" data-filter="todas">TODAS · ${state.units.length}</button>
+            <button type="button" class="pg-filter" id="toggle-closed">CERRADAS · VER</button>
           </div>
-          <div id="plate-grid" class="plate-grid-scroll">
-            <h3 class="sg-sec-label">ACTIVAS</h3>
-            <div id="pg-active-body" class="pg-cells"></div>
-            <div id="pg-reviewed-wrap">
-              <button type="button" class="sg-section-toggle" id="toggle-reviewed">REVISADAS · VER ▼</button>
-              <div id="pg-reviewed-body" class="pg-cells hidden"></div>
-            </div>
-            <div id="pg-closed-wrap">
-              <button type="button" class="sg-section-toggle" id="toggle-closed">CERRADAS · VER ▼</button>
-              <div id="pg-closed-body" class="hidden">
-                <p class="sg-empty-msg">Histórico cerrado por tracto (no reabre OCs).</p>
-                <div id="pg-closed-content"></div>
-              </div>
-            </div>
+          <div id="plate-strip" class="plate-strip" role="tablist" aria-label="Unidades"></div>
+          <div id="unit-detail" class="unit-detail"></div>
+          <div id="pg-closed-body" class="hidden">
+            <p class="sg-empty-msg">Histórico cerrado (no reabre OCs).</p>
+            <div id="pg-closed-content"></div>
           </div>
         </section>
         <section class="track-right">
@@ -535,57 +489,88 @@ async function bootstrap(container, runtime) {
       </main>
     </section>`;
 
-  paintUnits(container);
+  paintStrip(container);
+  paintDetail(container);
   initTrackingSplit(container);
   wire(container, runtime);
-
-  if (state.selectedKey) {
-    await focusUnit(container, state.selectedKey);
-  }
+  if (state.selectedKey) await focusUnit(container, state.selectedKey);
 }
 
-function paintUnits(container) {
-  const actBody = container.querySelector("#pg-active-body");
-  const revBody = container.querySelector("#pg-reviewed-body");
-  const toggleRev = container.querySelector("#toggle-reviewed");
-  if (!actBody || !revBody) return;
-
-  const activas = state.units.filter((u) => !state.reviewed.has(nplate(u.placa)));
-  const revisadas = state.units.filter((u) => state.reviewed.has(nplate(u.placa)));
-  const expandedKey = state.selectedKey || (activas[0] ? nplate(activas[0].placa) : "");
-
-  let n = 0;
-  actBody.innerHTML = !state.units.length
-    ? `<p class="sg-empty-msg">No hay unidades con OC abierta.</p>`
-    : activas.length
-      ? activas.map((u) => unitBlockHtml(u, ++n, nplate(u.placa) === expandedKey)).join("")
-      : `<p class="sg-empty-msg">No hay placas activas. Revise REVISADAS abajo.</p>`;
-
-  revBody.innerHTML = revisadas.length
-    ? revisadas.map((u) => unitBlockHtml(u, ++n, false)).join("")
-    : `<p class="sg-empty-msg">Sin placas revisadas.</p>`;
-
-  if (!activas.length && revisadas.length) {
-    revBody.classList.remove("hidden");
-    if (toggleRev) toggleRev.textContent = `REVISADAS (${revisadas.length} placas) · OCULTAR ▲`;
-  } else if (toggleRev) {
-    const hidden = revBody.classList.contains("hidden");
-    toggleRev.textContent = `REVISADAS (${revisadas.length} placas) · ${hidden ? "VER ▼" : "OCULTAR ▲"}`;
+function paintStrip(container) {
+  const strip = container.querySelector("#plate-strip");
+  if (!strip) return;
+  const list = filteredUnits();
+  if (!list.length) {
+    strip.innerHTML = `<span class="sg-empty-msg">No hay unidades en este filtro.</span>`;
+    return;
   }
+  strip.innerHTML = list
+    .map((u, i) => {
+      const k = nplate(u.placa);
+      const sel = k === state.selectedKey ? "selected" : "";
+      const rev = state.reviewed.has(k) ? "is-reviewed" : "";
+      const par = (u.ocs || []).some((x) => isParihuelas(x.payload || {}))
+        ? "has-parihuelas"
+        : "";
+      return `<button type="button" class="plate-tab ${sel} ${rev} ${par}" data-select="${esc(k)}" title="${esc(u.placa)} · ${(u.ocs || []).length} OC">
+        <span class="tab-num">${i + 1}</span>
+        <span class="tab-name">${esc(shortTracto(u.tracto || u.placa))}</span>
+        <span class="tab-meta">${(u.ocs || []).length} OC${state.reviewed.has(k) ? " · ✓" : ""}</span>
+      </button>`;
+    })
+    .join("");
 
-  const na = container.querySelector("#n-activas");
-  const nr = container.querySelector("#n-revisadas");
-  if (na) na.textContent = String(activas.length);
-  if (nr) nr.textContent = String(revisadas.length);
-  const rc = container.querySelector("#review-count");
-  if (rc) rc.textContent = `REVISADAS ${state.reviewed.size}/${state.units.length}`;
+  // scroll selected into view
+  const selEl = strip.querySelector(".plate-tab.selected");
+  if (selEl) selEl.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
+}
+
+function paintDetail(container) {
+  const box = container.querySelector("#unit-detail");
+  if (!box) return;
+  const unit = state.units.find((u) => nplate(u.placa) === state.selectedKey);
+  if (!unit) {
+    box.innerHTML = `<p class="sg-empty-msg">Seleccione una unidad en la franja superior.</p>`;
+    return;
+  }
+  const k = nplate(unit.placa);
+  const reviewed = state.reviewed.has(k);
+  const ocs = unit.ocs || [];
+  const last = unit.ultima_oc_cerrada;
+
+  box.innerHTML = `
+    <div class="unit-detail-head">
+      <div>
+        <h2>${esc(shortTracto(unit.tracto || unit.placa))}
+          <button type="button" class="pg-icon-btn" data-copy-plate="${esc(shortTracto(unit.tracto || unit.placa))}" title="Copiar tracto">⧉</button>
+        </h2>
+        <p class="unit-sub">${esc(unit.placa)} · ${esc(unit.conductor || "—")} · ${ocs.length} OC abierta(s)</p>
+        ${last ? `<p class="unit-last">ÚLTIMA OC CERRADA: <b>${esc(last.orden_carga || last.OC || "—")}</b></p>` : ""}
+        ${montadosHtml(unit)}
+      </div>
+      <div class="unit-detail-actions">
+        <button type="button" class="secondary" data-map="${esc(k)}">EN MAPA</button>
+        <button type="button" class="secondary ${reviewed ? "done" : ""}" data-review="${esc(unit.placa)}">
+          ${reviewed ? "REVISADA ✓" : "MARCAR REVISADA"}
+        </button>
+      </div>
+    </div>
+    <div class="unit-oc-list">
+      ${
+        ocs.length
+          ? ocs.map(ocRowHtml).join("")
+          : unit.error
+            ? `<p class="sg-empty-msg">No se pudo cargar detalle: ${esc(unit.error)}</p>`
+            : `<p class="sg-empty-msg">SIN OC ABIERTA</p>`
+      }
+    </div>`;
 }
 
 async function focusUnit(container, key) {
   state.selectedKey = key;
-  container.querySelectorAll(".pg-unit-group").forEach((el) => {
-    el.classList.toggle("active", el.dataset.placa === key);
-  });
+  paintStrip(container);
+  paintDetail(container);
+
   const idx = state.units.findIndex((u) => nplate(u.placa) === key);
   const pos = container.querySelector("#plate-position");
   if (pos) pos.textContent = `PLACA ${idx >= 0 ? idx + 1 : 0}/${state.units.length}`;
@@ -594,8 +579,7 @@ async function focusUnit(container, key) {
   if (!unit) return;
 
   const meta = loadMeta();
-  let gps = await readGPS(gpsKey(meta?.id, unit.tracto, unit.placa));
-  state.selectedGps = gps;
+  const gps = await readGPS(gpsKey(meta?.id, unit.tracto, unit.placa));
   const st = getStatus(unit.placa);
   const statusEl = container.querySelector("#route-update-status");
   const cap = container.querySelector("#map-caption");
@@ -623,24 +607,11 @@ async function focusUnit(container, key) {
   if (mapEl) {
     const pts = gps?.puntos_gps || gps?.puntos_lista || [];
     if (Array.isArray(pts) && pts.length) {
-      mapEl.innerHTML = `<div style="padding:12px;font-size:12px;text-align:left">
-        <b>${esc(shortTracto(unit.tracto))}</b> · ${pts.length} puntos en caché<br>
-        <span class="muted">Polilínea de mapa: siguiente iteración con Maps API.</span>
-      </div>`;
+      mapEl.innerHTML = `<div style="padding:12px;font-size:13px;text-align:left"><b>${esc(shortTracto(unit.tracto))}</b> · ${pts.length} puntos en caché<br><span class="muted">Mapa polilínea: pendiente Maps API</span></div>`;
     } else {
-      mapEl.innerHTML = `<div style="padding:12px;text-align:center">Sin puntos GPS en caché para ${esc(shortTracto(unit.tracto))}.<br>Precarga o ACTUALIZAR RECORRIDO.</div>`;
+      mapEl.innerHTML = `<div style="padding:12px;text-align:center">Sin puntos GPS en caché para ${esc(shortTracto(unit.tracto))}.</div>`;
     }
   }
-}
-
-function setUnitOpen(card, open) {
-  if (!card) return;
-  card.dataset.open = open ? "1" : "0";
-  card.classList.toggle("is-open", open);
-  card.classList.toggle("is-closed", !open);
-  card.querySelector(".pg-unit-ocs")?.classList.toggle("hidden", !open);
-  const chev = card.querySelector(".pg-chevron");
-  if (chev) chev.textContent = open ? "▼" : "▶";
 }
 
 function flashBtn(btn, mark) {
@@ -697,21 +668,28 @@ function wire(container, runtime) {
     }
   };
 
-  $("toggle-reviewed").onclick = () => {
-    const body = $("pg-reviewed-body");
-    const open = !body.classList.contains("hidden");
-    body.classList.toggle("hidden", open);
-    const n = state.units.filter((u) => state.reviewed.has(nplate(u.placa))).length;
-    $("toggle-reviewed").textContent = open
-      ? `REVISADAS (${n} placas) · VER ▼`
-      : `REVISADAS (${n} placas) · OCULTAR ▲`;
-  };
+  container.querySelectorAll(".pg-filter[data-filter]").forEach((btn) => {
+    btn.onclick = () => {
+      state.filter = btn.dataset.filter;
+      container.querySelectorAll(".pg-filter[data-filter]").forEach((b) => {
+        b.classList.toggle("active", b.dataset.filter === state.filter);
+      });
+      // prefer selected still in filter; else first of filter
+      const list = filteredUnits();
+      if (!list.some((u) => nplate(u.placa) === state.selectedKey)) {
+        state.selectedKey = list[0] ? nplate(list[0].placa) : "";
+      }
+      paintStrip(container);
+      paintDetail(container);
+      if (state.selectedKey) focusUnit(container, state.selectedKey);
+    };
+  });
 
   $("toggle-closed").onclick = async () => {
     const body = $("pg-closed-body");
     const opening = body.classList.contains("hidden");
     body.classList.toggle("hidden", !opening);
-    $("toggle-closed").textContent = opening ? "CERRADAS · OCULTAR ▲" : "CERRADAS · VER ▼";
+    $("toggle-closed").textContent = opening ? "CERRADAS · OCULTAR" : "CERRADAS · VER";
     if (!opening) return;
     const box = $("pg-closed-content");
     if (!box || box.dataset.loaded === "1") return;
@@ -768,34 +746,33 @@ function wire(container, runtime) {
     $("gps-events")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
   };
 
-  const grid = $("plate-grid");
-  const onGridClick = async (ev) => {
+  // Center column delegation
+  const center = container.querySelector(".track-center");
+  const onCenter = async (ev) => {
     const btn = ev.target.closest("button");
     if (!btn) return;
 
-    if (btn.dataset.toggleUnit) {
-      const key = btn.dataset.toggleUnit;
-      const card = grid.querySelector(`.pg-unit-group[data-placa="${CSS.escape(key)}"]`);
-      const open = card?.dataset.open === "1";
-      setUnitOpen(card, !open);
-      state.selectedKey = key;
-      await focusUnit(container, key);
+    if (btn.dataset.select) {
+      await focusUnit(container, btn.dataset.select);
       return;
     }
-
     if (btn.dataset.map) {
-      const key = btn.dataset.map;
-      const card = grid.querySelector(`.pg-unit-group[data-placa="${CSS.escape(key)}"]`);
-      setUnitOpen(card, true);
-      state.selectedKey = key;
-      await focusUnit(container, key);
+      await focusUnit(container, btn.dataset.map);
       return;
     }
-
+    if (btn.dataset.copyPlate) {
+      try {
+        await navigator.clipboard.writeText(btn.dataset.copyPlate);
+        flashBtn(btn, "✓");
+      } catch {
+        flashBtn(btn, "!");
+      }
+      return;
+    }
     if (btn.dataset.paste) {
       try {
         const text = await navigator.clipboard.readText();
-        const input = grid.querySelector(`[data-f="${btn.dataset.paste}"]`);
+        const input = center.querySelector(`[data-f="${btn.dataset.paste}"]`);
         if (input) {
           input.value = text;
           input.dispatchEvent(new Event("input"));
@@ -806,11 +783,10 @@ function wire(container, runtime) {
       }
       return;
     }
-
     if (btn.hasAttribute("data-copy-val")) {
       const wrap = btn.closest(".pg-control");
       const live = wrap?.querySelector("input, select, textarea");
-      const text = live ? String(live.value || "") : String(btn.getAttribute("data-copy-val") || "");
+      const text = live ? String(live.value || "") : "";
       try {
         await navigator.clipboard.writeText(text);
         flashBtn(btn, "✓");
@@ -819,19 +795,24 @@ function wire(container, runtime) {
       }
       return;
     }
-
     if (btn.dataset.review) {
       try {
         await trackApi({ action: "marcar_revisada", placa: btn.dataset.review });
         state.reviewed.add(nplate(btn.dataset.review));
-        paintUnits(container);
-        await focusUnit(container, nplate(btn.dataset.review));
+        const nAct = state.units.filter((u) => !state.reviewed.has(nplate(u.placa))).length;
+        const nRev = state.reviewed.size;
+        container.querySelector('#review-count').textContent = `REVISADAS ${nRev}/${state.units.length}`;
+        container.querySelectorAll(".pg-filter[data-filter]").forEach((b) => {
+          if (b.dataset.filter === "activas") b.textContent = `ACTIVAS · ${nAct}`;
+          if (b.dataset.filter === "revisadas") b.textContent = `REVISADAS · ${nRev}`;
+        });
+        paintStrip(container);
+        paintDetail(container);
       } catch (e) {
         alert(e.message);
       }
       return;
     }
-
     if (btn.dataset.save) {
       const row = btn.closest(".pg-oc-row");
       const datos = collectOcData(row);
@@ -841,7 +822,6 @@ function wire(container, runtime) {
       try {
         await trackApi({ action: "guardar", id: +btn.dataset.save, datos });
         btn.textContent = "GUARDADO";
-        row.classList.add("pg-saved");
         row.querySelectorAll("[data-original]").forEach((el) => {
           el.dataset.original = el.value;
         });
@@ -851,11 +831,11 @@ function wire(container, runtime) {
           setTimeout(() => {
             hint.hidden = true;
             btn.textContent = "GUARDAR";
-          }, 1600);
+          }, 1500);
         } else {
           setTimeout(() => {
             btn.textContent = "GUARDAR";
-          }, 1600);
+          }, 1500);
         }
       } catch (e) {
         alert(e.message);
@@ -865,7 +845,6 @@ function wire(container, runtime) {
       }
       return;
     }
-
     if (btn.dataset.close) {
       if (!confirm("¿Preparar FIN DE CICLO?")) return;
       const row = btn.closest(".pg-oc-row");
@@ -882,8 +861,8 @@ function wire(container, runtime) {
       }
     }
   };
-  grid.addEventListener("click", onGridClick);
-  cleanup.push(() => grid.removeEventListener("click", onGridClick));
+  center.addEventListener("click", onCenter);
+  cleanup.push(() => center.removeEventListener("click", onCenter));
 
   const off = runtime.bus.on("cemento:precarga-unit", () => {
     const m = loadMeta();
@@ -901,7 +880,7 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-07";
+  st.id = "cem-sg-v3-style-08";
   st.textContent = `
     body.tracking-active .desktop-tracking.grid-03 {
       display: flex !important; flex-direction: column !important;
@@ -913,7 +892,7 @@ function ensureStyles() {
     }
     body.tracking-active .desktop-tracking.grid-03 > main {
       display: grid !important;
-      grid-template-columns: minmax(220px, 40fr) 7px minmax(320px, 50fr) 7px minmax(140px, 10fr) !important;
+      grid-template-columns: minmax(220px, 40fr) 7px minmax(360px, 50fr) 7px minmax(140px, 10fr) !important;
       gap: 0 !important; padding: 8px !important; flex: 1 1 auto !important; min-height: 0 !important; overflow: hidden !important;
     }
     body.tracking-active .track-left,
@@ -922,7 +901,7 @@ function ensureStyles() {
       display: flex !important; flex-direction: column !important; min-width: 0 !important; min-height: 0 !important;
       overflow: hidden !important; background: #fff !important; border: 1px solid #dbe3ef !important; border-radius: 8px !important;
     }
-    body.tracking-active .track-center { overflow: auto !important; padding: 8px !important; }
+    body.tracking-active .track-center { overflow: hidden !important; }
     body.tracking-active .tracking-splitter {
       position: relative !important; cursor: col-resize !important; background: #dbe4ef !important;
       border-left: 1px solid #aabbd0 !important; border-right: 1px solid #aabbd0 !important;
@@ -935,119 +914,129 @@ function ensureStyles() {
       transform: translate(-50%,-50%) !important; color: #315d8f !important; font-size: 18px !important; font-weight: 900 !important;
     }
     body.tracking-resizing { cursor: col-resize !important; user-select: none !important; }
-    body.tracking-active .pg-cells {
-      display: grid !important; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)) !important;
-      gap: 10px !important; align-items: start !important;
+
+    /* Filtros */
+    body.tracking-active .pg-filter-bar {
+      display: flex !important; flex-wrap: wrap !important; gap: 6px !important; padding: 8px !important;
+      border-bottom: 1px solid #e2e8f0 !important; flex: 0 0 auto !important; background: #f8fafc !important;
     }
-    body.tracking-active .sg-sec-label {
-      margin: 4px 0 8px !important; font-size: 12px !important; letter-spacing: .04em !important;
-      color: #1e3a8a !important; font-weight: 900 !important;
+    body.tracking-active .pg-filter {
+      border: 1px solid #cbd5e1 !important; background: #fff !important; color: #334155 !important;
+      border-radius: 999px !important; padding: 6px 12px !important; font-size: 12px !important; font-weight: 800 !important; cursor: pointer !important;
     }
-    body.tracking-active .pg-center-toolbar { display: flex !important; gap: 10px !important; padding: 4px 2px 8px !important; position: sticky !important; top: 0 !important; background: #fff !important; z-index: 2 !important; }
-    body.tracking-active .pg-center-toolbar .pill {
-      background: #e8f0fe !important; color: #1e3a8a !important; border-radius: 999px !important;
-      padding: 4px 10px !important; font-size: 11px !important; font-weight: 800 !important;
+    body.tracking-active .pg-filter.active {
+      background: #dbeafe !important; border-color: #2563eb !important; color: #1e3a8a !important;
     }
-    body.tracking-active .pg-unit-group {
-      border: 1px solid #cbd5e1 !important; border-radius: 10px !important; background: #fff !important;
-      overflow: hidden !important; color: #1f2937 !important;
+
+    /* Pestañas R-XXX horizontales */
+    body.tracking-active .plate-strip {
+      display: flex !important; gap: 6px !important; overflow-x: auto !important; overflow-y: hidden !important;
+      padding: 8px !important; border-bottom: 1px solid #e2e8f0 !important; flex: 0 0 auto !important;
+      background: #fff !important; scrollbar-width: thin !important;
     }
-    body.tracking-active .pg-unit-group.active { border-color: #2563eb !important; box-shadow: 0 0 0 2px #93c5fd !important; }
-    body.tracking-active .pg-unit-bar {
-      display: flex !important; justify-content: space-between !important; gap: 8px !important; align-items: center !important;
-      padding: 8px 10px !important; background: #f8fafc !important; border-bottom: 1px solid #e2e8f0 !important;
+    body.tracking-active .plate-tab {
+      flex: 0 0 auto !important; min-width: 88px !important; max-width: 120px !important;
+      border: 1px solid #cbd5e1 !important; background: #f8fafc !important; color: #0f172a !important;
+      border-radius: 8px !important; padding: 8px 10px !important; cursor: pointer !important; text-align: left !important;
     }
-    body.tracking-active .pg-select-unit {
-      border: 0 !important; background: transparent !important; color: #0f172a !important; cursor: pointer !important;
-      display: flex !important; gap: 8px !important; align-items: center !important; font: inherit !important; flex-wrap: wrap !important;
+    body.tracking-active .plate-tab:hover { border-color: #93c5fd !important; background: #eff6ff !important; }
+    body.tracking-active .plate-tab.selected {
+      border-color: #2563eb !important; background: #dbeafe !important; box-shadow: 0 0 0 2px #93c5fd !important;
     }
-    body.tracking-active .pg-chevron { width: 14px !important; color: #64748b !important; font-size: 10px !important; }
-    body.tracking-active .pg-num {
-      width: 22px !important; height: 22px !important; border-radius: 999px !important; background: #dbeafe !important;
-      color: #1e3a8a !important; display: inline-flex !important; align-items: center !important; justify-content: center !important;
-      font-size: 11px !important; font-weight: 800 !important;
+    body.tracking-active .plate-tab.is-reviewed { opacity: 0.85 !important; }
+    body.tracking-active .plate-tab.has-parihuelas { border-bottom: 3px solid #eab308 !important; }
+    body.tracking-active .tab-num { display: block !important; font-size: 10px !important; color: #64748b !important; font-weight: 800 !important; }
+    body.tracking-active .tab-name { display: block !important; font-size: 16px !important; font-weight: 900 !important; line-height: 1.15 !important; }
+    body.tracking-active .tab-meta { display: block !important; font-size: 11px !important; color: #64748b !important; margin-top: 2px !important; }
+
+    /* Detalle unidad a ANCHO COMPLETO */
+    body.tracking-active .unit-detail {
+      flex: 1 1 auto !important; overflow: auto !important; padding: 12px !important; min-height: 0 !important;
     }
-    body.tracking-active .pg-oc-count { color: #64748b !important; font-weight: 700 !important; font-size: 11px !important; }
-    body.tracking-active .pg-check { color: #16a34a !important; font-weight: 900 !important; }
-    body.tracking-active .pg-unit-ocs { padding: 8px !important; display: flex !important; flex-direction: column !important; gap: 8px !important; }
-    body.tracking-active .pg-unit-group.is-closed .pg-unit-ocs,
-    body.tracking-active .hidden { display: none !important; }
+    body.tracking-active .unit-detail-head {
+      display: flex !important; justify-content: space-between !important; gap: 12px !important; flex-wrap: wrap !important;
+      margin-bottom: 12px !important; padding-bottom: 10px !important; border-bottom: 1px solid #e2e8f0 !important;
+    }
+    body.tracking-active .unit-detail-head h2 {
+      margin: 0 !important; font-size: 28px !important; line-height: 1.1 !important; display: flex !important; align-items: center !important; gap: 8px !important;
+    }
+    body.tracking-active .unit-sub { margin: 4px 0 !important; color: #64748b !important; font-size: 13px !important; }
+    body.tracking-active .unit-last { margin: 4px 0 !important; font-size: 12px !important; color: #475569 !important; }
+    body.tracking-active .unit-detail-actions { display: flex !important; gap: 8px !important; flex-wrap: wrap !important; align-items: flex-start !important; }
+    body.tracking-active .unit-oc-list { display: flex !important; flex-direction: column !important; gap: 12px !important; }
+
+    body.tracking-active .sg-mont-row { display: flex !important; flex-wrap: wrap !important; gap: 6px !important; margin-top: 6px !important; }
+    body.tracking-active .sg-mont {
+      font-size: 12px !important; padding: 3px 10px !important; border-radius: 999px !important;
+      border: 1px solid #cbd5e1 !important; background: #f8fafc !important;
+    }
+    body.tracking-active .sg-mont.out { border-color: #65a30d !important; color: #3f6212 !important; }
+    body.tracking-active .sg-mont.in { border-color: #0284c7 !important; color: #075985 !important; }
+
+    /* OC form — etiqueta visible + inputs anchos */
     body.tracking-active .pg-oc-row {
-      border: 1px solid #cbd5e1 !important; border-radius: 10px !important; padding: 12px 12px 10px !important; background: #fff !important;
+      border: 1px solid #cbd5e1 !important; border-radius: 10px !important; padding: 14px !important; background: #fff !important;
     }
     body.tracking-active .pg-oc-row.pg-parihuelas {
-      background: #fff8db !important; border-color: #eab308 !important; color: #1a1200 !important;
+      background: #fffbeb !important; border-color: #eab308 !important;
     }
-    body.tracking-active .pg-oc-row.pg-parihuelas .pg-label { color: #713f12 !important; }
-    body.tracking-active .pg-oc-top { display: flex !important; justify-content: space-between !important; gap: 10px !important; flex-wrap: wrap !important; margin-bottom: 10px !important; align-items: flex-start !important; }
-    body.tracking-active .pg-oc-title b { font-size: 15px !important; color: #0f172a !important; margin-right: 8px !important; }
-    body.tracking-active .pg-oc-title strong { color: #1d4ed8 !important; margin-right: 8px !important; font-size: 13px !important; }
-    body.tracking-active .pg-oc-title small { display: block !important; margin-top: 3px !important; color: #64748b !important; font-size: 12px !important; }
-    body.tracking-active .pg-draft { color: #b45309 !important; font-weight: 800 !important; font-size: 12px !important; }
+    body.tracking-active .pg-oc-top {
+      display: flex !important; justify-content: space-between !important; gap: 10px !important; flex-wrap: wrap !important;
+      margin-bottom: 12px !important; align-items: flex-start !important;
+    }
+    body.tracking-active .pg-oc-title b { font-size: 16px !important; margin-right: 8px !important; }
+    body.tracking-active .pg-oc-title strong { color: #1d4ed8 !important; font-size: 14px !important; margin-right: 8px !important; }
+    body.tracking-active .pg-oc-title small { display: block !important; margin-top: 4px !important; color: #64748b !important; font-size: 12px !important; }
+    body.tracking-active .pg-draft { color: #b45309 !important; font-weight: 800 !important; }
     body.tracking-active .pg-special-tag {
       display: inline-block !important; margin-left: 6px !important; padding: 2px 8px !important; border-radius: 999px !important;
       font-size: 11px !important; font-weight: 900 !important; background: #fde68a !important; border: 1px solid #d97706 !important; color: #78350f !important;
     }
-    /* Formulario usable: etiqueta SIEMPRE visible + control legible */
     body.tracking-active .pg-oc-form {
       display: grid !important;
       grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-      gap: 10px 12px !important;
+      gap: 12px 16px !important;
     }
-    body.tracking-active .pg-field {
-      display: flex !important; flex-direction: column !important; gap: 4px !important; min-width: 0 !important;
-    }
-    body.tracking-active .pg-field.wide { grid-column: 1 / -1 !important; }
-    body.tracking-active .pg-field.short { max-width: 100% !important; }
+    body.tracking-active .pg-field { display: flex !important; flex-direction: column !important; gap: 5px !important; min-width: 0 !important; }
+    body.tracking-active .pg-field-wide { grid-column: 1 / -1 !important; }
     body.tracking-active .pg-label {
       display: block !important; font-size: 12px !important; font-weight: 800 !important;
-      color: #334155 !important; letter-spacing: 0.02em !important; line-height: 1.2 !important;
-      white-space: normal !important; overflow: visible !important; text-overflow: unset !important;
+      color: #1e293b !important; letter-spacing: 0.02em !important; line-height: 1.25 !important;
+      white-space: normal !important;
     }
     body.tracking-active .pg-control {
-      display: flex !important; gap: 4px !important; align-items: stretch !important; min-height: 36px !important;
+      display: flex !important; gap: 6px !important; align-items: stretch !important; min-height: 40px !important;
     }
     body.tracking-active .pg-control input,
-    body.tracking-active .pg-control select,
-    body.tracking-active .pg-control textarea {
+    body.tracking-active .pg-control select {
       flex: 1 1 auto !important; min-width: 0 !important; box-sizing: border-box !important;
-      min-height: 36px !important; padding: 8px 10px !important; border-radius: 6px !important;
-      border: 1px solid #94a3b8 !important; background: #fff !important; color: #0f172a !important;
-      font-size: 14px !important; font-weight: 600 !important; line-height: 1.2 !important;
+      min-height: 40px !important; padding: 9px 12px !important; border-radius: 6px !important;
+      border: 1px solid #64748b !important; background: #fff !important; color: #0f172a !important;
+      font-size: 15px !important; font-weight: 600 !important;
     }
     body.tracking-active .pg-control input:focus,
-    body.tracking-active .pg-control select:focus,
-    body.tracking-active .pg-control textarea:focus {
+    body.tracking-active .pg-control select:focus {
       outline: 2px solid #93c5fd !important; border-color: #2563eb !important;
     }
     body.tracking-active .pg-icon-btn {
-      flex: 0 0 36px !important; width: 36px !important; border: 1px solid #cbd5e1 !important;
-      background: #f8fafc !important; border-radius: 6px !important; cursor: pointer !important;
-      font-size: 14px !important; line-height: 1 !important;
+      flex: 0 0 40px !important; width: 40px !important; border: 1px solid #cbd5e1 !important;
+      background: #f1f5f9 !important; border-radius: 6px !important; cursor: pointer !important; font-size: 15px !important;
     }
     body.tracking-active .pg-icon-btn:hover { background: #e2e8f0 !important; }
-    body.tracking-active .pg-top-actions { display: flex !important; gap: 8px !important; flex-wrap: wrap !important; }
+    body.tracking-active .pg-top-actions { display: flex !important; gap: 8px !important; }
     body.tracking-active .pg-save-action {
       background: #2563eb !important; color: #fff !important; border: 1px solid #1d4ed8 !important;
-      border-radius: 6px !important; padding: 8px 14px !important; font-size: 13px !important; font-weight: 800 !important; cursor: pointer !important;
+      border-radius: 6px !important; padding: 9px 16px !important; font-size: 13px !important; font-weight: 800 !important; cursor: pointer !important;
     }
     body.tracking-active .pg-close-action {
       background: #fff !important; color: #b91c1c !important; border: 1px solid #fca5a5 !important;
-      border-radius: 6px !important; padding: 8px 14px !important; font-size: 13px !important; font-weight: 800 !important; cursor: pointer !important;
+      border-radius: 6px !important; padding: 9px 16px !important; font-size: 13px !important; font-weight: 800 !important; cursor: pointer !important;
     }
-    body.tracking-active .pg-save-hint {
-      margin: 8px 0 0 !important; color: #15803d !important; font-size: 12px !important; font-weight: 800 !important;
-    }
-    body.tracking-active .sg-mont-row { padding: 4px 10px !important; display: flex !important; flex-wrap: wrap !important; gap: 6px !important; background: #f1f5f9 !important; }
-    body.tracking-active .sg-mont { font-size: 11px !important; padding: 2px 8px !important; border-radius: 999px !important; border: 1px solid #cbd5e1 !important; background: #fff !important; }
-    body.tracking-active .sg-mont.out { border-color: #65a30d !important; color: #3f6212 !important; }
-    body.tracking-active .sg-mont.in { border-color: #0284c7 !important; color: #075985 !important; }
-    body.tracking-active .sg-section-toggle {
-      width: 100% !important; text-align: left !important; padding: 8px 10px !important; font-weight: 800 !important; cursor: pointer !important;
-      background: #f8fafc !important; border: 1px solid #cbd5e1 !important; color: #1e293b !important; border-radius: 8px !important; margin-top: 10px !important;
-    }
-    body.tracking-active .sg-empty-msg { padding: 14px !important; color: #64748b !important; font-size: 13px !important; }
+    body.tracking-active .pg-save-hint { margin: 8px 0 0 !important; color: #15803d !important; font-size: 13px !important; font-weight: 800 !important; }
+    body.tracking-active .sg-empty-msg { padding: 12px !important; color: #64748b !important; font-size: 13px !important; }
     body.tracking-active .sg-closed-unit { margin: 8px 0; padding: 8px; border: 1px solid #e2e8f0; border-radius: 8px; }
+    body.tracking-active .hidden { display: none !important; }
+
     body.tracking-active .track-right #gps-events { padding: 8px !important; overflow: auto !important; flex: 1 !important; }
     body.tracking-active .gps-summary {
       display: grid !important; grid-template-columns: auto 1fr !important; gap: 2px 8px !important; font-size: 11px !important;
@@ -1070,6 +1059,7 @@ function ensureStyles() {
     }
     body.tracking-active #view-hours { position: absolute !important; top: 8px !important; right: 8px !important; z-index: 2 !important; }
     body.tracking-active .track-left > footer { padding: 8px 10px !important; border-top: 1px solid #e2e8f0 !important; font-size: 10px !important; }
+
     @media (max-width: 1100px) {
       body.tracking-active .desktop-tracking.grid-03 > main { grid-template-columns: 1fr !important; overflow: auto !important; }
       body.tracking-active .tracking-splitter { display: none !important; }
