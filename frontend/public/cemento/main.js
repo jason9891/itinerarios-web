@@ -7,11 +7,13 @@ import { applyPlatformShell } from "../shared/platform-shell.js";
 import { auth, onAuthStateChanged, wireLoginForm } from "../shared/auth.js";
 import { createItineraryRuntime, loadModule } from "../shared/module-runtime.js";
 import { modules, API } from "./registry.js";
+import { bindRuntime as bindPrecargaEngine } from "./precarga-engine.js";
 
 applyPlatformShell({ itinerary: "cemento", subtitle: "OPERADOR LOGÍSTICO" });
 wireLoginForm();
 
 const runtime = createItineraryRuntime("cemento", { auth, api: API });
+bindPrecargaEngine(runtime);
 const content = () => document.getElementById("content");
 
 function navState(route) {
