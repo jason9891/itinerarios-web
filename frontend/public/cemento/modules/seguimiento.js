@@ -590,11 +590,14 @@ async function bootstrap(container, runtime) {
       </header>
       <main>
         <section class="track-left">
-          <div class="route-refresh">
-            <label><span>DESDE</span><input id="route-from" type="datetime-local" step="1" value="${esc(peToInput(desdeDef))}"></label>
-            <label><span>HASTA</span><input id="route-to" type="datetime-local" step="1" value="${esc(peToInput(hastaDef))}"></label>
-            <button type="button" id="refresh-route">ACTUALIZAR RECORRIDO</button>
-            <small id="route-update-status">USA LA PRECARGA DISPONIBLE</small>
+          <div class="map-unit-bar">
+            <div id="map-unit-id" class="map-unit-id">—</div>
+            <div class="route-refresh">
+              <label><span>DESDE</span><input id="route-from" type="datetime-local" step="1" value="${esc(peToInput(desdeDef))}"></label>
+              <label><span>HASTA</span><input id="route-to" type="datetime-local" step="1" value="${esc(peToInput(hastaDef))}"></label>
+              <button type="button" id="refresh-route">ACTUALIZAR RECORRIDO</button>
+              <small id="route-update-status">USA LA PRECARGA DISPONIBLE</small>
+            </div>
           </div>
           <div class="tracking-map-wrap">
             <div id="tracking-map">Seleccione una unidad con precarga.</div>
@@ -632,6 +635,8 @@ async function focusUnit(container, key, runtime) {
   const unit = state.units.find((u) => nplate(u.placa) === key);
   if (!unit) return;
   const unitLabel = shortTracto(unit.tracto || unit.placa);
+  const idEl = container.querySelector("#map-unit-id");
+  if (idEl) idEl.textContent = unitLabel;
 
   const meta = loadMeta();
   const gps = await readGPS(gpsKey(meta?.id, unit.tracto, unit.placa));
@@ -892,7 +897,7 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-17";
+  st.id = "cem-sg-v3-style-18";
   st.textContent = `
     body.tracking-active { overflow: hidden !important; }
     body.tracking-active .desktop-tracking.grid-03 {

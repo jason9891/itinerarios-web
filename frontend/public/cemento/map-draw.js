@@ -1,6 +1,8 @@
 /**
  * Mapa de recorrido GPS para CEMENTO · Seguimiento
- * map_config se consulta UNA sola vez; luego solo se dibujan líneas desde caché.
+ * - map_config se consulta UNA sola vez
+ * - I / F / U: hora solo al hacer clic
+ * - Sin tramo en rango: marca U con último punto (gps.ultimo / Comsatel)
  */
 import { API } from "./registry.js";
 
@@ -12,7 +14,6 @@ let inspectionMarkers = [];
 let inspectionEnabled = false;
 let infoWindow = null;
 let currentPoints = [];
-let unitLabelEl = null;
 
 function normalizeGpsPoint(p, index) {
   const lat = Number(p?.lat ?? p?.latitude);
@@ -21,14 +22,13 @@ function normalizeGpsPoint(p, index) {
   return {
     lat,
     lng,
-    fecha: String(p?.fecha || p?.fecha_hora || p?.time || ""),
+    fecha: String(p?.fecha || p?.fecha_hora || p?.time || p?.hora || ""),
     index,
   };
 }
 
 function shortTime(fecha) {
   const s = String(fecha || "").trim();
-  // 03/10/2026 14:30:00 → 14:30
   const m = s.match(/(\d{2}):(\d{2})(?::\d{2})?/);
   if (m) return `${m[1]}:${m[2]}`;
   return s || "—";
@@ -53,12 +53,7 @@ export function loadMaps(apiKey) {
 export async function ensureTrackingMap(mapEl, getToken) {
   if (!mapEl) return null;
   if (mapInstance && mapConfigLoaded) {
-    if (mapEl.dataset.mapsBound !== "1") {
-      mapEl.innerHTML = "";
-      mapEl.dataset.mapsBound = "1";
-      // reparent is not needed; map stays on original node
-      google.maps.event.trigger(mapInstance, "resize");
-    }
+    google.maps.event.trigger(mapInstance, "resize");
     return mapInstance;
   }
   const token = await getToken();
@@ -88,58 +83,75 @@ export async function ensureTrackingMap(mapEl, getToken) {
 }
 
 function clearOverlays() {
-  for (const x of overlays) x.setMap(null);
+  for (const x of overlays) {
+    try {
+      x.setMap(null);
+    } catch (_) {}
+  }
   overlays = [];
   for (const x of inspectionMarkers) x.setMap(null);
   inspectionMarkers = [];
   infoWindow?.close();
 }
 
-function setUnitBadge(mapEl, label) {
-  if (!mapEl) return;
-  let badge = mapEl.parentElement?.querySelector(".map-unit-badge");
-  if (!badge && mapEl.parentElement) {
-    badge = document.createElement("div");
-    badge.className = "map-unit-badge";
-    badge.style.cssText =
-      "position:absolute;left:8px;top:8px;z-index:5;background:#0f172a;color:#fff;padding:6px 12px;border-radius:8px;font-size:14px;font-weight:900;box-shadow:0 2px 8px rgba(0,0,0,.25);pointer-events:none";
-    mapEl.parentElement.style.position = "relative";
-    mapEl.parentElement.appendChild(badge);
-  }
-  if (badge) badge.textContent = label || "—";
-  unitLabelEl = badge;
+function showTimePopup(marker, title, fecha) {
+  infoWindow ??= new google.maps.InfoWindow();
+  const t = fecha || "Sin hora";
+  infoWindow.setContent(
+    `<div style="font:13px/1.35 system-ui,sans-serif;padding:2px 4px">
+      <b style="font-size:14px">${title}</b><br>
+      <span style="font-size:15px;font-weight:800">${t}</span>
+    </div>`,
+  );
+  infoWindow.open({ map: mapInstance, anchor: marker });
+}
+
+function addLetterMarker(pos, letter, color, title, fecha) {
+  const m = new google.maps.Marker({
+    map: mapInstance,
+    position: pos,
+    title: `${title}${fecha ? " · " + fecha : ""}`,
+    label: { text: letter, color: "white", fontWeight: "700", fontSize: "12px" },
+    icon: {
+      path: google.maps.SymbolPath.CIRCLE,
+      scale: 12,
+      fillColor: color,
+      fillOpacity: 1,
+      strokeColor: "white",
+      strokeWeight: 3,
+    },
+    zIndex: 300,
+  });
+  m.addListener("click", () => showTimePopup(m, title, fecha));
+  overlays.push(m);
+  return m;
 }
 
 /**
- * Dibuja solo desde caché local. No consulta CLocator.
- * @param {object} gps
- * @param {HTMLElement} mapEl
- * @param {HTMLElement|null} captionEl
- * @param {string} [unitLabel]
+ * Dibuja solo desde caché. No consulta CLocator.
+ * Si no hay tramo, usa gps.ultimo (último reporte Comsatel) con marcador U.
  */
 export function drawTrackingRoute(gps, mapEl, captionEl, unitLabel = "") {
   clearOverlays();
   inspectionEnabled = false;
-  if (unitLabel) setUnitBadge(mapEl, unitLabel);
 
   const raw = gps?.puntos_gps || gps?.puntos_lista || gps?.puntos || [];
-  const data = (Array.isArray(raw) ? raw : []).map(normalizeGpsPoint).filter(Boolean);
+  let data = (Array.isArray(raw) ? raw : []).map(normalizeGpsPoint).filter(Boolean);
   currentPoints = data;
 
-  if (!data.length) {
-    if (captionEl) {
-      captionEl.textContent = unitLabel
-        ? `${unitLabel} · Sin recorrido en caché`
-        : "Sin recorrido temporal en este navegador.";
-    }
-    return { points: 0 };
-  }
-
-  if (captionEl) {
-    captionEl.textContent = `${unitLabel ? unitLabel + " · " : ""}${data.length} puntos · ${gps?.desde || ""} → ${gps?.hasta || ""}`;
-  }
+  // Último punto conocido (login Comsatel / respuesta clocator.ultimo)
+  const ultimo =
+    normalizeGpsPoint(gps?.ultimo, -1) ||
+    normalizeGpsPoint(gps?.ultimo_punto, -1) ||
+    normalizeGpsPoint(gps?.last, -1) ||
+    (data.length === 1 ? data[0] : null);
 
   if (!mapInstance || !window.google?.maps) {
+    if (captionEl) {
+      captionEl.textContent = unitLabel
+        ? `${unitLabel} · Mapa no inicializado`
+        : "Mapa no inicializado";
+    }
     return { points: data.length };
   }
 
@@ -147,6 +159,36 @@ export function drawTrackingRoute(gps, mapEl, captionEl, unitLabel = "") {
     mapEl.innerHTML = "";
     mapEl.dataset.mapsBound = "1";
     google.maps.event.trigger(mapInstance, "resize");
+  }
+
+  // Sin recorrido útil (≥2 puntos): mostrar U del último reporte
+  if (data.length < 2) {
+    if (ultimo) {
+      currentPoints = [ultimo];
+      addLetterMarker(
+        { lat: ultimo.lat, lng: ultimo.lng },
+        "U",
+        "#7c3aed",
+        "Último reporte GPS",
+        ultimo.fecha,
+      );
+      mapInstance.setCenter({ lat: ultimo.lat, lng: ultimo.lng });
+      mapInstance.setZoom(12);
+      if (captionEl) {
+        captionEl.textContent = `${unitLabel ? unitLabel + " · " : ""}Sin tramo en rango · Último punto ${ultimo.fecha || "—"} (clic en U)`;
+      }
+      return { points: 0, ultimo: true };
+    }
+    if (captionEl) {
+      captionEl.textContent = unitLabel
+        ? `${unitLabel} · Sin recorrido ni último punto en caché`
+        : "Sin recorrido temporal en este navegador.";
+    }
+    return { points: 0 };
+  }
+
+  if (captionEl) {
+    captionEl.textContent = `${unitLabel ? unitLabel + " · " : ""}${data.length} puntos · ${gps?.desde || ""} → ${gps?.hasta || ""} · clic en I/F para hora`;
   }
 
   const path = data.map((p) => ({ lat: p.lat, lng: p.lng }));
@@ -174,83 +216,15 @@ export function drawTrackingRoute(gps, mapEl, captionEl, unitLabel = "") {
   overlays.push(line);
   path.forEach((p) => bounds.extend(p));
 
-  // I y F con hora visible
-  const ends = [
-    { pos: path[0], letter: "I", color: "#2563eb", time: shortTime(data[0]?.fecha), full: data[0]?.fecha || "" },
-    {
-      pos: path[path.length - 1],
-      letter: "F",
-      color: "#dc2626",
-      time: shortTime(data[data.length - 1]?.fecha),
-      full: data[data.length - 1]?.fecha || "",
-    },
-  ];
-  for (const e of ends) {
-    const m = new google.maps.Marker({
-      map: mapInstance,
-      position: e.pos,
-      title: `${e.letter} · ${e.full}`,
-      label: { text: e.letter, color: "white", fontWeight: "700" },
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 12,
-        fillColor: e.color,
-        fillOpacity: 1,
-        strokeColor: "white",
-        strokeWeight: 3,
-      },
-      zIndex: 300,
-    });
-    overlays.push(m);
-    // etiqueta de hora junto al marcador
-    const timeMarker = new google.maps.Marker({
-      map: mapInstance,
-      position: e.pos,
-      clickable: false,
-      label: {
-        text: e.time,
-        color: e.color,
-        fontSize: "12px",
-        fontWeight: "bold",
-      },
-      icon: {
-        path: google.maps.SymbolPath.CIRCLE,
-        scale: 0,
-        fillOpacity: 0,
-        strokeOpacity: 0,
-      },
-      zIndex: 301,
-    });
-    // offset visual: use custom overlay via InfoWindow-like static
-    overlays.push(timeMarker);
-  }
-
-  // Labels de hora como InfoWindow no-auto-close would clutter; use Marker with label below via pixelOffset simulation:
-  // Better: custom OverlayView-lite with div
-  for (const e of ends) {
-    const div = document.createElement("div");
-    div.textContent = e.time;
-    div.style.cssText = `background:${e.color};color:#fff;padding:2px 6px;border-radius:4px;font-size:11px;font-weight:800;white-space:nowrap;transform:translate(-50%,8px);box-shadow:0 1px 3px rgba(0,0,0,.3)`;
-    const overlay = new google.maps.OverlayView();
-    overlay.onAdd = function () {
-      const panes = this.getPanes();
-      panes.floatPane.appendChild(div);
-    };
-    overlay.draw = function () {
-      const proj = this.getProjection();
-      if (!proj) return;
-      const pt = proj.fromLatLngToDivPixel(new google.maps.LatLng(e.pos.lat, e.pos.lng));
-      if (!pt) return;
-      div.style.left = pt.x + "px";
-      div.style.top = pt.y + "px";
-      div.style.position = "absolute";
-    };
-    overlay.onRemove = function () {
-      div.remove();
-    };
-    overlay.setMap(mapInstance);
-    overlays.push({ setMap: (m) => overlay.setMap(m) });
-  }
+  // I y F: hora solo al clic
+  addLetterMarker(path[0], "I", "#2563eb", "Inicio de tramo", data[0]?.fecha);
+  addLetterMarker(
+    path[path.length - 1],
+    "F",
+    "#dc2626",
+    "Fin de tramo",
+    data[data.length - 1]?.fecha,
+  );
 
   if (path.length >= 2) {
     const last3 = path.slice(-3);
@@ -315,11 +289,7 @@ export function toggleInspection(button) {
       },
       zIndex: 70,
     });
-    m.addListener("click", () => {
-      infoWindow ??= new google.maps.InfoWindow();
-      infoWindow.setContent(`<div style="font:12px sans-serif">${p.fecha || "—"}</div>`);
-      infoWindow.open({ map: mapInstance, anchor: m });
-    });
+    m.addListener("click", () => showTimePopup(m, "Punto GPS", p.fecha));
     inspectionMarkers.push(m);
   }
 }
@@ -330,5 +300,4 @@ export function resetMapState() {
   mapConfigLoaded = false;
   inspectionEnabled = false;
   currentPoints = [];
-  unitLabelEl = null;
 }
