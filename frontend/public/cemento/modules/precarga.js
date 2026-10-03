@@ -191,7 +191,7 @@ async function render(container, runtime) {
             ${meta && !meta.completo ? "REANUDAR" : "INICIAR PRECARGA"}
           </button>
           <button type="button" id="cem-pre-stop" class="secondary" disabled>DETENER</button>
-          <button type="button" id="cem-pre-refresh" class="secondary">ACTUALIZAR LISTA</button>
+          <button type="button" id="cem-pre-refresh" class="secondary" title="Vuelve a leer unidades con OC abierta desde Seguimiento">ACTUALIZAR LISTA DE UNIDADES</button>
         </div>
       </div>
       <div class="activity" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:10px;margin-top:12px">
@@ -204,11 +204,19 @@ async function render(container, runtime) {
         <span id="cem-pre-bar" style="display:block;height:100%;width:0%;background:#38bdf8;transition:width .2s"></span>
       </div>
       <p class="muted" style="margin-top:8px">
-        Corte editable (inicio CLocator):
+        Corte de inicio CLocator:
         <input id="cem-pre-desde" type="text" value="${esc(desdeDefault)}"
           style="min-width:180px;margin-left:6px;padding:6px 8px;border-radius:8px;border:1px solid #1e3a5f;background:#071525;color:#e2e8f0"
           placeholder="DD/MM/YYYY HH:mm:ss" />
-        <button type="button" id="cem-pre-save-desde" class="secondary" style="margin-left:6px">USAR CORTE</button>
+        <button type="button" id="cem-pre-save-desde" class="secondary" style="margin-left:6px"
+          title="Si cambia la fecha, se reinician todas las placas para volver a precargar">
+          APLICAR NUEVO CORTE
+        </button>
+      </p>
+      <p class="muted" style="margin-top:6px">
+        <b>Actualizar lista de unidades</b> = vuelve a pedir a Seguimiento qué placas tienen OC abierta
+        (no relanza GPS). <b>Aplicar nuevo corte</b> = cambia la fecha de inicio y
+        <b>reinicia todas las placas</b> (también las ya precargadas) para consultar desde ese corte.
       </p>
     </section>
 
@@ -278,25 +286,93 @@ async function render(container, runtime) {
   const btnDesde = container.querySelector("#cem-pre-save-desde");
   const inputDesde = container.querySelector("#cem-pre-desde");
 
-  const onRefresh = () => {
-    if (running) return alert("Detenga la precarga antes de actualizar la lista.");
-    render(container, runtime).catch((e) => alert(e.message));
+  function normalizeDesde(v) {
+    const s = String(v || "").trim();
+    if (!/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}(:\d{2})?$/.test(s)) return null;
+    return /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/.test(s) ? s + ":00" : s;
+  }
+
+  /** Cambio de corte ⇒ se invalidan resultados previos (todas las placas vuelven a PENDIENTE). */
+  function resetResultsForNewCorte(fullDesde) {
+    const hasta = resolveHasta();
+    meta = {
+      id: crypto.randomUUID(),
+      desde: fullDesde,
+      hasta,
+      total: units.length,
+      completo: false,
+      resultados: {},
+      intentos: {},
+      started_at: Date.now(),
+      corte_cambiado_en: Date.now(),
+    };
+    saveMeta(meta);
+    localStorage.setItem("cemento_rango_desde", fullDesde);
+    // Pintar todas las filas como PENDIENTE
+    for (const u of units) {
+      paintRow(nplate(u.placa), { estado: "PENDIENTE", puntos: "—", visitas: "—" });
+    }
+    paintCounts();
+    const rangeEl = container.querySelector("#cem-pre-range");
+    if (rangeEl) rangeEl.textContent = `Desde ${fullDesde} → hasta ${hasta} (hora Lima) · resultados reiniciados`;
+    const st = container.querySelector("#cem-pre-state");
+    if (st) st.textContent = "LISTO (NUEVO CORTE)";
+    if (btnStart) {
+      btnStart.disabled = !units.length;
+      btnStart.textContent = "INICIAR PRECARGA";
+    }
+  }
+
+  const onRefresh = async () => {
+    if (running) {
+      alert("Detenga la precarga antes de actualizar la lista de unidades.");
+      return;
+    }
+    const st = container.querySelector("#cem-pre-state");
+    if (st) st.textContent = "ACTUALIZANDO LISTA…";
+    try {
+      const data = await fetchUnits();
+      // Re-render completo con la lista fresca (mantiene meta/resultados si el corte no cambió)
+      await render(container, runtime);
+    } catch (e) {
+      alert("No se pudo actualizar la lista: " + e.message);
+      if (st) st.textContent = "ERROR AL ACTUALIZAR";
+    }
   };
   btnRefresh?.addEventListener("click", onRefresh);
   cleanup.push(() => btnRefresh?.removeEventListener("click", onRefresh));
 
   const onSaveDesde = () => {
-    const v = String(inputDesde?.value || "").trim();
-    if (!/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}(:\d{2})?$/.test(v)) {
-      return alert("Formato inválido. Use DD/MM/YYYY HH:mm:ss");
+    if (running) {
+      alert("Detenga la precarga antes de cambiar el corte de fecha.");
+      return;
     }
-    const full = /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/.test(v) ? v + ":00" : v;
+    const full = normalizeDesde(inputDesde?.value);
+    if (!full) {
+      alert("Formato inválido. Use DD/MM/YYYY HH:mm:ss");
+      return;
+    }
+    const prev = loadMeta()?.desde || "";
+    if (prev && prev !== full) {
+      const ok = confirm(
+        "Cambió el corte de fecha.\n\n" +
+          "Anterior: " + prev + "\n" +
+          "Nuevo: " + full + "\n\n" +
+          "Se reiniciarán TODAS las placas (incluidas las ya precargadas) para consultar GPS desde el nuevo corte.\n\n¿Continuar?"
+      );
+      if (!ok) {
+        if (inputDesde) inputDesde.value = prev;
+        return;
+      }
+      resetResultsForNewCorte(full);
+      return;
+    }
+    // Mismo corte o primera vez: solo guardar referencia operativa
     localStorage.setItem("cemento_rango_desde", full);
     const rangeEl = container.querySelector("#cem-pre-range");
     if (rangeEl) rangeEl.textContent = `Desde ${full} → hasta ${resolveHasta()} (hora Lima)`;
-    // Si hay meta incompleta, actualizar su desde para la próxima corrida
     const m = loadMeta();
-    if (m && !m.completo) {
+    if (m) {
       m.desde = full;
       saveMeta(m);
       meta = m;
@@ -324,15 +400,14 @@ async function render(container, runtime) {
     const st = container.querySelector("#cem-pre-state");
     if (st) st.textContent = "EN CURSO";
 
-    const desde =
-      String(inputDesde?.value || "").trim().match(/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}$/)
-        ? String(inputDesde.value).trim() + ":00"
-        : String(inputDesde?.value || resolveDesde()).trim();
+    const desdeRaw = normalizeDesde(inputDesde?.value) || resolveDesde();
+    const desde = desdeRaw;
     const hasta = resolveHasta();
 
     meta = loadMeta();
-    const resume = meta && !meta.completo && meta.id;
-    if (!resume) {
+    // Si el corte del input no coincide con el de la corrida guardada → nueva corrida completa
+    const corteCambio = meta && meta.desde && meta.desde !== desde;
+    if (corteCambio) {
       meta = {
         id: crypto.randomUUID(),
         desde,
@@ -342,14 +417,33 @@ async function render(container, runtime) {
         resultados: {},
         intentos: {},
         started_at: Date.now(),
+        corte_cambiado_en: Date.now(),
       };
+      for (const u of units) {
+        paintRow(nplate(u.placa), { estado: "PENDIENTE", puntos: "—", visitas: "—" });
+      }
     } else {
-      meta.hasta = hasta;
-      meta.desde = meta.desde || desde;
-      meta.total = units.length;
-      meta.resultados ||= {};
-      meta.intentos ||= {};
+      const resume = meta && !meta.completo && meta.id;
+      if (!resume) {
+        meta = {
+          id: crypto.randomUUID(),
+          desde,
+          hasta,
+          total: units.length,
+          completo: false,
+          resultados: {},
+          intentos: {},
+          started_at: Date.now(),
+        };
+      } else {
+        meta.hasta = hasta;
+        meta.desde = meta.desde || desde;
+        meta.total = units.length;
+        meta.resultados ||= {};
+        meta.intentos ||= {};
+      }
     }
+    localStorage.setItem("cemento_rango_desde", desde);
     saveMeta(meta);
     runtime.state.set("precarga.meta", { id: meta.id, total: units.length });
 
