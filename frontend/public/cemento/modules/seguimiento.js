@@ -26,6 +26,9 @@ import { queryClocator } from "../../shared/clocator-client.js";
 
 let cleanup = [];
 let state = null;
+/** Proporciones por defecto: mapa 40 · grilla 50 · GPS 10 */
+let trackingSplit = { mapa: 40, grilla: 50, gps: 10 };
+
 
 const STATES = [
   "",
@@ -236,6 +239,103 @@ function renderEventsHtml(gps) {
     <div class="gps-sequence-title">SECUENCIA GPS · CLIC EN LA HORA PARA COPIAR</div>
     ${events || "<p class='muted'>Sin visitas confirmadas.</p>"}`;
 }
+
+
+function loadTrackingSplit() {
+  try {
+    const raw = localStorage.getItem("cemento_tracking_split_v3");
+    if (!raw) return;
+    const x = JSON.parse(raw);
+    if (Number.isFinite(x?.mapa) && Number.isFinite(x?.grilla) && Number.isFinite(x?.gps)) {
+      trackingSplit = { mapa: x.mapa, grilla: x.grilla, gps: x.gps };
+    }
+  } catch (_) {}
+}
+
+function saveTrackingSplit() {
+  try {
+    localStorage.setItem("cemento_tracking_split_v3", JSON.stringify(trackingSplit));
+  } catch (_) {}
+}
+
+function applyTrackingSplit(container) {
+  const main = container.querySelector(".desktop-tracking.grid-03 > main");
+  if (!main) return;
+  main.style.gridTemplateColumns =
+    `minmax(220px, ${trackingSplit.mapa}fr) 7px ` +
+    `minmax(320px, ${trackingSplit.grilla}fr) 7px ` +
+    `minmax(140px, ${trackingSplit.gps}fr)`;
+}
+
+function initTrackingSplit(container) {
+  const main = container.querySelector(".desktop-tracking.grid-03 > main");
+  const center = main?.querySelector(".track-center");
+  const right = main?.querySelector(".track-right");
+  if (!main || !center || !right) return;
+
+  main.querySelectorAll(".tracking-splitter").forEach((x) => x.remove());
+
+  const split1 = document.createElement("div");
+  split1.className = "tracking-splitter";
+  split1.title = "Redimensionar mapa / lista de placas";
+  const split2 = document.createElement("div");
+  split2.className = "tracking-splitter";
+  split2.title = "Redimensionar lista / secuencia GPS";
+
+  main.insertBefore(split1, center);
+  main.insertBefore(split2, right);
+
+  loadTrackingSplit();
+  applyTrackingSplit(container);
+
+  const startDrag = (which, event) => {
+    event.preventDefault();
+    document.body.classList.add("tracking-resizing");
+
+    const move = (ev) => {
+      const rect = main.getBoundingClientRect();
+      const usable = rect.width - 14;
+      if (usable <= 0) return;
+
+      if (which === 1) {
+        let mapa = ((ev.clientX - rect.left) / usable) * 100;
+        mapa = Math.max(20, Math.min(50, mapa));
+        let gps = trackingSplit.gps;
+        let grilla = 100 - mapa - gps;
+        if (grilla < 30) {
+          grilla = 30;
+          mapa = 100 - grilla - gps;
+        }
+        trackingSplit = { mapa, grilla, gps };
+      } else {
+        let gps = ((rect.right - ev.clientX) / usable) * 100;
+        gps = Math.max(8, Math.min(25, gps));
+        let mapa = trackingSplit.mapa;
+        let grilla = 100 - mapa - gps;
+        if (grilla < 30) {
+          grilla = 30;
+          gps = 100 - mapa - grilla;
+        }
+        trackingSplit = { mapa, grilla, gps };
+      }
+      applyTrackingSplit(container);
+    };
+
+    const stop = () => {
+      document.body.classList.remove("tracking-resizing");
+      document.removeEventListener("pointermove", move);
+      document.removeEventListener("pointerup", stop);
+      saveTrackingSplit();
+    };
+
+    document.addEventListener("pointermove", move);
+    document.addEventListener("pointerup", stop);
+  };
+
+  split1.onpointerdown = (e) => startDrag(1, e);
+  split2.onpointerdown = (e) => startDrag(2, e);
+}
+
 
 export async function mount(container, runtime) {
   cleanup = [];
@@ -716,9 +816,9 @@ function wire(container, runtime) {
 }
 
 function ensureStyles() {
-  if (document.getElementById("cem-sg-v3-style")) return;
+  document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style";
+  st.id = "cem-sg-v3-style-04";
   st.textContent = `
     /* Forzar layout 3 columnas sobre reglas de seguimiento19.css */
     body.tracking-active .desktop-tracking.grid-03 {
@@ -740,7 +840,7 @@ function ensureStyles() {
     }
     body.tracking-active .desktop-tracking.grid-03 > main {
       display: grid !important;
-      grid-template-columns: minmax(240px, 30fr) minmax(360px, 50fr) minmax(200px, 20fr) !important;
+      grid-template-columns: minmax(220px, 40fr) 7px minmax(320px, 50fr) 7px minmax(140px, 10fr) !important;
       gap: 8px !important;
       padding: 8px !important;
       flex: 1 1 auto !important;
@@ -913,11 +1013,44 @@ function ensureStyles() {
       padding: 8px 10px !important; border-top: 1px solid #e2e8f0 !important; font-size: 10px !important;
     }
     body.tracking-active .hidden { display: none !important; }
+
+    body.tracking-active .tracking-splitter {
+      position: relative !important;
+      cursor: col-resize !important;
+      background: #dbe4ef !important;
+      border-left: 1px solid #aabbd0 !important;
+      border-right: 1px solid #aabbd0 !important;
+      z-index: 20 !important;
+      width: 7px !important;
+      min-width: 7px !important;
+      max-width: 7px !important;
+      align-self: stretch !important;
+    }
+    body.tracking-active .tracking-splitter:hover,
+    body.tracking-resizing .tracking-splitter {
+      background: #7db4ef !important;
+    }
+    body.tracking-active .tracking-splitter::after {
+      content: "⋮" !important;
+      position: absolute !important;
+      top: 50% !important;
+      left: 50% !important;
+      transform: translate(-50%,-50%) !important;
+      color: #315d8f !important;
+      font-size: 18px !important;
+      font-weight: 900 !important;
+    }
+    body.tracking-resizing {
+      cursor: col-resize !important;
+      user-select: none !important;
+    }
+
     @media (max-width: 1100px) {
       body.tracking-active .desktop-tracking.grid-03 > main {
         grid-template-columns: 1fr !important;
         overflow: auto !important;
       }
+      body.tracking-active .tracking-splitter { display: none !important; }
       body.tracking-active .desktop-tracking.grid-03 .track-left { min-height: 280px !important; }
       body.tracking-active .pg-oc-grid { grid-template-columns: 1fr 1fr !important; }
     }
