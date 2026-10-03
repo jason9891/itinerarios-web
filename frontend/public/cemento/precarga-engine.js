@@ -17,6 +17,7 @@
 import { API } from "./registry.js";
 import { queryClocator } from "../shared/clocator-client.js";
 import { auth } from "../shared/auth.js";
+import { cacheGPS, gpsKey } from "./gps-cache.js";
 
 const STORAGE_KEY = "cemento_precarga_v1";
 const TIMEOUT_MS = 120000;
@@ -238,6 +239,12 @@ export async function startPreload(units, opts = {}) {
         clearTimeout(timer);
         meta.intentos[k] = (meta.intentos[k] || 0) + 1;
         meta.resultados[k] = classifyResult(data);
+        try {
+          await cacheGPS(
+            { ...data, placa: u.placa, tracto: u.tracto, run_id: meta.id, desde: meta.desde, hasta: meta.hasta },
+            gpsKey(meta.id, u.tracto, u.placa),
+          );
+        } catch (_) {}
         emit("cemento:precarga-unit", { placa: u.placa, tracto: u.tracto, ...meta.resultados[k] });
       } catch (e) {
         clearTimeout(timer);
