@@ -133,60 +133,49 @@ function ocRowHtml(oc) {
   const parihuelas = isParihuelas(p);
   const draft = oc.borrador?.accion ? String(oc.borrador.accion) : "";
 
-  const fieldBlock = (suffix, label, key) => {
+  const row = (suffix, label, key) => {
     const val = field(p, key);
-    return `
-      <div class="pg-field">
-        <label class="pg-label" for="f-${id}-${suffix}">${label}</label>
-        <div class="pg-control">
-          <input id="f-${id}-${suffix}" data-f="${id}-${suffix}" data-original="${esc(field(o, key))}" value="${esc(val)}" autocomplete="off">
-          <button type="button" class="pg-icon-btn" data-paste="${id}-${suffix}" title="Pegar">📋</button>
-          <button type="button" class="pg-icon-btn" data-copy-val title="Copiar">⧉</button>
-        </div>
-      </div>`;
+    const orig = field(o, key);
+    return `<div class="cem-field">
+  <div class="cem-field-label">${label}</div>
+  <div class="cem-field-row">
+    <input class="cem-input" type="text" data-f="${id}-${suffix}" data-original="${esc(orig)}" value="${esc(val)}" autocomplete="off" spellcheck="false">
+    <button type="button" class="cem-btn-icon" data-paste="${id}-${suffix}" title="Pegar">📋</button>
+    <button type="button" class="cem-btn-icon" data-copy-val title="Copiar">⧉</button>
+  </div>
+</div>`;
   };
 
-  return `
-    <article class="pg-oc-row ${parihuelas ? "pg-parihuelas" : ""}" data-oc-id="${id}">
-      <div class="pg-oc-top">
-        <div class="pg-oc-title">
-          <b>OC ${esc(oc.orden_carga)}</b>
-          <strong>${esc(p.Ruta || "—")}</strong>
-          <small>FECHA CARGA REAL: ${esc(ocCreationDate(p))}</small>
-          ${parihuelas ? `<span class="pg-special-tag">PARIHUELAS</span>` : ""}
-          ${draft ? `<em class="pg-draft">${esc(draft)}</em>` : ""}
-        </div>
-        <div class="pg-top-actions">
-          <button type="button" data-save="${id}" class="pg-save-action">GUARDAR</button>
-          <button type="button" data-close="${id}" class="pg-close-action">FIN DE CICLO</button>
-        </div>
+  return `<article class="cem-oc ${parihuelas ? "cem-oc-parihuelas" : ""}" data-oc-id="${id}">
+  <div class="cem-oc-head">
+    <div>
+      <div class="cem-oc-title"><b>OC ${esc(oc.orden_carga)}</b> <span>${esc(p.Ruta || "—")}</span></div>
+      <div class="cem-oc-sub">FECHA CARGA REAL: ${esc(ocCreationDate(p))}${parihuelas ? ' · <span class="pg-special-tag">PARIHUELAS</span>' : ""}${draft ? ` · <em>${esc(draft)}</em>` : ""}</div>
+    </div>
+    <div class="cem-oc-actions">
+      <button type="button" class="cem-btn-save" data-save="${id}">GUARDAR</button>
+      <button type="button" class="cem-btn-close" data-close="${id}">FIN DE CICLO</button>
+    </div>
+  </div>
+  <div class="cem-fields">
+    <div class="cem-field">
+      <div class="cem-field-label">ESTADO</div>
+      <div class="cem-field-row">
+        <select class="cem-input" data-f="${id}-estado" data-original="${esc(field(o, "ESTADO") || p.ESTADO || "")}">
+          ${stateOptions(field(p, "ESTADO") || p.ESTADO || "")}
+        </select>
       </div>
-      <div class="pg-oc-form">
-        <div class="pg-field">
-          <label class="pg-label" for="f-${id}-estado">ESTADO</label>
-          <div class="pg-control">
-            <select id="f-${id}-estado" data-f="${id}-estado" data-original="${esc(field(o, "ESTADO") || p.ESTADO || "")}">
-              ${stateOptions(field(p, "ESTADO") || p.ESTADO || "")}
-            </select>
-          </div>
-        </div>
-        ${fieldBlock("salida", "SALIDA DE PLANTA", "FECHA DE SALIDA PLANTA YURA/CARACOTO")}
-        ${fieldBlock("llegada", "LLEGADA A DESTINO", "FECHA LLEGADA A DESTINO")}
-        ${fieldBlock("carga", "CARGA DE RETORNO", "CARGA DE RETORNO")}
-        ${fieldBlock("retorno", "INICIO DE RETORNO", "FECHA INICIO DE RETORNO")}
-        ${fieldBlock("fin", "FIN DE RETORNO", "FECHA FIN DE RETORNO AQP/YURA/CRCT")}
-        ${fieldBlock("ubi", "UBICACIÓN", "UBICACIÓN")}
-        <div class="pg-field pg-field-wide">
-          <label class="pg-label" for="f-${id}-obs">OBSERVACIONES</label>
-          <div class="pg-control">
-            <input id="f-${id}-obs" data-f="${id}-obs" data-original="${esc(field(o, "OBSERVACIONES"))}" value="${esc(field(p, "OBSERVACIONES"))}" autocomplete="off">
-            <button type="button" class="pg-icon-btn" data-paste="${id}-obs" title="Pegar">📋</button>
-            <button type="button" class="pg-icon-btn" data-copy-val title="Copiar">⧉</button>
-          </div>
-        </div>
-      </div>
-      <p class="pg-save-hint" data-save-hint="${id}" hidden>✓ Guardado</p>
-    </article>`;
+    </div>
+    ${row("salida", "SALIDA DE PLANTA", "FECHA DE SALIDA PLANTA YURA/CARACOTO")}
+    ${row("llegada", "LLEGADA A DESTINO", "FECHA LLEGADA A DESTINO")}
+    ${row("carga", "CARGA DE RETORNO", "CARGA DE RETORNO")}
+    ${row("retorno", "INICIO DE RETORNO", "FECHA INICIO DE RETORNO")}
+    ${row("fin", "FIN DE RETORNO", "FECHA FIN DE RETORNO AQP/YURA/CRCT")}
+    ${row("ubi", "UBICACIÓN", "UBICACIÓN")}
+    ${row("obs", "OBSERVACIONES", "OBSERVACIONES")}
+  </div>
+  <p class="pg-save-hint" data-save-hint="${id}" hidden>✓ Guardado</p>
+</article>`;
 }
 
 function renderEventsHtml(gps) {
@@ -814,7 +803,7 @@ function wire(container, runtime) {
       return;
     }
     if (btn.dataset.save) {
-      const row = btn.closest(".pg-oc-row");
+      const row = btn.closest(".cem-oc");
       const datos = collectOcData(row);
       btn.disabled = true;
       const old = btn.textContent;
@@ -847,13 +836,13 @@ function wire(container, runtime) {
     }
     if (btn.dataset.close) {
       if (!confirm("¿Preparar FIN DE CICLO?")) return;
-      const row = btn.closest(".pg-oc-row");
+      const row = btn.closest(".cem-oc");
       const datos = collectOcData(row);
       btn.disabled = true;
       try {
         await trackApi({ action: "cerrar", id: +btn.dataset.close, datos });
         btn.textContent = "CIERRE PREPARADO";
-        row.classList.add("pg-closed");
+        row.classList.add("cem-oc-closed");
       } catch (e) {
         alert(e.message);
       } finally {
@@ -880,7 +869,7 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-10";
+  st.id = "cem-sg-v3-style-11";
   st.textContent = `
     body.tracking-active {
       overflow: hidden !important;
@@ -948,7 +937,7 @@ function ensureStyles() {
     }
     body.tracking-active .unit-row {
       border: 1px solid #cbd5e1 !important; border-radius: 10px !important; background: #fff !important;
-      overflow: hidden !important; width: 100% !important;
+      overflow: visible !important; width: 100% !important;
     }
     body.tracking-active .unit-row.selected {
       border-color: #2563eb !important; box-shadow: 0 0 0 2px #93c5fd !important;
@@ -992,7 +981,7 @@ function ensureStyles() {
     }
     body.tracking-active .unit-row-detail {
       padding: 12px !important; width: 100% !important; box-sizing: border-box !important;
-      display: flex !important; flex-direction: column !important; gap: 12px !important;
+      display: block !important; overflow: visible !important;
     }
 
     body.tracking-active .sg-mont-row { display: flex !important; flex-wrap: wrap !important; gap: 6px !important; margin-top: 6px !important; }
@@ -1098,6 +1087,110 @@ function ensureStyles() {
     }
     body.tracking-active #view-hours { position: absolute !important; top: 8px !important; right: 8px !important; z-index: 2 !important; }
     body.tracking-active .track-left > footer { padding: 8px 10px !important; border-top: 1px solid #e2e8f0 !important; font-size: 10px !important; }
+
+
+    /* Formulario OC — siempre vertical, 100% ancho, inputs reales */
+    body.tracking-active .cem-oc {
+      display: block !important;
+      width: 100% !important;
+      box-sizing: border-box !important;
+      border: 1px solid #94a3b8 !important;
+      border-radius: 10px !important;
+      padding: 14px !important;
+      margin: 0 0 12px 0 !important;
+      background: #fff !important;
+    }
+    body.tracking-active .cem-oc-parihuelas {
+      background: #fffbeb !important;
+      border-color: #eab308 !important;
+    }
+    body.tracking-active .cem-oc-head {
+      display: flex !important;
+      justify-content: space-between !important;
+      gap: 12px !important;
+      flex-wrap: wrap !important;
+      margin-bottom: 14px !important;
+      align-items: flex-start !important;
+    }
+    body.tracking-active .cem-oc-title {
+      font-size: 16px !important;
+      font-weight: 800 !important;
+      color: #0f172a !important;
+    }
+    body.tracking-active .cem-oc-title span { color: #1d4ed8 !important; font-weight: 700 !important; }
+    body.tracking-active .cem-oc-sub { font-size: 12px !important; color: #64748b !important; margin-top: 4px !important; }
+    body.tracking-active .cem-oc-actions { display: flex !important; gap: 8px !important; }
+    body.tracking-active .cem-btn-save {
+      background: #2563eb !important; color: #fff !important; border: 1px solid #1d4ed8 !important;
+      border-radius: 8px !important; padding: 10px 16px !important; font-size: 13px !important;
+      font-weight: 800 !important; cursor: pointer !important;
+    }
+    body.tracking-active .cem-btn-close {
+      background: #fff !important; color: #b91c1c !important; border: 1px solid #fca5a5 !important;
+      border-radius: 8px !important; padding: 10px 16px !important; font-size: 13px !important;
+      font-weight: 800 !important; cursor: pointer !important;
+    }
+    body.tracking-active .cem-fields {
+      display: block !important;
+      width: 100% !important;
+    }
+    body.tracking-active .cem-field {
+      display: block !important;
+      width: 100% !important;
+      margin: 0 0 14px 0 !important;
+      box-sizing: border-box !important;
+    }
+    body.tracking-active .cem-field-label {
+      display: block !important;
+      width: 100% !important;
+      font-size: 13px !important;
+      font-weight: 800 !important;
+      color: #0f172a !important;
+      margin: 0 0 6px 0 !important;
+      line-height: 1.3 !important;
+    }
+    body.tracking-active .cem-field-row {
+      display: flex !important;
+      flex-direction: row !important;
+      align-items: stretch !important;
+      gap: 8px !important;
+      width: 100% !important;
+    }
+    body.tracking-active .cem-input {
+      display: block !important;
+      flex: 1 1 auto !important;
+      width: 100% !important;
+      min-width: 0 !important;
+      min-height: 48px !important;
+      height: 48px !important;
+      box-sizing: border-box !important;
+      padding: 10px 14px !important;
+      border: 2px solid #334155 !important;
+      border-radius: 8px !important;
+      background: #ffffff !important;
+      color: #0f172a !important;
+      font-size: 16px !important;
+      font-weight: 600 !important;
+      line-height: 1.2 !important;
+    }
+    body.tracking-active select.cem-input {
+      appearance: auto !important;
+    }
+    body.tracking-active .cem-input:focus {
+      outline: none !important;
+      border-color: #2563eb !important;
+      box-shadow: 0 0 0 3px #93c5fd !important;
+    }
+    body.tracking-active .cem-btn-icon {
+      flex: 0 0 48px !important;
+      width: 48px !important;
+      height: 48px !important;
+      border: 1px solid #cbd5e1 !important;
+      background: #f1f5f9 !important;
+      border-radius: 8px !important;
+      cursor: pointer !important;
+      font-size: 16px !important;
+    }
 
     @media (max-width: 1100px) {
       body.tracking-active .desktop-tracking.grid-03 > main { grid-template-columns: 1fr !important; overflow: auto !important; }
