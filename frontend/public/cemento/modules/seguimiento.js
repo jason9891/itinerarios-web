@@ -17,6 +17,7 @@ import {
 } from "../precarga-engine.js";
 import { readGPS, cacheGPS, gpsKey } from "../gps-cache.js";
 import { queryClocator } from "../../shared/clocator-client.js";
+import { ensureTrackingMap, drawTrackingRoute, toggleInspection, resetMapState } from "../map-draw.js";
 
 let cleanup = [];
 let state = null;
@@ -329,6 +330,7 @@ export function unmount() {
   }
   cleanup = [];
   state = null;
+  resetMapState();
 }
 
 async function loadData(onProgress) {
@@ -493,7 +495,7 @@ async function bootstrap(container, runtime) {
   paintDetail(container);
   initTrackingSplit(container);
   wire(container, runtime);
-  if (state.selectedKey) await focusUnit(container, state.selectedKey);
+  if (state.selectedKey) await focusUnit(container, state.selectedKey, runtime);
 }
 
 function paintStrip(container) {
@@ -566,7 +568,7 @@ function paintDetail(container) {
     </div>`;
 }
 
-async function focusUnit(container, key) {
+async function focusUnit(container, key, runtime) {
   state.selectedKey = key;
   paintStrip(container);
   paintDetail(container);
@@ -604,12 +606,20 @@ async function focusUnit(container, key) {
   }
 
   const mapEl = container.querySelector("#tracking-map");
-  if (mapEl) {
-    const pts = gps?.puntos_gps || gps?.puntos_lista || [];
-    if (Array.isArray(pts) && pts.length) {
-      mapEl.innerHTML = `<div style="padding:12px;font-size:13px;text-align:left"><b>${esc(shortTracto(unit.tracto))}</b> · ${pts.length} puntos en caché<br><span class="muted">Mapa polilínea: pendiente Maps API</span></div>`;
-    } else {
+
+  try {
+    if (gps?.ok || (gps?.puntos_gps || gps?.puntos_lista || []).length) {
+      await ensureTrackingMap(mapEl, () => runtime.auth.currentUser.getIdToken(true));
+      // re-get mapEl content cleared by Maps
+      const mapNode = container.querySelector("#tracking-map");
+      drawTrackingRoute(gps, mapNode, cap);
+    } else if (mapEl) {
+      mapEl.dataset.mapsBound = "";
       mapEl.innerHTML = `<div style="padding:12px;text-align:center">Sin puntos GPS en caché para ${esc(shortTracto(unit.tracto))}.</div>`;
+    }
+  } catch (e) {
+    if (mapEl) {
+      mapEl.innerHTML = `<div style="padding:12px;text-align:center;color:#fca5a5">Mapa: ${esc(e.message)}</div>`;
     }
   }
 }
@@ -681,7 +691,7 @@ function wire(container, runtime) {
       }
       paintStrip(container);
       paintDetail(container);
-      if (state.selectedKey) focusUnit(container, state.selectedKey);
+      if (state.selectedKey) focusUnit(container, state.selectedKey, runtime);
     };
   });
 
@@ -735,7 +745,7 @@ function wire(container, runtime) {
         { ...data, placa: unit.placa, tracto: unit.tracto, run_id: meta?.id, desde, hasta },
         gpsKey(meta?.id, unit.tracto, unit.placa),
       );
-      await focusUnit(container, state.selectedKey);
+      await focusUnit(container, state.selectedKey, runtime);
     } catch (e) {
       $("route-update-status").textContent = "ERROR";
       alert(e.message);
@@ -743,7 +753,8 @@ function wire(container, runtime) {
   };
 
   $("view-hours").onclick = () => {
-    $("gps-events")?.scrollIntoView({ behavior: "smooth", block: "nearest" });
+    const b = $("view-hours");
+    toggleInspection(b);
   };
 
   // Center column delegation
@@ -753,11 +764,11 @@ function wire(container, runtime) {
     if (!btn) return;
 
     if (btn.dataset.select) {
-      await focusUnit(container, btn.dataset.select);
+      await focusUnit(container, btn.dataset.select, runtime);
       return;
     }
     if (btn.dataset.map) {
-      await focusUnit(container, btn.dataset.map);
+      await focusUnit(container, btn.dataset.map, runtime);
       return;
     }
     if (btn.dataset.copyPlate) {
@@ -880,7 +891,7 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-08";
+  st.id = "cem-sg-v3-style-09";
   st.textContent = `
     body.tracking-active .desktop-tracking.grid-03 {
       display: flex !important; flex-direction: column !important;
@@ -1054,8 +1065,11 @@ function ensureStyles() {
     }
     body.tracking-active .tracking-map-wrap { position: relative !important; flex: 1 !important; min-height: 180px !important; margin: 0 8px !important; }
     body.tracking-active #tracking-map {
-      height: 100% !important; min-height: 180px !important; background: #0f172a !important; border-radius: 8px !important;
-      color: #94a3b8 !important; display: flex !important; align-items: center !important; justify-content: center !important;
+      height: 100% !important; min-height: 220px !important; background: #e2e8f0 !important; border-radius: 8px !important;
+      color: #64748b !important;
+    }
+    body.tracking-active #tracking-map:not([data-maps-bound="1"]) {
+      display: flex !important; align-items: center !important; justify-content: center !important;
     }
     body.tracking-active #view-hours { position: absolute !important; top: 8px !important; right: 8px !important; z-index: 2 !important; }
     body.tracking-active .track-left > footer { padding: 8px 10px !important; border-top: 1px solid #e2e8f0 !important; font-size: 10px !important; }
