@@ -55,6 +55,11 @@ export function trackApi(body, opts) {
   return apiPost(API.track, body, opts);
 }
 
+/** Montados Edge Function */
+export function montadosApi(body, opts) {
+  return apiPost(API.montados, body, opts);
+}
+
 export function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],

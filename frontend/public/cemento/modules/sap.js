@@ -3,7 +3,7 @@
  * Flujo: subir Excel → filtrar rutas SI → clasificar vs histórico → aplicar a seguimiento.
  * Independiente de Cerro Verde.
  */
-import { esc, fechaPE, moduleHead, sapApi } from "../api-client.js";
+import { esc, fechaPE, moduleHead, sapApi, montadosApi } from "../api-client.js";
 import {
   SAP_WINDOW_DAYS,
   parseSapFile,
@@ -12,6 +12,7 @@ import {
   limaTodayKey,
   shiftDateKey,
 } from "../sap-parse.js";
+import { parsePaste, toSavePayload } from "../montados-parse.js";
 
 let cleanup = [];
 let sapPending = null;
@@ -65,6 +66,35 @@ async function render(container, runtime) {
           : "No hay un SAP temporal cargado en este navegador."
       }</div>
       <div id="cem-sap-result"></div>
+    </section>
+
+    <section class="panel" id="cem-montados-panel">
+      <div class="panel-title">
+        <div>
+          <h2>Guías de montados</h2>
+          <p class="muted">
+            Pegue filas desde Excel (<b>Ctrl+V</b>). No hacen falta encabezados.
+            <br><b>1ª unidad = ACOPLE CORTO = MONTADO</b> ·
+            <b>2ª unidad = ACOPLE LARGO = TRANSPORTA (montando a)</b>
+            <br>Fecha = celda anterior a la ruta realizada.
+          </p>
+        </div>
+      </div>
+      <textarea id="cem-montados-paste" rows="6"
+        placeholder="Haga clic aquí y pegue las filas con Ctrl+V"
+        style="width:100%;box-sizing:border-box;font-family:ui-monospace,monospace;font-size:12px;padding:10px;border-radius:10px;border:1px solid #1e3a5f;background:#071525;color:#e2e8f0"></textarea>
+      <div style="display:flex;gap:16px;flex-wrap:wrap;margin-top:10px" class="muted">
+        <span>FILAS <b id="cem-mgf-total">0</b></span>
+        <span>VÁLIDAS <b id="cem-mgf-valid">0</b></span>
+        <span>DUPLICADAS <b id="cem-mgf-dup">0</b></span>
+        <span>REVISAR <b id="cem-mgf-bad">0</b></span>
+      </div>
+      <div id="cem-montados-preview" style="margin-top:10px;overflow:auto;max-height:240px"></div>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-top:12px">
+        <button type="button" id="cem-montados-save" class="primary" disabled>GUARDAR MONTADOS</button>
+        <button type="button" id="cem-montados-clear" class="secondary">LIMPIAR</button>
+      </div>
+      <p id="cem-montados-msg" class="muted" style="margin-top:8px"></p>
     </section>`;
 
   const input = container.querySelector("#cem-sap-file");
@@ -92,6 +122,107 @@ async function render(container, runtime) {
   };
   input.addEventListener("change", onFile);
   cleanup.push(() => input.removeEventListener("change", onFile));
+
+  wireMontados(container, runtime);
+}
+
+function wireMontados(container, runtime) {
+  const ta = container.querySelector("#cem-montados-paste");
+  const preview = container.querySelector("#cem-montados-preview");
+  const msg = container.querySelector("#cem-montados-msg");
+  const btnSave = container.querySelector("#cem-montados-save");
+  const btnClear = container.querySelector("#cem-montados-clear");
+  if (!ta) return;
+
+  let lastValid = [];
+
+  const analyse = () => {
+    const rows = parsePaste(ta.value || "");
+    const valid = rows.filter((r) => r.valida && !r.duplicada);
+    const dup = rows.filter((r) => r.duplicada);
+    const bad = rows.filter((r) => !r.valida);
+    lastValid = valid;
+
+    container.querySelector("#cem-mgf-total").textContent = String(rows.length);
+    container.querySelector("#cem-mgf-valid").textContent = String(valid.length);
+    container.querySelector("#cem-mgf-dup").textContent = String(dup.length);
+    container.querySelector("#cem-mgf-bad").textContent = String(bad.length);
+    btnSave.disabled = !valid.length;
+
+    if (!rows.length) {
+      preview.innerHTML = "";
+      return;
+    }
+
+    preview.innerHTML = `<table style="width:100%;border-collapse:collapse;font-size:12px">
+      <thead><tr>
+        <th style="text-align:left;padding:6px">#</th>
+        <th style="text-align:left;padding:6px">FECHA SALIDA</th>
+        <th style="text-align:left;padding:6px">RUTA</th>
+        <th style="text-align:left;padding:6px">MONTADO (corto)</th>
+        <th style="text-align:left;padding:6px">MONTANDO A (largo)</th>
+        <th style="text-align:left;padding:6px">ESTADO</th>
+      </tr></thead>
+      <tbody>
+        ${rows
+          .slice(0, 40)
+          .map((r) => {
+            const st = !r.valida
+              ? `REVISAR: ${(r.errores || []).join(", ")}`
+              : r.duplicada
+                ? "DUPLICADA"
+                : "OK";
+            return `<tr style="border-top:1px solid #1e3a5f">
+              <td style="padding:6px">${r.number}</td>
+              <td style="padding:6px">${esc(r.fecha || "—")}</td>
+              <td style="padding:6px">${esc(r.ruta || "—")}</td>
+              <td style="padding:6px"><b>${esc(r.corto?.tracto || "—")}</b></td>
+              <td style="padding:6px"><b>${esc(r.largo?.tracto || "—")}</b></td>
+              <td style="padding:6px">${esc(st)}</td>
+            </tr>`;
+          })
+          .join("")}
+        ${rows.length > 40 ? `<tr><td colspan="6" class="muted" style="padding:6px">… y ${rows.length - 40} más</td></tr>` : ""}
+      </tbody>
+    </table>`;
+  };
+
+  const onInput = () => analyse();
+  ta.addEventListener("input", onInput);
+  ta.addEventListener("paste", () => setTimeout(analyse, 40));
+  cleanup.push(() => ta.removeEventListener("input", onInput));
+
+  const onClear = () => {
+    ta.value = "";
+    msg.textContent = "";
+    analyse();
+  };
+  btnClear.addEventListener("click", onClear);
+  cleanup.push(() => btnClear.removeEventListener("click", onClear));
+
+  const onSave = async () => {
+    if (!lastValid.length) return;
+    btnSave.disabled = true;
+    btnSave.textContent = "GUARDANDO…";
+    msg.textContent = "";
+    try {
+      const payload = toSavePayload(lastValid);
+      const res = await montadosApi({ action: "guardar", rows: payload });
+      msg.innerHTML = `<span class="ok-text">Montados guardados: ${esc(res.guardadas ?? 0)} · inválidas: ${esc(res.invalidas ?? 0)}</span>`;
+      runtime.bus.emit("cemento:montados-updated", {
+        guardadas: res.guardadas ?? 0,
+        at: Date.now(),
+      });
+      runtime.state.set("montados.lastSave", { at: Date.now(), guardadas: res.guardadas ?? 0 });
+    } catch (e) {
+      msg.innerHTML = `<span class="error-text">${esc(e.message)}</span>`;
+    } finally {
+      btnSave.disabled = !lastValid.length;
+      btnSave.textContent = "GUARDAR MONTADOS";
+    }
+  };
+  btnSave.addEventListener("click", onSave);
+  cleanup.push(() => btnSave.removeEventListener("click", onSave));
 }
 
 async function loadRouteRules() {
