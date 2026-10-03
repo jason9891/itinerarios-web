@@ -477,8 +477,7 @@ async function bootstrap(container, runtime) {
             <button type="button" class="pg-filter" data-filter="todas">TODAS · ${state.units.length}</button>
             <button type="button" class="pg-filter" id="toggle-closed">CERRADAS · VER</button>
           </div>
-          <div id="plate-strip" class="plate-strip" role="tablist" aria-label="Unidades"></div>
-          <div id="unit-detail" class="unit-detail"></div>
+          <div id="unit-list" class="unit-list" role="list"></div>
           <div id="pg-closed-body" class="hidden">
             <p class="sg-empty-msg">Histórico cerrado (no reabre OCs).</p>
             <div id="pg-closed-content"></div>
@@ -491,87 +490,70 @@ async function bootstrap(container, runtime) {
       </main>
     </section>`;
 
-  paintStrip(container);
-  paintDetail(container);
+  paintUnitList(container);
   initTrackingSplit(container);
   wire(container, runtime);
   if (state.selectedKey) await focusUnit(container, state.selectedKey, runtime);
 }
 
-function paintStrip(container) {
-  const strip = container.querySelector("#plate-strip");
-  if (!strip) return;
-  const list = filteredUnits();
-  if (!list.length) {
-    strip.innerHTML = `<span class="sg-empty-msg">No hay unidades en este filtro.</span>`;
-    return;
-  }
-  strip.innerHTML = list
-    .map((u, i) => {
-      const k = nplate(u.placa);
-      const sel = k === state.selectedKey ? "selected" : "";
-      const rev = state.reviewed.has(k) ? "is-reviewed" : "";
-      const par = (u.ocs || []).some((x) => isParihuelas(x.payload || {}))
-        ? "has-parihuelas"
-        : "";
-      return `<button type="button" class="plate-tab ${sel} ${rev} ${par}" data-select="${esc(k)}" title="${esc(u.placa)} · ${(u.ocs || []).length} OC">
-        <span class="tab-num">${i + 1}</span>
-        <span class="tab-name">${esc(shortTracto(u.tracto || u.placa))}</span>
-        <span class="tab-meta">${(u.ocs || []).length} OC${state.reviewed.has(k) ? " · ✓" : ""}</span>
-      </button>`;
-    })
-    .join("");
-
-  // scroll selected into view
-  const selEl = strip.querySelector(".plate-tab.selected");
-  if (selEl) selEl.scrollIntoView({ inline: "nearest", block: "nearest", behavior: "smooth" });
-}
-
-function paintDetail(container) {
-  const box = container.querySelector("#unit-detail");
-  if (!box) return;
-  const unit = state.units.find((u) => nplate(u.placa) === state.selectedKey);
-  if (!unit) {
-    box.innerHTML = `<p class="sg-empty-msg">Seleccione una unidad en la franja superior.</p>`;
-    return;
-  }
+function unitRowHtml(unit, ordinal) {
   const k = nplate(unit.placa);
   const reviewed = state.reviewed.has(k);
+  const selected = k === state.selectedKey;
   const ocs = unit.ocs || [];
-  const last = unit.ultima_oc_cerrada;
+  const hasParihuelas = ocs.some((x) => isParihuelas(x.payload || {}));
+  const open = selected;
 
-  box.innerHTML = `
-    <div class="unit-detail-head">
-      <div>
-        <h2>${esc(shortTracto(unit.tracto || unit.placa))}
-          <button type="button" class="pg-icon-btn" data-copy-plate="${esc(shortTracto(unit.tracto || unit.placa))}" title="Copiar tracto">⧉</button>
-        </h2>
-        <p class="unit-sub">${esc(unit.placa)} · ${esc(unit.conductor || "—")} · ${ocs.length} OC abierta(s)</p>
-        ${last ? `<p class="unit-last">ÚLTIMA OC CERRADA: <b>${esc(last.orden_carga || last.OC || "—")}</b></p>` : ""}
-        ${montadosHtml(unit)}
-      </div>
-      <div class="unit-detail-actions">
-        <button type="button" class="secondary" data-map="${esc(k)}">EN MAPA</button>
-        <button type="button" class="secondary ${reviewed ? "done" : ""}" data-review="${esc(unit.placa)}">
-          ${reviewed ? "REVISADA ✓" : "MARCAR REVISADA"}
+  return `
+    <article class="unit-row ${selected ? "selected" : ""} ${reviewed ? "reviewed" : ""} ${hasParihuelas ? "has-parihuelas" : ""}"
+      data-placa="${esc(k)}" role="listitem">
+      <div class="unit-row-bar">
+        <button type="button" class="unit-row-select" data-select="${esc(k)}">
+          <span class="tab-num">${ordinal}</span>
+          <span class="tab-name">${esc(shortTracto(unit.tracto || unit.placa))}</span>
+          <span class="tab-meta">${ocs.length} OC${reviewed ? " · REVISADA" : ""}</span>
+          ${hasParihuelas ? `<span class="pg-special-tag">PARIHUELAS</span>` : ""}
         </button>
+        <div class="unit-row-actions">
+          <button type="button" class="secondary" data-map="${esc(k)}">EN MAPA</button>
+          <button type="button" class="btn-validar ${reviewed ? "done" : ""}" data-review="${esc(unit.placa)}">
+            ${reviewed ? "✓ REVISADA" : "VALIDAR REVISADA"}
+          </button>
+        </div>
       </div>
-    </div>
-    <div class="unit-oc-list">
+      ${selected ? montadosHtml(unit) : ""}
       ${
-        ocs.length
-          ? ocs.map(ocRowHtml).join("")
-          : unit.error
-            ? `<p class="sg-empty-msg">No se pudo cargar detalle: ${esc(unit.error)}</p>`
-            : `<p class="sg-empty-msg">SIN OC ABIERTA</p>`
+        open
+          ? `<div class="unit-row-detail">
+              ${
+                ocs.length
+                  ? ocs.map(ocRowHtml).join("")
+                  : unit.error
+                    ? `<p class="sg-empty-msg">No se pudo cargar detalle: ${esc(unit.error)}</p>`
+                    : `<p class="sg-empty-msg">SIN OC ABIERTA — puede marcar REVISADA si corresponde.</p>`
+              }
+            </div>`
+          : ""
       }
-    </div>`;
+    </article>`;
+}
+
+function paintUnitList(container) {
+  const list = container.querySelector("#unit-list");
+  if (!list) return;
+  const units = filteredUnits();
+  if (!units.length) {
+    list.innerHTML = `<p class="sg-empty-msg">No hay unidades en este filtro.</p>`;
+    return;
+  }
+  list.innerHTML = units.map((u, i) => unitRowHtml(u, i + 1)).join("");
+  const sel = list.querySelector(".unit-row.selected");
+  if (sel) sel.scrollIntoView({ block: "nearest", behavior: "smooth" });
 }
 
 async function focusUnit(container, key, runtime) {
   state.selectedKey = key;
-  paintStrip(container);
-  paintDetail(container);
+  paintUnitList(container);
 
   const idx = state.units.findIndex((u) => nplate(u.placa) === key);
   const pos = container.querySelector("#plate-position");
@@ -689,8 +671,7 @@ function wire(container, runtime) {
       if (!list.some((u) => nplate(u.placa) === state.selectedKey)) {
         state.selectedKey = list[0] ? nplate(list[0].placa) : "";
       }
-      paintStrip(container);
-      paintDetail(container);
+      paintUnitList(container);
       if (state.selectedKey) focusUnit(container, state.selectedKey, runtime);
     };
   });
@@ -808,17 +789,25 @@ function wire(container, runtime) {
     }
     if (btn.dataset.review) {
       try {
-        await trackApi({ action: "marcar_revisada", placa: btn.dataset.review });
-        state.reviewed.add(nplate(btn.dataset.review));
+        const placa = btn.dataset.review;
+        await trackApi({ action: "marcar_revisada", placa });
+        state.reviewed.add(nplate(placa));
         const nAct = state.units.filter((u) => !state.reviewed.has(nplate(u.placa))).length;
         const nRev = state.reviewed.size;
-        container.querySelector('#review-count').textContent = `REVISADAS ${nRev}/${state.units.length}`;
+        container.querySelector("#review-count").textContent = `REVISADAS ${nRev}/${state.units.length}`;
         container.querySelectorAll(".pg-filter[data-filter]").forEach((b) => {
           if (b.dataset.filter === "activas") b.textContent = `ACTIVAS · ${nAct}`;
           if (b.dataset.filter === "revisadas") b.textContent = `REVISADAS · ${nRev}`;
         });
-        paintStrip(container);
-        paintDetail(container);
+        // En filtro ACTIVAS: pasar a la siguiente pendiente
+        if (state.filter === "activas") {
+          const next = state.units.find(
+            (u) => !state.reviewed.has(nplate(u.placa)) && nplate(u.placa) !== nplate(placa),
+          );
+          state.selectedKey = next ? nplate(next.placa) : "";
+        }
+        paintUnitList(container);
+        if (state.selectedKey) await focusUnit(container, state.selectedKey, runtime);
       } catch (e) {
         alert(e.message);
       }
@@ -891,11 +880,20 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-09";
+  st.id = "cem-sg-v3-style-10";
   st.textContent = `
+    body.tracking-active {
+      overflow: hidden !important;
+    }
+    body.tracking-active #content,
+    body.tracking-active .content,
+    body.tracking-active main#content {
+      height: 100% !important; max-height: 100% !important; overflow: hidden !important;
+    }
     body.tracking-active .desktop-tracking.grid-03 {
       display: flex !important; flex-direction: column !important;
-      height: calc(100vh - 56px) !important; background: #eef2f7 !important; color: #1f2937 !important;
+      height: 100vh !important; max-height: 100vh !important;
+      background: #eef2f7 !important; color: #1f2937 !important;
     }
     body.tracking-active .desktop-tracking.grid-03 > header {
       display: flex !important; flex-wrap: wrap !important; gap: 8px !important; align-items: center !important;
@@ -903,7 +901,7 @@ function ensureStyles() {
     }
     body.tracking-active .desktop-tracking.grid-03 > main {
       display: grid !important;
-      grid-template-columns: minmax(220px, 40fr) 7px minmax(360px, 50fr) 7px minmax(140px, 10fr) !important;
+      grid-template-columns: minmax(200px, 28fr) 7px minmax(400px, 57fr) 7px minmax(140px, 15fr) !important;
       gap: 0 !important; padding: 8px !important; flex: 1 1 auto !important; min-height: 0 !important; overflow: hidden !important;
     }
     body.tracking-active .track-left,
@@ -912,7 +910,10 @@ function ensureStyles() {
       display: flex !important; flex-direction: column !important; min-width: 0 !important; min-height: 0 !important;
       overflow: hidden !important; background: #fff !important; border: 1px solid #dbe3ef !important; border-radius: 8px !important;
     }
-    body.tracking-active .track-center { overflow: hidden !important; }
+    body.tracking-active .track-center {
+      overflow: hidden !important; display: flex !important; flex-direction: column !important;
+      min-height: 0 !important; height: 100% !important;
+    }
     body.tracking-active .tracking-splitter {
       position: relative !important; cursor: col-resize !important; background: #dbe4ef !important;
       border-left: 1px solid #aabbd0 !important; border-right: 1px solid #aabbd0 !important;
@@ -939,42 +940,60 @@ function ensureStyles() {
       background: #dbeafe !important; border-color: #2563eb !important; color: #1e3a8a !important;
     }
 
-    /* Pestañas R-XXX horizontales */
-    body.tracking-active .plate-strip {
-      display: flex !important; gap: 6px !important; overflow-x: auto !important; overflow-y: hidden !important;
-      padding: 8px !important; border-bottom: 1px solid #e2e8f0 !important; flex: 0 0 auto !important;
-      background: #fff !important; scrollbar-width: thin !important;
+    /* Lista vertical: 1 unidad por fila */
+    body.tracking-active .unit-list {
+      flex: 1 1 auto !important; overflow-y: auto !important; overflow-x: hidden !important;
+      padding: 8px !important; display: flex !important; flex-direction: column !important;
+      gap: 8px !important; min-height: 0 !important;
     }
-    body.tracking-active .plate-tab {
-      flex: 0 0 auto !important; min-width: 88px !important; max-width: 120px !important;
-      border: 1px solid #cbd5e1 !important; background: #f8fafc !important; color: #0f172a !important;
-      border-radius: 8px !important; padding: 8px 10px !important; cursor: pointer !important; text-align: left !important;
+    body.tracking-active .unit-row {
+      border: 1px solid #cbd5e1 !important; border-radius: 10px !important; background: #fff !important;
+      overflow: hidden !important; width: 100% !important;
     }
-    body.tracking-active .plate-tab:hover { border-color: #93c5fd !important; background: #eff6ff !important; }
-    body.tracking-active .plate-tab.selected {
-      border-color: #2563eb !important; background: #dbeafe !important; box-shadow: 0 0 0 2px #93c5fd !important;
+    body.tracking-active .unit-row.selected {
+      border-color: #2563eb !important; box-shadow: 0 0 0 2px #93c5fd !important;
     }
-    body.tracking-active .plate-tab.is-reviewed { opacity: 0.85 !important; }
-    body.tracking-active .plate-tab.has-parihuelas { border-bottom: 3px solid #eab308 !important; }
-    body.tracking-active .tab-num { display: block !important; font-size: 10px !important; color: #64748b !important; font-weight: 800 !important; }
-    body.tracking-active .tab-name { display: block !important; font-size: 16px !important; font-weight: 900 !important; line-height: 1.15 !important; }
-    body.tracking-active .tab-meta { display: block !important; font-size: 11px !important; color: #64748b !important; margin-top: 2px !important; }
-
-    /* Detalle unidad a ANCHO COMPLETO */
-    body.tracking-active .unit-detail {
-      flex: 1 1 auto !important; overflow: auto !important; padding: 12px !important; min-height: 0 !important;
+    body.tracking-active .unit-row.reviewed { background: #f8fafc !important; }
+    body.tracking-active .unit-row.has-parihuelas { border-left: 4px solid #eab308 !important; }
+    body.tracking-active .unit-row-bar {
+      display: flex !important; justify-content: space-between !important; align-items: center !important;
+      gap: 8px !important; padding: 10px 12px !important; width: 100% !important;
+      background: #f8fafc !important; border-bottom: 1px solid transparent !important;
     }
-    body.tracking-active .unit-detail-head {
-      display: flex !important; justify-content: space-between !important; gap: 12px !important; flex-wrap: wrap !important;
-      margin-bottom: 12px !important; padding-bottom: 10px !important; border-bottom: 1px solid #e2e8f0 !important;
+    body.tracking-active .unit-row.selected .unit-row-bar {
+      border-bottom-color: #e2e8f0 !important; background: #eff6ff !important;
     }
-    body.tracking-active .unit-detail-head h2 {
-      margin: 0 !important; font-size: 28px !important; line-height: 1.1 !important; display: flex !important; align-items: center !important; gap: 8px !important;
+    body.tracking-active .unit-row-select {
+      border: 0 !important; background: transparent !important; cursor: pointer !important;
+      display: flex !important; align-items: center !important; gap: 10px !important;
+      flex: 1 1 auto !important; min-width: 0 !important; text-align: left !important; color: #0f172a !important;
     }
-    body.tracking-active .unit-sub { margin: 4px 0 !important; color: #64748b !important; font-size: 13px !important; }
-    body.tracking-active .unit-last { margin: 4px 0 !important; font-size: 12px !important; color: #475569 !important; }
-    body.tracking-active .unit-detail-actions { display: flex !important; gap: 8px !important; flex-wrap: wrap !important; align-items: flex-start !important; }
-    body.tracking-active .unit-oc-list { display: flex !important; flex-direction: column !important; gap: 12px !important; }
+    body.tracking-active .unit-row-select .tab-num {
+      flex: 0 0 28px !important; height: 28px !important; border-radius: 999px !important;
+      background: #dbeafe !important; color: #1e3a8a !important; display: inline-flex !important;
+      align-items: center !important; justify-content: center !important; font-size: 12px !important; font-weight: 900 !important;
+    }
+    body.tracking-active .unit-row-select .tab-name {
+      font-size: 20px !important; font-weight: 900 !important; line-height: 1.1 !important;
+    }
+    body.tracking-active .unit-row-select .tab-meta {
+      font-size: 12px !important; color: #64748b !important; font-weight: 700 !important;
+    }
+    body.tracking-active .unit-row-actions {
+      display: flex !important; gap: 8px !important; flex-wrap: wrap !important; flex: 0 0 auto !important;
+    }
+    body.tracking-active .btn-validar {
+      background: #16a34a !important; color: #fff !important; border: 1px solid #15803d !important;
+      border-radius: 6px !important; padding: 8px 14px !important; font-size: 12px !important;
+      font-weight: 800 !important; cursor: pointer !important;
+    }
+    body.tracking-active .btn-validar.done {
+      background: #dcfce7 !important; color: #166534 !important; border-color: #86efac !important;
+    }
+    body.tracking-active .unit-row-detail {
+      padding: 12px !important; width: 100% !important; box-sizing: border-box !important;
+      display: flex !important; flex-direction: column !important; gap: 12px !important;
+    }
 
     body.tracking-active .sg-mont-row { display: flex !important; flex-wrap: wrap !important; gap: 6px !important; margin-top: 6px !important; }
     body.tracking-active .sg-mont {
@@ -1004,26 +1023,32 @@ function ensureStyles() {
       font-size: 11px !important; font-weight: 900 !important; background: #fde68a !important; border: 1px solid #d97706 !important; color: #78350f !important;
     }
     body.tracking-active .pg-oc-form {
-      display: grid !important;
-      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
-      gap: 12px 16px !important;
+      display: flex !important;
+      flex-direction: column !important;
+      gap: 12px !important;
+      width: 100% !important;
+    }
+    body.tracking-active .pg-oc-row {
+      width: 100% !important;
+      box-sizing: border-box !important;
     }
     body.tracking-active .pg-field { display: flex !important; flex-direction: column !important; gap: 5px !important; min-width: 0 !important; }
     body.tracking-active .pg-field-wide { grid-column: 1 / -1 !important; }
     body.tracking-active .pg-label {
-      display: block !important; font-size: 12px !important; font-weight: 800 !important;
-      color: #1e293b !important; letter-spacing: 0.02em !important; line-height: 1.25 !important;
-      white-space: normal !important;
+      display: block !important; font-size: 13px !important; font-weight: 800 !important;
+      color: #0f172a !important; letter-spacing: 0.02em !important; line-height: 1.25 !important;
+      white-space: normal !important; margin-bottom: 2px !important;
     }
     body.tracking-active .pg-control {
-      display: flex !important; gap: 6px !important; align-items: stretch !important; min-height: 40px !important;
+      display: flex !important; gap: 6px !important; align-items: stretch !important; min-height: 48px !important;
+      width: 100% !important;
     }
     body.tracking-active .pg-control input,
     body.tracking-active .pg-control select {
-      flex: 1 1 auto !important; min-width: 0 !important; box-sizing: border-box !important;
-      min-height: 40px !important; padding: 9px 12px !important; border-radius: 6px !important;
-      border: 1px solid #64748b !important; background: #fff !important; color: #0f172a !important;
-      font-size: 15px !important; font-weight: 600 !important;
+      flex: 1 1 auto !important; min-width: 0 !important; width: 100% !important; box-sizing: border-box !important;
+      min-height: 48px !important; padding: 12px 14px !important; border-radius: 8px !important;
+      border: 1px solid #475569 !important; background: #fff !important; color: #0f172a !important;
+      font-size: 16px !important; font-weight: 600 !important;
     }
     body.tracking-active .pg-control input:focus,
     body.tracking-active .pg-control select:focus {
@@ -1077,7 +1102,7 @@ function ensureStyles() {
     @media (max-width: 1100px) {
       body.tracking-active .desktop-tracking.grid-03 > main { grid-template-columns: 1fr !important; overflow: auto !important; }
       body.tracking-active .tracking-splitter { display: none !important; }
-      body.tracking-active .pg-oc-form { grid-template-columns: 1fr !important; }
+      body.tracking-active .pg-oc-form { flex-direction: column !important; }
     }
   `;
   document.head.appendChild(st);
