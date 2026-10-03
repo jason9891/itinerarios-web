@@ -132,14 +132,22 @@ function ocRowHtml(oc) {
   const draft = oc.borrador?.accion ? String(oc.borrador.accion) : "";
   const closedPrep = draft === "CERRAR";
 
-  const cell = (suffix, label, key, wide = false) => `
-    <label class="pg-cell ${wide ? "wide" : ""}">
-      <span>${label}</span>
-      <div class="paste-input">
-        <input data-f="${id}-${suffix}" data-original="${esc(field(o, key))}" value="${esc(field(p, key))}">
-        <button type="button" class="pg-paste" data-paste="${id}-${suffix}" title="Pegar">📋</button>
+  // Campo con etiqueta siempre visible + pegar/copiar
+  const cell = (suffix, label, key, opts = {}) => {
+    const cls = ["pg-field", opts.wide ? "wide" : "", opts.short ? "short" : ""]
+      .filter(Boolean)
+      .join(" ");
+    const val = field(p, key);
+    return `
+    <div class="${cls}">
+      <label class="pg-label" for="f-${id}-${suffix}">${label}</label>
+      <div class="pg-control">
+        <input id="f-${id}-${suffix}" data-f="${id}-${suffix}" data-original="${esc(field(o, key))}" value="${esc(val)}" autocomplete="off">
+        <button type="button" class="pg-icon-btn" data-paste="${id}-${suffix}" title="Pegar">📋</button>
+        <button type="button" class="pg-icon-btn" data-copy-val="${esc(val)}" title="Copiar">⧉</button>
       </div>
-    </label>`;
+    </div>`;
+  };
 
   return `
     <article class="pg-oc-row ${parihuelas ? "pg-parihuelas" : ""} ${closedPrep ? "pg-closed" : ""}" data-oc-id="${id}">
@@ -149,28 +157,32 @@ function ocRowHtml(oc) {
           <strong>${esc(p.Ruta || "—")}</strong>
           <small>FECHA CARGA REAL: ${esc(ocCreationDate(p))}</small>
           ${parihuelas ? `<span class="pg-special-tag">PARIHUELAS</span>` : ""}
-          ${draft ? `<em>${esc(draft)}</em>` : ""}
+          ${draft ? `<em class="pg-draft">${esc(draft)}</em>` : ""}
         </div>
         <div class="pg-top-actions">
-          <button type="button" data-save="${id}" class="pg-save-action">💾 GUARDAR</button>
-          <button type="button" data-close="${id}" class="pg-close-action">🚩 FIN DE CICLO</button>
+          <button type="button" data-save="${id}" class="pg-save-action">GUARDAR</button>
+          <button type="button" data-close="${id}" class="pg-close-action">FIN DE CICLO</button>
         </div>
       </div>
-      <div class="pg-oc-grid">
-        <label class="pg-cell">
-          <span>ESTADO</span>
-          <select data-f="${id}-estado" data-original="${esc(field(o, "ESTADO") || p.ESTADO || "")}">
-            ${stateOptions(field(p, "ESTADO") || p.ESTADO || "")}
-          </select>
-        </label>
+
+      <div class="pg-oc-form">
+        <div class="pg-field short">
+          <label class="pg-label" for="f-${id}-estado">ESTADO</label>
+          <div class="pg-control">
+            <select id="f-${id}-estado" data-f="${id}-estado" data-original="${esc(field(o, "ESTADO") || p.ESTADO || "")}">
+              ${stateOptions(field(p, "ESTADO") || p.ESTADO || "")}
+            </select>
+          </div>
+        </div>
         ${cell("salida", "SALIDA DE PLANTA", "FECHA DE SALIDA PLANTA YURA/CARACOTO")}
         ${cell("llegada", "LLEGADA A DESTINO", "FECHA LLEGADA A DESTINO")}
         ${cell("carga", "CARGA DE RETORNO", "CARGA DE RETORNO")}
-        ${cell("obs", "OBSERVACIONES", "OBSERVACIONES", true)}
         ${cell("retorno", "INICIO DE RETORNO", "FECHA INICIO DE RETORNO")}
         ${cell("fin", "FIN DE RETORNO", "FECHA FIN DE RETORNO AQP/YURA/CRCT")}
         ${cell("ubi", "UBICACIÓN", "UBICACIÓN")}
+        ${cell("obs", "OBSERVACIONES", "OBSERVACIONES", { wide: true })}
       </div>
+      <p class="pg-save-hint" data-save-hint="${id}" hidden>✓ Guardado</p>
     </article>`;
 }
 
@@ -631,6 +643,15 @@ function setUnitOpen(card, open) {
   if (chev) chev.textContent = open ? "▼" : "▶";
 }
 
+function flashBtn(btn, mark) {
+  if (!btn) return;
+  const old = btn.textContent;
+  btn.textContent = mark;
+  setTimeout(() => {
+    btn.textContent = old;
+  }, 900);
+}
+
 function wire(container, runtime) {
   const $ = (id) => container.querySelector("#" + id);
 
@@ -778,9 +799,23 @@ function wire(container, runtime) {
         if (input) {
           input.value = text;
           input.dispatchEvent(new Event("input"));
+          flashBtn(btn, "✓");
         }
       } catch {
-        alert("No se pudo leer el portapapeles.");
+        flashBtn(btn, "!");
+      }
+      return;
+    }
+
+    if (btn.hasAttribute("data-copy-val")) {
+      const wrap = btn.closest(".pg-control");
+      const live = wrap?.querySelector("input, select, textarea");
+      const text = live ? String(live.value || "") : String(btn.getAttribute("data-copy-val") || "");
+      try {
+        await navigator.clipboard.writeText(text);
+        flashBtn(btn, "✓");
+      } catch {
+        flashBtn(btn, "!");
       }
       return;
     }
@@ -810,6 +845,18 @@ function wire(container, runtime) {
         row.querySelectorAll("[data-original]").forEach((el) => {
           el.dataset.original = el.value;
         });
+        const hint = row.querySelector(`[data-save-hint="${btn.dataset.save}"]`);
+        if (hint) {
+          hint.hidden = false;
+          setTimeout(() => {
+            hint.hidden = true;
+            btn.textContent = "GUARDAR";
+          }, 1600);
+        } else {
+          setTimeout(() => {
+            btn.textContent = "GUARDAR";
+          }, 1600);
+        }
       } catch (e) {
         alert(e.message);
         btn.textContent = old;
@@ -854,7 +901,7 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-06";
+  st.id = "cem-sg-v3-style-07";
   st.textContent = `
     body.tracking-active .desktop-tracking.grid-03 {
       display: flex !important; flex-direction: column !important;
@@ -926,40 +973,70 @@ function ensureStyles() {
     body.tracking-active .pg-unit-group.is-closed .pg-unit-ocs,
     body.tracking-active .hidden { display: none !important; }
     body.tracking-active .pg-oc-row {
-      border: 1px solid #e2e8f0 !important; border-radius: 8px !important; padding: 8px 10px !important; background: #f8fafc !important;
+      border: 1px solid #cbd5e1 !important; border-radius: 10px !important; padding: 12px 12px 10px !important; background: #fff !important;
     }
     body.tracking-active .pg-oc-row.pg-parihuelas {
-      background: #f2d778 !important; border-color: #b28b17 !important; color: #1a1200 !important;
+      background: #fff8db !important; border-color: #eab308 !important; color: #1a1200 !important;
     }
-    body.tracking-active .pg-oc-row.pg-parihuelas input,
-    body.tracking-active .pg-oc-row.pg-parihuelas select,
-    body.tracking-active .pg-oc-row.pg-parihuelas textarea { background: #fff !important; color: #0f172a !important; }
-    body.tracking-active .pg-oc-top { display: flex !important; justify-content: space-between !important; gap: 8px !important; flex-wrap: wrap !important; margin-bottom: 8px !important; }
-    body.tracking-active .pg-oc-title strong { color: #1d4ed8 !important; margin-right: 8px !important; }
+    body.tracking-active .pg-oc-row.pg-parihuelas .pg-label { color: #713f12 !important; }
+    body.tracking-active .pg-oc-top { display: flex !important; justify-content: space-between !important; gap: 10px !important; flex-wrap: wrap !important; margin-bottom: 10px !important; align-items: flex-start !important; }
+    body.tracking-active .pg-oc-title b { font-size: 15px !important; color: #0f172a !important; margin-right: 8px !important; }
+    body.tracking-active .pg-oc-title strong { color: #1d4ed8 !important; margin-right: 8px !important; font-size: 13px !important; }
+    body.tracking-active .pg-oc-title small { display: block !important; margin-top: 3px !important; color: #64748b !important; font-size: 12px !important; }
+    body.tracking-active .pg-draft { color: #b45309 !important; font-weight: 800 !important; font-size: 12px !important; }
     body.tracking-active .pg-special-tag {
-      display: inline-block !important; margin-left: 4px !important; padding: 1px 7px !important; border-radius: 999px !important;
-      font-size: 10px !important; font-weight: 900 !important; background: #dfb82f !important; border: 1px solid #98740c !important; color: #3f2c00 !important;
+      display: inline-block !important; margin-left: 6px !important; padding: 2px 8px !important; border-radius: 999px !important;
+      font-size: 11px !important; font-weight: 900 !important; background: #fde68a !important; border: 1px solid #d97706 !important; color: #78350f !important;
     }
-    body.tracking-active .pg-oc-grid { display: grid !important; grid-template-columns: repeat(4, minmax(0, 1fr)) !important; gap: 6px 8px !important; }
-    body.tracking-active .pg-cell { display: flex !important; flex-direction: column !important; gap: 2px !important; font-size: 10px !important; min-width: 0 !important; }
-    body.tracking-active .pg-cell.wide { grid-column: span 2 !important; }
-    body.tracking-active .pg-cell span { font-weight: 800 !important; color: #64748b !important; }
-    body.tracking-active .pg-cell input,
-    body.tracking-active .pg-cell select,
-    body.tracking-active .pg-cell textarea {
-      width: 100% !important; box-sizing: border-box !important; padding: 6px 7px !important; border-radius: 5px !important;
-      border: 1px solid #cbd5e1 !important; background: #fff !important; color: #0f172a !important; font-size: 12px !important;
+    /* Formulario usable: etiqueta SIEMPRE visible + control legible */
+    body.tracking-active .pg-oc-form {
+      display: grid !important;
+      grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+      gap: 10px 12px !important;
     }
-    body.tracking-active .paste-input { display: flex !important; gap: 3px !important; align-items: center !important; }
-    body.tracking-active .paste-input input { flex: 1 !important; min-width: 0 !important; }
-    body.tracking-active .pg-top-actions { display: flex !important; gap: 6px !important; }
+    body.tracking-active .pg-field {
+      display: flex !important; flex-direction: column !important; gap: 4px !important; min-width: 0 !important;
+    }
+    body.tracking-active .pg-field.wide { grid-column: 1 / -1 !important; }
+    body.tracking-active .pg-field.short { max-width: 100% !important; }
+    body.tracking-active .pg-label {
+      display: block !important; font-size: 12px !important; font-weight: 800 !important;
+      color: #334155 !important; letter-spacing: 0.02em !important; line-height: 1.2 !important;
+      white-space: normal !important; overflow: visible !important; text-overflow: unset !important;
+    }
+    body.tracking-active .pg-control {
+      display: flex !important; gap: 4px !important; align-items: stretch !important; min-height: 36px !important;
+    }
+    body.tracking-active .pg-control input,
+    body.tracking-active .pg-control select,
+    body.tracking-active .pg-control textarea {
+      flex: 1 1 auto !important; min-width: 0 !important; box-sizing: border-box !important;
+      min-height: 36px !important; padding: 8px 10px !important; border-radius: 6px !important;
+      border: 1px solid #94a3b8 !important; background: #fff !important; color: #0f172a !important;
+      font-size: 14px !important; font-weight: 600 !important; line-height: 1.2 !important;
+    }
+    body.tracking-active .pg-control input:focus,
+    body.tracking-active .pg-control select:focus,
+    body.tracking-active .pg-control textarea:focus {
+      outline: 2px solid #93c5fd !important; border-color: #2563eb !important;
+    }
+    body.tracking-active .pg-icon-btn {
+      flex: 0 0 36px !important; width: 36px !important; border: 1px solid #cbd5e1 !important;
+      background: #f8fafc !important; border-radius: 6px !important; cursor: pointer !important;
+      font-size: 14px !important; line-height: 1 !important;
+    }
+    body.tracking-active .pg-icon-btn:hover { background: #e2e8f0 !important; }
+    body.tracking-active .pg-top-actions { display: flex !important; gap: 8px !important; flex-wrap: wrap !important; }
     body.tracking-active .pg-save-action {
       background: #2563eb !important; color: #fff !important; border: 1px solid #1d4ed8 !important;
-      border-radius: 6px !important; padding: 6px 10px !important; font-size: 11px !important; font-weight: 800 !important; cursor: pointer !important;
+      border-radius: 6px !important; padding: 8px 14px !important; font-size: 13px !important; font-weight: 800 !important; cursor: pointer !important;
     }
     body.tracking-active .pg-close-action {
       background: #fff !important; color: #b91c1c !important; border: 1px solid #fca5a5 !important;
-      border-radius: 6px !important; padding: 6px 10px !important; font-size: 11px !important; font-weight: 800 !important; cursor: pointer !important;
+      border-radius: 6px !important; padding: 8px 14px !important; font-size: 13px !important; font-weight: 800 !important; cursor: pointer !important;
+    }
+    body.tracking-active .pg-save-hint {
+      margin: 8px 0 0 !important; color: #15803d !important; font-size: 12px !important; font-weight: 800 !important;
     }
     body.tracking-active .sg-mont-row { padding: 4px 10px !important; display: flex !important; flex-wrap: wrap !important; gap: 6px !important; background: #f1f5f9 !important; }
     body.tracking-active .sg-mont { font-size: 11px !important; padding: 2px 8px !important; border-radius: 999px !important; border: 1px solid #cbd5e1 !important; background: #fff !important; }
@@ -996,7 +1073,7 @@ function ensureStyles() {
     @media (max-width: 1100px) {
       body.tracking-active .desktop-tracking.grid-03 > main { grid-template-columns: 1fr !important; overflow: auto !important; }
       body.tracking-active .tracking-splitter { display: none !important; }
-      body.tracking-active .pg-oc-grid { grid-template-columns: 1fr 1fr !important; }
+      body.tracking-active .pg-oc-form { grid-template-columns: 1fr !important; }
     }
   `;
   document.head.appendChild(st);
