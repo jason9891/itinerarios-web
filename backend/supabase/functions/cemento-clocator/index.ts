@@ -190,7 +190,34 @@ async function login(user, password) {
     view: viewHtml(main)
   };
 }
-function rowData(html, plate, tracto) {
+function parseCoordPair(text) {
+  const s = String(text || "").replace(/,/g, " ").trim();
+  // -16.409047 -71.537451  |  -16.409047,-71.537451
+  let m = s.match(/(-?\d{1,3}\.\d{3,})\s+(-?\d{1,3}\.\d{3,})/);
+  if (m) {
+    const lat = Number(m[1]), lng = Number(m[2]);
+    if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
+      return { lat, lng };
+    }
+  }
+  return null;
+}
+
+function parseFechaHora(text) {
+  const s = String(text || "").trim();
+  let m = s.match(/(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2}(?::\d{2})?)/);
+  if (m) return `${m[1]} ${m[2].length === 5 ? m[2] + ":00" : m[2]}`;
+  m = s.match(/(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2}(?::\d{2})?)/);
+  if (m) {
+    const [y, mo, d] = m[1].split("-");
+    const tm = m[2].length === 5 ? m[2] + ":00" : m[2];
+    return `${d}/${mo}/${y} ${tm}`;
+  }
+  return "";
+}
+
+/** Extrae data-rk + último punto visible en la fila del monitoreo (página principal). */
+function rowInfo(html, plate, tracto) {
   const $ = load(html), targets = new Set([
     norm(plate),
     norm(tracto)
@@ -204,7 +231,63 @@ function rowData(html, plate, tracto) {
   if (!found) throw new Error(`No se encontró ${plate} / ${tracto} en el monitoreo CLocator`);
   const row = $(found), rk = row.attr("data-rk");
   if (!rk) throw new Error("La unidad encontrada no contiene data-rk");
-  return rk;
+
+  // 1) atributos data-* del tr o celdas
+  const attrLat = Number(row.attr("data-lat") || row.attr("data-latitude") || "");
+  const attrLng = Number(row.attr("data-lng") || row.attr("data-lon") || row.attr("data-longitude") || "");
+  let lat = Number.isFinite(attrLat) ? attrLat : NaN;
+  let lng = Number.isFinite(attrLng) ? attrLng : NaN;
+  let fecha = String(row.attr("data-fecha") || row.attr("data-hora") || row.attr("data-ultimo") || "").trim();
+
+  // 2) celdas: coordenadas y fecha/hora del último reporte
+  const tds = row.find("td").toArray();
+  for (const td of tds) {
+    const cell = $(td);
+    const text = cell.text().trim();
+    const title = String(cell.attr("title") || "");
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+      const pair = parseCoordPair(text) || parseCoordPair(title);
+      if (pair) {
+        lat = pair.lat;
+        lng = pair.lng;
+      } else {
+        const aloneLat = text.match(/^(-?\d{1,2}\.\d{4,})$/);
+        // lat/lng en celdas separadas: se resuelve en segundo pase
+      }
+    }
+    if (!fecha) {
+      const fh = parseFechaHora(text) || parseFechaHora(title);
+      if (fh) fecha = fh;
+    }
+  }
+
+  // 3) lat y lng en celdas consecutivas
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    const nums = [];
+    for (const td of tds) {
+      const text = $(td).text().trim().replace(",", ".");
+      if (/^-?\d{1,3}\.\d{3,}$/.test(text)) nums.push(Number(text));
+    }
+    for (let i = 0; i < nums.length - 1; i++) {
+      const a = nums[i], b = nums[i + 1];
+      if (Math.abs(a) <= 90 && Math.abs(b) <= 180) {
+        lat = a;
+        lng = b;
+        break;
+      }
+    }
+  }
+
+  const ultimo_monitoreo =
+    Number.isFinite(lat) && Number.isFinite(lng)
+      ? { lat, lng, fecha: fecha || null, fuente: "MONITOREO_PRINCIPAL" }
+      : null;
+
+  return { rk, ultimo_monitoreo };
+}
+
+function rowData(html, plate, tracto) {
+  return rowInfo(html, plate, tracto).rk;
 }
 function showSource(html) {
   const $ = load(html);
@@ -509,7 +592,11 @@ function analyze(points, fences) {
 async function recorrido(plate, tracto, from, to, cartography) {
   const user = Deno.env.get("CLOCATOR_USER"), password = Deno.env.get("CLOCATOR_PASSWORD");
   if (!user || !password) throw new Error("No existen CLOCATOR_USER y CLOCATOR_PASSWORD en los secretos de Supabase");
-  const s = await login(user, password), rk = rowData(s.main, plate, tracto), common = {
+  const s = await login(user, password);
+  const info = rowInfo(s.main, plate, tracto);
+  const rk = info.rk;
+  const ultimoMonitoreo = info.ultimo_monitoreo;
+  const common = {
     frmMonitoreo: "frmMonitoreo",
     "frmMonitoreo:cmbBuscarMonitoreo_input": "Placa",
     "frmMonitoreo:cmbBuscarMonitoreo_focus": "",
@@ -587,7 +674,10 @@ async function recorrido(plate, tracto, from, to, cartography) {
       fecha: p.fechaFinToString || p.fechaInicioToString || null
     });
   }
-  const last = points.at(-1), analysis = analyze(points, cartography.geocercas), network = classifyNetwork(last, analysis, cartography);
+  const last = points.at(-1) || null;
+  // Si no hay puntos en el rango, usar último reporte de la tabla principal de monitoreo
+  const ultimo = last || ultimoMonitoreo || null;
+  const analysis = analyze(points, cartography.geocercas), network = classifyNetwork(ultimo, analysis, cartography);
   Object.assign(analysis, network);
   // Alias conservado para no romper consumidores de 19.3.
   analysis.ubicacion_tramo = network.ubicacion_red;
@@ -601,7 +691,9 @@ async function recorrido(plate, tracto, from, to, cartography) {
     puntos: points.length,
     total_original: list.length,
     primero: points[0] || null,
-    ultimo: last || null,
+    ultimo,
+    ultimo_monitoreo: ultimoMonitoreo,
+    sin_movimiento: points.length < 2,
     puntos_gps: points,
     analisis: analysis,
     geocercas: [

@@ -142,6 +142,7 @@ export function drawTrackingRoute(gps, mapEl, captionEl, unitLabel = "") {
   // Último punto conocido (login Comsatel / respuesta clocator.ultimo)
   const ultimo =
     normalizeGpsPoint(gps?.ultimo, -1) ||
+    normalizeGpsPoint(gps?.ultimo_monitoreo, -1) ||
     normalizeGpsPoint(gps?.ultimo_punto, -1) ||
     normalizeGpsPoint(gps?.last, -1) ||
     (data.length === 1 ? data[0] : null);
