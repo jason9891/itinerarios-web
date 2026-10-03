@@ -190,16 +190,28 @@ async function login(user, password) {
     view: viewHtml(main)
   };
 }
+/** Ordena lat/lng para Perú / costa oeste SA (evita invertir y caer cerca de 0,0). */
+function normalizeLatLng(a, b) {
+  const x = Number(a), y = Number(b);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  const inLatPE = (v) => v >= -20 && v <= 5;
+  const inLngPE = (v) => v >= -85 && v <= -60;
+  if (inLatPE(x) && inLngPE(y)) return { lat: x, lng: y };
+  if (inLatPE(y) && inLngPE(x)) return { lat: y, lng: x };
+  // Heurística: en esta operación |lng| suele ser mayor (~70) que |lat| (~16)
+  if (Math.abs(x) <= 90 && Math.abs(y) <= 180) {
+    if (Math.abs(x) > 50 && Math.abs(y) < 50) return { lat: y, lng: x };
+    return { lat: x, lng: y };
+  }
+  if (Math.abs(y) <= 90 && Math.abs(x) <= 180) return { lat: y, lng: x };
+  return null;
+}
+
 function parseCoordPair(text) {
   const s = String(text || "").replace(/,/g, " ").trim();
-  // -16.409047 -71.537451  |  -16.409047,-71.537451
+  // Acepta "lat lng", "lng lat", con espacio o coma
   let m = s.match(/(-?\d{1,3}\.\d{3,})\s+(-?\d{1,3}\.\d{3,})/);
-  if (m) {
-    const lat = Number(m[1]), lng = Number(m[2]);
-    if (Number.isFinite(lat) && Number.isFinite(lng) && Math.abs(lat) <= 90 && Math.abs(lng) <= 180) {
-      return { lat, lng };
-    }
-  }
+  if (m) return normalizeLatLng(m[1], m[2]);
   return null;
 }
 
@@ -261,7 +273,7 @@ function rowInfo(html, plate, tracto) {
     }
   }
 
-  // 3) lat y lng en celdas consecutivas
+  // 3) lat y lng en celdas consecutivas (con normalización de orden)
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     const nums = [];
     for (const td of tds) {
@@ -269,12 +281,18 @@ function rowInfo(html, plate, tracto) {
       if (/^-?\d{1,3}\.\d{3,}$/.test(text)) nums.push(Number(text));
     }
     for (let i = 0; i < nums.length - 1; i++) {
-      const a = nums[i], b = nums[i + 1];
-      if (Math.abs(a) <= 90 && Math.abs(b) <= 180) {
-        lat = a;
-        lng = b;
+      const pair = normalizeLatLng(nums[i], nums[i + 1]);
+      if (pair) {
+        lat = pair.lat;
+        lng = pair.lng;
         break;
       }
+    }
+  } else {
+    const pair = normalizeLatLng(lat, lng);
+    if (pair) {
+      lat = pair.lat;
+      lng = pair.lng;
     }
   }
 

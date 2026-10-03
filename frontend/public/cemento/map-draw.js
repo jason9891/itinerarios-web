@@ -15,10 +15,23 @@ let inspectionEnabled = false;
 let infoWindow = null;
 let currentPoints = [];
 
+function fixLatLngOrder(lat, lng) {
+  // Perú: lat ~ -20..5, lng ~ -85..-60. Si vienen invertidos, corregir.
+  const inLat = (v) => v >= -20 && v <= 5;
+  const inLng = (v) => v >= -85 && v <= -60;
+  if (inLat(lat) && inLng(lng)) return { lat, lng };
+  if (inLat(lng) && inLng(lat)) return { lat: lng, lng: lat };
+  if (Math.abs(lat) > 50 && Math.abs(lng) < 50) return { lat: lng, lng: lat };
+  return { lat, lng };
+}
+
 function normalizeGpsPoint(p, index) {
-  const lat = Number(p?.lat ?? p?.latitude);
-  const lng = Number(p?.lng ?? p?.lon ?? p?.longitude);
+  let lat = Number(p?.lat ?? p?.latitude ?? p?.latitud);
+  let lng = Number(p?.lng ?? p?.lon ?? p?.longitude ?? p?.longitud);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  ({ lat, lng } = fixLatLngOrder(lat, lng));
+  // Descartar basura cerca de (0,0) — golfo de Guinea
+  if (Math.abs(lat) < 1 && Math.abs(lng) < 1) return null;
   return {
     lat,
     lng,
