@@ -239,6 +239,14 @@ function unitGroupHtml(unit, ordinal) {
     </section>`;
 }
 
+function filteredUnits() {
+  if (state.filter === "revisadas") {
+    return state.units.filter((u) => state.reviewed.has(nplate(u.placa)));
+  }
+  if (state.filter === "todas") return state.units;
+  return state.units.filter((u) => !state.reviewed.has(nplate(u.placa)));
+}
+
 function paintUnitList(container) {
   const list = container.querySelector("#unit-list");
   if (!list) return;
