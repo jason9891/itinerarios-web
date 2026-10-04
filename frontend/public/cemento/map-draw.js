@@ -23,7 +23,18 @@ function normalizeGpsPoint(p, index) {
   let lat = Number(p?.lat ?? p?.latitude);
   let lng = Number(p?.lng ?? p?.lon ?? p?.longitude);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  // Si vienen invertidas y el swap cae en Perú, corregir
+  // Rechazar UTM / odómetro / basura (ej. lng=8689952) — misma regla que Python
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+    if (Math.abs(lng) <= 90 && Math.abs(lat) <= 180) {
+      const t = lat;
+      lat = lng;
+      lng = t;
+    } else {
+      return null;
+    }
+  }
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  if (Math.abs(lat) < 0.1 && Math.abs(lng) < 0.1) return null;
   if (!inPeruBBox(lat, lng) && inPeruBBox(lng, lat)) {
     const t = lat;
     lat = lng;

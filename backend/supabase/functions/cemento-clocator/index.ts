@@ -191,17 +191,24 @@ async function login(user, password) {
   };
 }
 function inPeruBBox(lat, lng) {
-  // Caja amplia del territorio operativo (Perú + borde sur Ecuador / norte Chile)
   return lat >= -19.5 && lat <= 0.5 && lng >= -82 && lng <= -68;
+}
+
+/** Igual que snapshot Python: |lat|<=90, |lon|<=180, |v|>0.1 — rechaza UTM/odómetro (8689952) */
+function esParGeoValido(a, b) {
+  const x = Number(a), y = Number(b);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+  const ok = (la, lo) => Math.abs(la) <= 90 && Math.abs(lo) <= 180 && Math.abs(la) > 0.1 && Math.abs(lo) > 0.1;
+  return ok(x, y) || ok(y, x);
 }
 
 function normalizeLatLngSimple(a, b) {
   const x = Number(a), y = Number(b);
-  if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  if (Math.abs(x) < 0.1 && Math.abs(y) < 0.1) return null;
-  // Solo aceptamos puntos dentro de Perú (evita océano / otros continentes)
+  if (!esParGeoValido(x, y)) return null;
   if (inPeruBBox(x, y)) return { lat: x, lng: y };
   if (inPeruBBox(y, x)) return { lat: y, lng: x };
+  if (Math.abs(x) <= 90 && Math.abs(y) <= 180) return { lat: x, lng: y };
+  if (Math.abs(y) <= 90 && Math.abs(x) <= 180) return { lat: y, lng: x };
   return null;
 }
 
@@ -703,17 +710,24 @@ async function recorrido(plate, tracto, from, to, cartography) {
   const list = data?.result?.map?.listHistorica?.list;
   if (!Array.isArray(list)) throw new Error("CLocator no devolvió listHistorica.list");
   const points = [];
-  for (const item of list){
+  for (const item of list) {
     const p = item?.map ?? item;
-    if (Number.isFinite(Number(p?.latitud)) && Number.isFinite(Number(p?.longitud))) points.push({
-      lat: Number(p.latitud),
-      lng: Number(p.longitud),
-      fecha: p.fechaFinToString || p.fechaInicioToString || null
-    });
+    const fixed = normalizeLatLngSimple(p?.latitud ?? p?.lat, p?.longitud ?? p?.lng ?? p?.lon);
+    if (fixed) {
+      points.push({
+        lat: fixed.lat,
+        lng: fixed.lng,
+        fecha: p.fechaFinToString || p.fechaInicioToString || p.fecha || null
+      });
+    }
   }
   const last = points.at(-1) || null;
-  // 0 puntos en rango → última posición del main (irAMonitoreo)
-  const ultimo = last || ultimoMonitoreo || null;
+  // Preferir punto geográfico válido en Perú (main irAMonitoreo si el del rango es basura)
+  let ultimo = null;
+  if (last && inPeruBBox(last.lat, last.lng)) ultimo = last;
+  else if (ultimoMonitoreo && inPeruBBox(ultimoMonitoreo.lat, ultimoMonitoreo.lng)) ultimo = ultimoMonitoreo;
+  else if (last && esParGeoValido(last.lat, last.lng)) ultimo = last;
+  else if (ultimoMonitoreo && esParGeoValido(ultimoMonitoreo.lat, ultimoMonitoreo.lng)) ultimo = ultimoMonitoreo;
   const analysis = analyze(points, cartography.geocercas), network = classifyNetwork(ultimo, analysis, cartography);
   Object.assign(analysis, network);
   // Alias conservado para no romper consumidores de 19.3.
