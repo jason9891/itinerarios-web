@@ -1,0 +1,28 @@
+.file-button{display:inline-flex;align-items:center;justify-content:center;min-height:42px;padding:0 18px;border:1px solid #3fc4ff;border-radius:7px;background:#31b8f2;color:#061624;font-weight:800;cursor:pointer}
+.file-button:hover{background:#69d2ff}.file-button input{position:absolute;inline-size:1px;block-size:1px;opacity:0;pointer-events:none}
+.sap-current{margin:18px 0;padding:14px;border:1px solid #27445e;border-radius:7px;background:#0b2135;color:#b9d8f1}
+.sap-metrics{display:grid;grid-template-columns:repeat(4,minmax(130px,1fr));gap:12px;margin:16px 0}
+.sap-metrics article{padding:16px;border:1px solid #27445e;border-radius:8px;background:#102940}.sap-metrics small{display:block;color:#7fa9ca}.sap-metrics b{display:block;margin-top:7px;font-size:24px;color:#fff}
+.loading-inline{color:#58d0ff}.warning-text{color:#ffc76d}.cutoff-panel{display:grid;grid-template-columns:1fr auto;align-items:center;gap:16px}.cutoff-panel>p{grid-column:1/-1}
+.cutoff-editor{display:flex;gap:10px;align-items:center}.cutoff-editor input{min-height:42px;padding:0 12px;border:1px solid #385a76;border-radius:6px;background:#f8fbff;color:#082039;font-weight:700}
+.small-value{font-size:20px!important}.report-main-action{display:flex;justify-content:center;margin:20px 0}.report-main-action button{min-height:50px;background:#36c2ff;color:#061624}
+.track-oc input,.track-oc textarea,.track-oc select,.track-oc option{background:#fff!important;color:#1f2937!important;-webkit-text-fill-color:#1f2937!important;color-scheme:light}.track-oc input::placeholder,.track-oc textarea::placeholder{color:#64748b!important;-webkit-text-fill-color:#64748b!important;opacity:1}
+@media(max-width:900px){.sap-metrics{grid-template-columns:repeat(2,1fr)}.cutoff-panel{grid-template-columns:1fr}.cutoff-panel>p{grid-column:auto}.cutoff-editor{align-items:stretch;flex-direction:column}}
+@media(max-width:520px){.sap-metrics{grid-template-columns:1fr}}
+.route-decisions{margin:18px 0;padding:18px;border:1px solid #f59e0b;border-radius:10px;background:#332611}.route-decisions h2{margin:0 0 6px;color:#fcd34d}.route-decisions>p{color:#f3cf91}.route-decisions article{display:grid;grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:12px;padding:11px 0;border-top:1px solid #ffffff17}.route-decisions article b{font-size:12px;overflow-wrap:anywhere}.route-decisions article div{display:flex;gap:7px}.route-decisions button{border:1px solid #22c55e;border-radius:6px;background:#065f46;color:#fff;padding:8px 10px;font-size:10px;font-weight:900;cursor:pointer}.route-decisions button.danger{border-color:#ef4444;background:#7f1d1d}.route-decisions button:disabled{opacity:.55;cursor:wait}@media(max-width:650px){.route-decisions article{grid-template-columns:1fr}.route-decisions article div{display:grid;grid-template-columns:1fr 1fr}}
+
+
+/* PRUEBA 17 · ADMINISTRACION Y CONTROL DE CUOTAS */
+.quota-grid{display:grid;grid-template-columns:repeat(3,minmax(210px,1fr));gap:14px;margin:18px 0}
+.quota-card{padding:18px;border:1px solid #27445e;border-radius:10px;background:#102940}
+.quota-card small{display:block;color:#82aac7;font-weight:700;letter-spacing:.04em}.quota-card strong{display:block;margin:7px 0 4px;color:#fff;font-size:24px}.quota-card em{color:#9ebbd1;font-style:normal;font-size:12px}
+.quota-bar{height:7px;margin-top:12px;border-radius:10px;background:#0a1d30;overflow:hidden}.quota-bar>span{display:block;height:100%;max-width:100%;background:linear-gradient(90deg,#24b7f4,#62d3ff)}
+.admin-split{display:grid;grid-template-columns:minmax(0,1.2fr) minmax(320px,.8fr);gap:16px;margin-top:16px}.admin-panel{min-width:0}.admin-import-result{margin-top:14px}.admin-file-summary{padding:14px;border:1px solid #27445e;border-radius:8px;background:#0b2135}.admin-file-summary b{color:#fff}.admin-note{font-size:12px;color:#8fb3cf;line-height:1.5}.admin-actions{display:flex;gap:10px;flex-wrap:wrap;margin-top:14px}.admin-actions button{min-height:42px}
+.admin-table td,.admin-table th{white-space:nowrap}.admin-table td:nth-child(1),.admin-table th:nth-child(1){text-align:left}
+@media(max-width:1050px){.quota-grid{grid-template-columns:1fr}.admin-split{grid-template-columns:1fr}}
+
+/* PRUEBA 17 · acceso operativo por alias de usuario */
+.login-form{display:grid;gap:12px;margin:24px 0 14px;text-align:left}.login-form label span{display:block;margin:0 0 6px;color:#7f95aa;font-size:10px;font-weight:900;letter-spacing:1px}.login-form input{width:100%;min-height:46px;border:1px solid #ffffff24;border-radius:9px;background:#06111d;color:#fff;padding:0 13px;outline:none}.login-form input:focus{border-color:#42bfff;box-shadow:0 0 0 3px #42bfff1f}.login-form .primary{width:100%;cursor:pointer}.login-form .primary:disabled{opacity:.65;cursor:wait}.login-separator{display:flex;align-items:center;gap:10px;margin:14px 0;color:#657d93;font-size:10px;font-weight:900}.login-separator:before,.login-separator:after{content:"";height:1px;background:#ffffff17;flex:1}.login-google{width:100%;cursor:pointer}.login .message{min-height:20px}
+
+/* PRUEBA 17.1 · seguimiento manual separado de administración */
+.manual-panel{max-width:980px}.manual-panel .panel-title{align-items:center}.manual-panel .admin-import-result{min-height:70px;padding-top:6px}

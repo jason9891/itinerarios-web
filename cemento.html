@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1d30">
+  <title>Cemento · Itinerarios · RACIEMSA</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="prueba17.css?v=version-3">
+  <link rel="stylesheet" href="seguimiento19.css?v=version-3">
+</head>
+<body class="auth-pending" data-itinerary="cemento">
+
+<!-- SHELL CANÓNICO: no cambiar estructura. Logo y marca se controlan desde shared/platform-shell.js -->
+<header class="top">
+  <div class="logo" id="platform-logo">R</div>
+  <div class="brand">
+    <b id="platform-brand">RACIEMSA</b>
+    <small id="platform-subtitle">OPERADOR LOGÍSTICO</small>
+  </div>
+  <div class="grow"></div>
+  <a class="itinerary-link" href="index.html">VOLVER A ITINERARIOS</a>
+</header>
+
+<main id="login" class="login">
+  <div class="login-icon">▰</div>
+  <p class="eyebrow">PLATAFORMA DE SEGUIMIENTO</p>
+  <h1>Cemento</h1>
+  <p>Ingresa con tu usuario operativo o con la cuenta Google ADMIN.</p>
+  <div class="login-form">
+    <label><span>USUARIO</span><input id="login-user" type="text" autocomplete="username" placeholder="PRUEBA" autocapitalize="characters"></label>
+    <label><span>CONTRASEÑA</span><input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••"></label>
+    <button id="user-login" class="primary">INGRESAR</button>
+  </div>
+  <div class="login-separator"><span>o</span></div>
+  <button id="google-login" class="ghost login-google">CONTINUAR CON GOOGLE</button>
+  <p id="login-message" class="message"></p>
+</main>
+
+<div id="workspace" class="workspace hidden">
+  <aside>
+    <div class="side-title">
+      <span>CEMENTO</span>
+      <b>Control operativo</b>
+    </div>
+    <nav>
+      <button data-route="home"><i>⌂</i><span>INICIO<small>RESUMEN OPERATIVO</small></span></button>
+      <button data-route="sap"><i>⇧</i><span>ACTUALIZAR SAP<small>EXCEL · TEMPORAL</small></span></button>
+      <button data-route="precarga"><i>↻</i><span>PRECARGAR RUTAS<small>GPS · PENDIENTES</small></span></button>
+      <button data-route="seguimiento"><i>▰</i><span>SEGUIMIENTO DIARIO<small>OC · UNIDADES</small></span></button>
+      <button data-route="manual"><i>⇪</i><span>SEGUIMIENTO MANUAL<small>IMPORTAR XLSX</small></span></button>
+      <button data-route="archivos"><i>▣</i><span>ARCHIVOS<small>EXCEL · HISTÓRICO</small></span></button>
+      <button data-route="reporte"><i>▥</i><span>CREAR REPORTE<small>ENVIAR2022</small></span></button>
+      <button id="admin-nav" class="hidden" data-route="admin"><i>⚙</i><span>ADMINISTRACIÓN<small>USO DE SUPABASE</small></span></button>
+    </nav>
+    <div class="side-foot">
+      <b>ÁREA SATELITAL</b>
+      <small>VERSIÓN 3 · SEGUIMIENTO</small>
+    </div>
+  </aside>
+  <main id="content" class="content"></main>
+</div>
+
+<script src="vendor/jszip.min.js"></script>
+<script type="module" src="cemento/main.js?v=modular-22"></script>
+</body>
+</html>
