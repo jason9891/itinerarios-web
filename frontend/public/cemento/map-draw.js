@@ -49,24 +49,53 @@ export function loadMaps(apiKey) {
   return mapsReady;
 }
 
-/** Solo consulta map_config la primera vez. */
+/** Solo consulta map_config la primera vez. Reintenta con token fresco si JWT inválido. */
 export async function ensureTrackingMap(mapEl, getToken) {
   if (!mapEl) return null;
   if (mapInstance && mapConfigLoaded) {
-    google.maps.event.trigger(mapInstance, "resize");
+    try {
+      google.maps.event.trigger(mapInstance, "resize");
+    } catch (_) {}
     return mapInstance;
   }
-  const token = await getToken();
-  const r = await fetch(API.clocator, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ action: "map_config" }),
-  });
-  const cfg = await r.json();
-  if (!r.ok) throw new Error(cfg.error || "No se pudo cargar configuración del mapa");
+
+  async function loadConfig(force) {
+    // getToken puede ser () => token o (force) => getIdToken(force)
+    const token = await (getToken.length ? getToken(!!force) : getToken());
+    if (!token) throw new Error("Sesión expirada: inicie sesión de nuevo");
+    const r = await fetch(API.clocator, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action: "map_config" }),
+    });
+    const cfg = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const msg = String(cfg.error || cfg.message || `HTTP ${r.status}`);
+      const err = new Error(msg);
+      err.status = r.status;
+      throw err;
+    }
+    if (!cfg.google_maps_api_key) {
+      throw new Error("Falta GOOGLE_MAPS_API_KEY en la function");
+    }
+    return cfg;
+  }
+
+  let cfg;
+  try {
+    cfg = await loadConfig(true); // siempre token fresco para el mapa
+  } catch (e1) {
+    const m = String(e1.message || "").toLowerCase();
+    if (m.includes("jwt") || m.includes("sesión") || m.includes("iniciar") || m.includes("401") || m.includes("unauthorized")) {
+      cfg = await loadConfig(true);
+    } else {
+      throw e1;
+    }
+  }
+
   await loadMaps(cfg.google_maps_api_key);
   mapEl.innerHTML = "";
   mapEl.dataset.mapsBound = "1";
