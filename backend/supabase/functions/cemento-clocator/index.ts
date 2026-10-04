@@ -315,97 +315,116 @@ function parseFechaHora(text) {
   return "";
 }
 
-/** Extrae data-rk + último punto visible en la fila del monitoreo (página principal). */
+/**
+ * Coordenadas desde HTML de la fila del monitoreo.
+ * En CLocator NO están en el texto de celdas: están en irAMonitoreo(lat, lon)
+ * (validado con el extractor Python de snapshot base).
+ */
+function obtenerLatLonDesdeFila(htmlFila) {
+  const src = String(htmlFila || "");
+  const patrones = [
+    /irAMonitoreo\s*\(\s*['"]?(-?\d+(?:\.\d+)?)['"]?\s*,\s*['"]?(-?\d+(?:\.\d+)?)/gi,
+    /irAMonitoreo\s*\(\s*['"](-?\d+(?:\.\d+)?)['"]\s*,\s*['"](-?\d+(?:\.\d+)?)['"]/gi,
+  ];
+  for (const re of patrones) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(src))) {
+      const a = Number(m[1]);
+      const b = Number(m[2]);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+      if (Math.abs(a) < 0.1 && Math.abs(b) < 0.1) continue;
+      const fixed = normalizeLatLng(a, b);
+      if (fixed) return { ...fixed, como: "irAMonitoreo" };
+      if (Math.abs(a) <= 90 && Math.abs(b) <= 180) {
+        return { lat: a, lng: b, como: "irAMonitoreo_raw" };
+      }
+    }
+  }
+  // Fallback: onclick/href con dos decimales
+  const nums = [...src.matchAll(/-?\d+\.\d+/g)].map((x) => Number(x[0]));
+  for (let i = 0; i < nums.length - 1; i++) {
+    const fixed = normalizeLatLng(nums[i], nums[i + 1]);
+    if (fixed && Math.abs(fixed.lat) > 0.1 && Math.abs(fixed.lng) > 0.1) {
+      return { ...fixed, como: "attrs_numericos" };
+    }
+  }
+  return null;
+}
+
+/** Extrae data-rk + último punto desde la fila del monitoreo principal. */
 function rowInfo(html, plate, tracto) {
-  const $ = load(html), targets = new Set([
-    norm(plate),
-    norm(tracto)
-  ].filter(Boolean));
+  const $ = load(html);
+  const targets = new Set([norm(plate), norm(tracto)].filter(Boolean));
+
+  // Preferir tbody de la tabla de monitoreo (igual que el script Python)
+  let $scope = $("#frmMonitoreo\\:dtTablaMonitoreo_data");
+  if (!$scope.length) {
+    $scope = $("tbody").filter((_, el) => {
+      const id = String($(el).attr("id") || "");
+      return id.endsWith("dtTablaMonitoreo_data");
+    }).first();
+  }
+  if (!$scope.length) $scope = $.root();
+
   let found = null;
-  $("tr").each((_, tr)=>{
+  $scope.find("tr").each((_, tr) => {
     if (found) return;
-    const vals = $(tr).find("td").map((_, td)=>norm($(td).text())).get();
-    if (vals.some((v)=>targets.has(v))) found = tr;
+    const vals = $(tr).find("td").map((_, td) => norm($(td).text())).get();
+    if (vals.some((v) => targets.has(v))) found = tr;
   });
+  // fallback: toda la página
+  if (!found) {
+    $("tr").each((_, tr) => {
+      if (found) return;
+      const vals = $(tr).find("td").map((_, td) => norm($(td).text())).get();
+      if (vals.some((v) => targets.has(v))) found = tr;
+    });
+  }
   if (!found) throw new Error(`No se encontró ${plate} / ${tracto} en el monitoreo CLocator`);
-  const row = $(found), rk = row.attr("data-rk");
+
+  const row = $(found);
+  const rk = row.attr("data-rk");
   if (!rk) throw new Error("La unidad encontrada no contiene data-rk");
 
-  // Diagnóstico: qué hay realmente en la fila
-  const celdas = row.find("td").map((_, td) => {
+  const tds = row.find("td").toArray();
+  const celdas = tds.map((td) => {
     const cell = $(td);
     return {
       texto: cell.text().replace(/\s+/g, " ").trim().slice(0, 120),
       title: String(cell.attr("title") || "").slice(0, 80),
     };
-  }).get();
+  });
 
-  const attrs = {};
-  const el = row.get(0);
-  if (el?.attribs) {
-    for (const [k, v] of Object.entries(el.attribs)) {
-      if (k === "class" || k === "style") continue;
-      attrs[k] = String(v).slice(0, 80);
-    }
-  }
-
-  // 1) atributos data-* del tr
-  const attrLat = Number(row.attr("data-lat") || row.attr("data-latitude") || "");
-  const attrLng = Number(row.attr("data-lng") || row.attr("data-lon") || row.attr("data-longitude") || "");
-  let lat = Number.isFinite(attrLat) ? attrLat : NaN;
-  let lng = Number.isFinite(attrLng) ? attrLng : NaN;
-  let fecha = String(row.attr("data-fecha") || row.attr("data-hora") || row.attr("data-ultimo") || "").trim();
-  let como_se_obtuvo = "";
-
-  // 2) celdas: coordenadas y fecha/hora
-  const tds = row.find("td").toArray();
-  const numeros_candidatos = [];
-  for (const td of tds) {
-    const cell = $(td);
-    const text = cell.text().trim();
-    const title = String(cell.attr("title") || "");
-    if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-      const pair = parseCoordPair(text) || parseCoordPair(title);
-      if (pair) {
-        lat = pair.lat;
-        lng = pair.lng;
-        como_se_obtuvo = "par_en_celda";
-      }
-    }
-    if (!fecha) {
-      const fh = parseFechaHora(text) || parseFechaHora(title);
-      if (fh) fecha = fh;
-    }
-    const n = parseDecimal(text);
-    if (Number.isFinite(n) && Math.abs(n) <= 180 && /\d+[.,]\d{2,}/.test(text)) {
-      numeros_candidatos.push({ valor: n, texto: text.slice(0, 40) });
-    }
-  }
-
-  // 3) lat y lng en celdas consecutivas
-  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    const nums = numeros_candidatos.map((x) => x.valor);
-    for (let i = 0; i < nums.length - 1; i++) {
-      const pair = normalizeLatLng(nums[i], nums[i + 1]);
-      if (pair) {
-        lat = pair.lat;
-        lng = pair.lng;
-        como_se_obtuvo = `celdas_consecutivas[${i},${i + 1}]`;
+  // Columnas validadas en CLocator main (índice 0 = Placa, 4 = Fecha Última Localización)
+  // 0 Placa, 1 Código Externo, 2 Conductor, 3 Rumbo, 4 Fecha Última Localización
+  let fecha = "";
+  if (celdas[4]?.texto) fecha = parseFechaHora(celdas[4].texto) || celdas[4].texto;
+  if (!fecha) {
+    for (const c of celdas) {
+      const fh = parseFechaHora(c.texto) || parseFechaHora(c.title);
+      if (fh) {
+        fecha = fh;
         break;
       }
     }
-  } else if (!como_se_obtuvo) {
-    const pair = normalizeLatLng(lat, lng);
-    if (pair) {
-      lat = pair.lat;
-      lng = pair.lng;
-      como_se_obtuvo = Number.isFinite(attrLat) ? "data-attr" : como_se_obtuvo || "normalizado";
-    }
   }
+
+  const htmlFila = $.html(found) || String(found);
+  const coords = obtenerLatLonDesdeFila(htmlFila);
+  let lat = coords?.lat;
+  let lng = coords?.lng;
+  let como = coords?.como || "";
 
   const ultimo_monitoreo =
     Number.isFinite(lat) && Number.isFinite(lng)
-      ? { lat, lng, fecha: fecha || null, fuente: "MONITOREO_PRINCIPAL", como: como_se_obtuvo }
+      ? {
+          lat,
+          lng,
+          fecha: fecha || null,
+          fuente: "MONITOREO_PRINCIPAL",
+          como: como || "irAMonitoreo",
+        }
       : null;
 
   return {
@@ -415,16 +434,14 @@ function rowInfo(html, plate, tracto) {
       placa_buscada: plate,
       tracto_buscado: tracto,
       data_rk: rk,
-      attrs,
       celdas,
-      numeros_candidatos,
       lat_leida: Number.isFinite(lat) ? lat : null,
       lng_leida: Number.isFinite(lng) ? lng : null,
       fecha_leida: fecha || null,
-      como_se_obtuvo: como_se_obtuvo || null,
+      como_se_obtuvo: como || null,
       interpretacion: ultimo_monitoreo
         ? `lat=${ultimo_monitoreo.lat}, lng=${ultimo_monitoreo.lng}, fecha=${ultimo_monitoreo.fecha || "—"}`
-        : "NO se pudo obtener lat/lng de la fila del monitoreo",
+        : "NO se encontró irAMonitoreo(lat,lon) en la fila",
     },
   };
 }
