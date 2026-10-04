@@ -265,12 +265,31 @@ function unitGroupHtml(unit, ordinal) {
   </div>`;
 }
 
+/** OC aún pendiente de seguimiento (no cerrada / sin fin de ciclo). */
+function hasPendingSeguimiento(unit) {
+  const ocs = unit?.ocs || [];
+  if (!ocs.length) return false;
+  return ocs.some((oc) => {
+    if (oc.cerrada || oc.cerrado || oc.fin_ciclo || oc.fin_de_ciclo) return false;
+    const est = String(oc.estado || oc.ESTADO || "").toUpperCase();
+    if (est.includes("CERRAD") || est === "FIN" || est.includes("FIN DE CICLO")) return false;
+    return true; // tiene OC abierta → pendiente
+  });
+}
+
+/** Revisada real: marcada ✓ y sin OC pendiente de seguimiento. */
+function isRevisadaEfectiva(unit) {
+  return state.reviewed.has(nplate(unit.placa)) && !hasPendingSeguimiento(unit);
+}
+
 function filteredUnits() {
   if (state.filter === "revisadas") {
-    return state.units.filter((u) => state.reviewed.has(nplate(u.placa)));
+    // Solo revisadas reales: NO pueden aparecer unidades con recorrido/OC pendiente
+    return state.units.filter((u) => isRevisadaEfectiva(u));
   }
   if (state.filter === "todas") return state.units;
-  return state.units.filter((u) => !state.reviewed.has(nplate(u.placa)));
+  // ACTIVAS: no revisadas, o revisadas pero aún con OC pendiente
+  return state.units.filter((u) => !isRevisadaEfectiva(u));
 }
 
 function paintUnitList(container) {
@@ -482,16 +501,8 @@ async function loadData(onProgress) {
   const plates = lista.placas || [];
   const reviewed = new Set(plates.filter((p) => p.revisada).map((p) => nplate(p.placa)));
 
-  const meta = loadMeta();
-  for (const u of plates) {
-    const k = nplate(u.placa);
-    if (meta?.resultados?.[k]?.estado === "SIN MOVIMIENTO" && !reviewed.has(k)) {
-      try {
-        await trackApi({ action: "marcar_revisada", placa: u.placa });
-        reviewed.add(k);
-      } catch (_) {}
-    }
-  }
+  // NO auto-marcar SIN MOVIMIENTO como revisada:
+  // esas unidades necesitan ver el punto U y seguir en ACTIVAS si tienen OC pendiente.
 
   const units = [];
   const batch = 8;
@@ -572,8 +583,8 @@ async function bootstrap(container, runtime) {
 
   const desdeDef = meta?.desde || localStorage.getItem("cemento_rango_desde") || "";
   const hastaDef = meta?.hasta || formatPE(new Date());
-  const nAct = state.units.filter((u) => !state.reviewed.has(nplate(u.placa))).length;
-  const nRev = state.reviewed.size;
+  const nAct = state.units.filter((u) => !isRevisadaEfectiva(u)).length;
+  const nRev = state.units.filter((u) => isRevisadaEfectiva(u)).length;
 
   container.innerHTML = `
     <section class="desktop-tracking v2 v3 grid-test grid-03">
@@ -670,6 +681,7 @@ async function focusUnit(container, key, runtime) {
     // Diagnóstico visible y persistente (no lo pisa el texto genérico)
     const u = gps?.ultimo || gps?.ultimo_monitoreo || null;
     const nPts = Array.isArray(gps?.puntos_gps) ? gps.puntos_gps.length : Number(gps?.puntos || 0);
+    const diagEl = container.querySelector("#map-u-diag");
     if (statusEl) {
       if (u && nPts < 2) {
         statusEl.textContent =
@@ -680,11 +692,30 @@ async function focusUnit(container, key, runtime) {
         statusEl.textContent = st ? `${unitLabel} · PRECARGA: ${st.estado}` : `${unitLabel} · SIN RECORRIDO`;
       }
     }
+    if (diagEl) {
+      if (u) {
+        const pe = Number(u.lat) >= -19.5 && Number(u.lat) <= 0.5 && Number(u.lng) >= -82 && Number(u.lng) <= -68;
+        diagEl.textContent =
+          `${unitLabel} · U lat=${Number(u.lat).toFixed(6)} lng=${Number(u.lng).toFixed(6)} · ${u.fecha || "sin hora"} · pts=${nPts} · ${pe ? "PERÚ OK" : "FUERA DE CAJA"} · ${u.fuente || ""}`;
+        diagEl.style.background = pe ? "#14532d" : "#7f1d1d";
+      } else if (nPts >= 2) {
+        diagEl.textContent = `${unitLabel} · tramo con ${nPts} puntos (sin U)`;
+        diagEl.style.background = "#0f172a";
+      } else {
+        diagEl.textContent = `${unitLabel} · sin último punto en caché — pulse ACTUALIZAR RECORRIDO`;
+        diagEl.style.background = "#0f172a";
+      }
+    }
   } catch (e) {
     if (mapEl) {
       mapEl.innerHTML = `<div style="padding:12px;text-align:center;color:#fca5a5">Mapa: ${esc(e.message)}</div>`;
     }
     if (statusEl) statusEl.textContent = `ERROR MAPA: ${e.message}`;
+    const diagEl = container.querySelector("#map-u-diag");
+    if (diagEl) {
+      diagEl.textContent = `ERROR: ${e.message}`;
+      diagEl.style.background = "#7f1d1d";
+    }
   }
 }
 
@@ -772,7 +803,7 @@ function wire(container, runtime) {
       });
       const meta = loadMeta();
       await cacheGPS(
-        { ...data, placa: unit.placa, tracto: unit.tracto, run_id: meta?.id, desde, hasta },
+        { ...data, ok: true, placa: unit.placa, tracto: unit.tracto, run_id: meta?.id, desde, hasta },
         gpsKey(meta?.id, unit.tracto, unit.placa),
       );
       const u = data?.ultimo || data?.ultimo_monitoreo || null;
@@ -824,8 +855,8 @@ function wire(container, runtime) {
         const placa = btn.dataset.review;
         await trackApi({ action: "marcar_revisada", placa });
         state.reviewed.add(nplate(placa));
-        const nAct = state.units.filter((u) => !state.reviewed.has(nplate(u.placa))).length;
-        const nRev = state.reviewed.size;
+        const nAct = state.units.filter((u) => !isRevisadaEfectiva(u)).length;
+        const nRev = state.units.filter((u) => isRevisadaEfectiva(u)).length;
         container.querySelector("#review-count").textContent = `REVISADAS ${nRev}/${state.units.length}`;
         container.querySelectorAll(".pg-filter[data-filter]").forEach((b) => {
           if (b.dataset.filter === "activas") b.textContent = `ACTIVAS · ${nAct}`;
