@@ -252,15 +252,35 @@ function rowInfo(html, plate, tracto) {
   const row = $(found), rk = row.attr("data-rk");
   if (!rk) throw new Error("La unidad encontrada no contiene data-rk");
 
-  // 1) atributos data-* del tr o celdas
+  // Diagnóstico: qué hay realmente en la fila
+  const celdas = row.find("td").map((_, td) => {
+    const cell = $(td);
+    return {
+      texto: cell.text().replace(/\s+/g, " ").trim().slice(0, 120),
+      title: String(cell.attr("title") || "").slice(0, 80),
+    };
+  }).get();
+
+  const attrs = {};
+  const el = row.get(0);
+  if (el?.attribs) {
+    for (const [k, v] of Object.entries(el.attribs)) {
+      if (k === "class" || k === "style") continue;
+      attrs[k] = String(v).slice(0, 80);
+    }
+  }
+
+  // 1) atributos data-* del tr
   const attrLat = Number(row.attr("data-lat") || row.attr("data-latitude") || "");
   const attrLng = Number(row.attr("data-lng") || row.attr("data-lon") || row.attr("data-longitude") || "");
   let lat = Number.isFinite(attrLat) ? attrLat : NaN;
   let lng = Number.isFinite(attrLng) ? attrLng : NaN;
   let fecha = String(row.attr("data-fecha") || row.attr("data-hora") || row.attr("data-ultimo") || "").trim();
+  let como_se_obtuvo = "";
 
-  // 2) celdas: coordenadas y fecha/hora del último reporte
+  // 2) celdas: coordenadas y fecha/hora
   const tds = row.find("td").toArray();
+  const numeros_candidatos = [];
   for (const td of tds) {
     const cell = $(td);
     const text = cell.text().trim();
@@ -270,47 +290,64 @@ function rowInfo(html, plate, tracto) {
       if (pair) {
         lat = pair.lat;
         lng = pair.lng;
-      } else {
-        const aloneLat = text.match(/^(-?\d{1,2}\.\d{4,})$/);
-        // lat/lng en celdas separadas: se resuelve en segundo pase
+        como_se_obtuvo = "par_en_celda";
       }
     }
     if (!fecha) {
       const fh = parseFechaHora(text) || parseFechaHora(title);
       if (fh) fecha = fh;
     }
+    const n = parseDecimal(text);
+    if (Number.isFinite(n) && Math.abs(n) <= 180 && /\d+[.,]\d{2,}/.test(text)) {
+      numeros_candidatos.push({ valor: n, texto: text.slice(0, 40) });
+    }
   }
 
-  // 3) lat y lng en celdas consecutivas (con normalización de orden)
+  // 3) lat y lng en celdas consecutivas
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
-    const nums = [];
-    for (const td of tds) {
-      const text = $(td).text().trim();
-      const n = parseDecimal(text);
-      if (Number.isFinite(n) && Math.abs(n) <= 180 && String(text).match(/\d+[.,]\d{3,}/)) nums.push(n);
-    }
+    const nums = numeros_candidatos.map((x) => x.valor);
     for (let i = 0; i < nums.length - 1; i++) {
       const pair = normalizeLatLng(nums[i], nums[i + 1]);
       if (pair) {
         lat = pair.lat;
         lng = pair.lng;
+        como_se_obtuvo = `celdas_consecutivas[${i},${i + 1}]`;
         break;
       }
     }
-  } else {
+  } else if (!como_se_obtuvo) {
     const pair = normalizeLatLng(lat, lng);
     if (pair) {
       lat = pair.lat;
       lng = pair.lng;
+      como_se_obtuvo = Number.isFinite(attrLat) ? "data-attr" : como_se_obtuvo || "normalizado";
     }
   }
 
   const ultimo_monitoreo =
     Number.isFinite(lat) && Number.isFinite(lng)
-      ? { lat, lng, fecha: fecha || null, fuente: "MONITOREO_PRINCIPAL" }
+      ? { lat, lng, fecha: fecha || null, fuente: "MONITOREO_PRINCIPAL", como: como_se_obtuvo }
       : null;
 
-  return { rk, ultimo_monitoreo };
+  return {
+    rk,
+    ultimo_monitoreo,
+    debug_fila: {
+      placa_buscada: plate,
+      tracto_buscado: tracto,
+      data_rk: rk,
+      attrs,
+      celdas,
+      numeros_candidatos,
+      lat_leida: Number.isFinite(lat) ? lat : null,
+      lng_leida: Number.isFinite(lng) ? lng : null,
+      fecha_leida: fecha || null,
+      como_se_obtuvo: como_se_obtuvo || null,
+      interpretacion: ultimo_monitoreo
+        ? `lat=${ultimo_monitoreo.lat}, lng=${ultimo_monitoreo.lng}, fecha=${ultimo_monitoreo.fecha || "—"}`
+        : "NO se pudo obtener lat/lng de la fila del monitoreo",
+    },
+  };
 }
 
 function rowData(html, plate, tracto) {
@@ -623,6 +660,7 @@ async function recorrido(plate, tracto, from, to, cartography) {
   const info = rowInfo(s.main, plate, tracto);
   const rk = info.rk;
   const ultimoMonitoreo = info.ultimo_monitoreo;
+  const debugFila = info.debug_fila;
   const common = {
     frmMonitoreo: "frmMonitoreo",
     "frmMonitoreo:cmbBuscarMonitoreo_input": "Placa",
@@ -730,7 +768,9 @@ async function recorrido(plate, tracto, from, to, cartography) {
     debug_ultimo: {
       tiene_puntos_rango: points.length,
       tiene_monitoreo: !!ultimoMonitoreo,
-      fuente_ultimo: last ? "RANGO" : ultimoMonitoreo ? "MONITOREO_PRINCIPAL" : "NINGUNA"
+      fuente_ultimo: last ? "RANGO" : ultimoMonitoreo ? "MONITOREO_PRINCIPAL" : "NINGUNA",
+      ultimo_enviado: ultimo,
+      fila_monitoreo: debugFila,
     },
     puntos_gps: points,
     analisis: analysis,

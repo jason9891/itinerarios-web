@@ -597,6 +597,7 @@ async function bootstrap(container, runtime) {
               <label><span>HASTA</span><input id="route-to" type="datetime-local" step="1" value="${esc(peToInput(hastaDef))}"></label>
               <button type="button" id="refresh-route">ACTUALIZAR RECORRIDO</button>
               <small id="route-update-status">USA LA PRECARGA DISPONIBLE</small>
+              <pre id="coord-debug" style="display:none;margin:6px 0 0;padding:8px;background:#0f172a;color:#e2e8f0;font-size:11px;line-height:1.35;border-radius:8px;max-height:180px;overflow:auto;white-space:pre-wrap;word-break:break-word"></pre>
             </div>
           </div>
           <div class="tracking-map-wrap">
@@ -783,6 +784,30 @@ function wire(container, runtime) {
           : data?.ultimo || data?.ultimo_monitoreo
             ? `SIN TRAMO · ÚLTIMO PUNTO (${src})`
             : `SIN PUNTOS NI ÚLTIMO (${src})`;
+
+      // Mostrar qué se leyó de lat/lng (fila monitoreo + último)
+      const dbg = $("coord-debug");
+      if (dbg) {
+        const f = data?.debug_ultimo?.fila_monitoreo || {};
+        const u = data?.debug_ultimo?.ultimo_enviado || data?.ultimo || data?.ultimo_monitoreo;
+        const lines = [
+          `UNIDAD: ${unit.tracto || ""} / ${unit.placa || ""}`,
+          `FUENTE ÚLTIMO: ${src}`,
+          `PUNTOS EN RANGO: ${nPts}`,
+          `LAT LEÍDA: ${f.lat_leida ?? "null"}`,
+          `LNG LEÍDA: ${f.lng_leida ?? "null"}`,
+          `FECHA LEÍDA: ${f.fecha_leida || "—"}`,
+          `CÓMO: ${f.como_se_obtuvo || "—"}`,
+          `INTERPRETACIÓN: ${f.interpretacion || "—"}`,
+          `ÚLTIMO ENVIADO: ${u ? JSON.stringify(u) : "null"}`,
+          `NÚMEROS CANDIDATOS: ${JSON.stringify(f.numeros_candidatos || [])}`,
+          `CELDAS (${(f.celdas || []).length}):`,
+          ...(f.celdas || []).map((c, i) => `  [${i}] ${c.texto || ""}${c.title ? " | title=" + c.title : ""}`),
+          `ATTRS TR: ${JSON.stringify(f.attrs || {})}`,
+        ];
+        dbg.textContent = lines.join("\n");
+        dbg.style.display = "block";
+      }
       await focusUnit(container, state.selectedKey, runtime);
     } catch (e) {
       $("route-update-status").textContent = "ERROR";
@@ -905,7 +930,7 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-18";
+  st.id = "cem-sg-v3-style-21";
   st.textContent = `
     body.tracking-active { overflow: hidden !important; }
     body.tracking-active .desktop-tracking.grid-03 {
