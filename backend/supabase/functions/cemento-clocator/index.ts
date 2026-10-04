@@ -266,21 +266,49 @@ function obtenerLatLonDesdeFila($, row) {
 
 function rowInfo(html, plate, tracto) {
   const $ = load(html);
-  const targets = new Set([norm(plate), norm(tracto)].filter(Boolean));
+  // Generar variantes: R-231, 20-R-231, R231, 20R231 (Comsatel usa código en varias columnas)
+  const rawTargets = [plate, tracto].filter(Boolean).map((x) => String(x).trim());
+  const targets = new Set();
+  for (const r of rawTargets) {
+    const n = norm(r);
+    if (!n) continue;
+    targets.add(n);
+    // si es R231, también 20R231 y variantes con prefijo numérico de flota
+    const m = n.match(/^(?:20)?R(\d{2,4})$/);
+    if (m) {
+      targets.add(`R${m[1]}`);
+      targets.add(`20R${m[1]}`);
+    }
+    // si viene 20R231 → R231
+    const m2 = n.match(/^20R(\d{2,4})$/);
+    if (m2) targets.add(`R${m2[1]}`);
+  }
+
+  function cellMatches(val) {
+    if (!val) return false;
+    if (targets.has(val)) return true;
+    // termina en R### (ej. algoR231)
+    for (const t of targets) {
+      if (t.length >= 3 && (val.endsWith(t) || val.includes(t))) return true;
+    }
+    return false;
+  }
+
   let found = null;
   const tryFind = (scope) => {
-    // 1) coincidencia exacta en primeras celdas (Placa / Código Externo)
+    // 1) Placa / Código Externo / Conductor (primeras celdas) — snapshot: R-xxx a menudo en Conductor
     scope.find("tr").each((_, tr) => {
       if (found) return;
       const vals = $(tr).find("td").map((_, td) => norm($(td).text())).get();
-      if (vals.length && (targets.has(vals[0]) || targets.has(vals[1]))) found = tr;
+      if (!vals.length) return;
+      if (cellMatches(vals[0]) || cellMatches(vals[1]) || cellMatches(vals[2])) found = tr;
     });
     // 2) cualquier celda
     if (!found) {
       scope.find("tr").each((_, tr) => {
         if (found) return;
         const vals = $(tr).find("td").map((_, td) => norm($(td).text())).get();
-        if (vals.some((v) => targets.has(v))) found = tr;
+        if (vals.some((v) => cellMatches(v))) found = tr;
       });
     }
   };
@@ -290,7 +318,7 @@ function rowInfo(html, plate, tracto) {
   }
   if ($scope.length) tryFind($scope);
   if (!found) tryFind($.root());
-  if (!found) throw new Error(`No se encontró ${plate} / ${tracto} en el monitoreo CLocator`);
+  if (!found) throw new Error(`No se encontró ${plate} / ${tracto} en el monitoreo CLocator (targets: ${[...targets].join(",")})`);
   const row = $(found);
   const rk = row.attr("data-rk");
   if (!rk) throw new Error("La unidad encontrada no contiene data-rk");
