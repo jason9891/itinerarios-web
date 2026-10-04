@@ -243,24 +243,27 @@ function obtenerLatLonDesdeFila($, row) {
     }
   });
   const src = chunks.join("\n");
+  // Acepta punto o coma decimal: -16.40 / -16,40
   const patrones = [
-    /irAMonitoreo\s*\(\s*['"]?(-?\d+(?:\.\d+)?)['"]?\s*,\s*['"]?(-?\d+(?:\.\d+)?)/gi,
-    /irAMonitoreo\s*\(\s*['"](-?\d+(?:\.\d+)?)['"]\s*,\s*['"](-?\d+(?:\.\d+)?)['"]/gi,
+    /irAMonitoreo\s*\(\s*['"]?(-?\d+[.,]\d+)['"]?\s*,\s*['"]?(-?\d+[.,]\d+)/gi,
+    /irAMonitoreo\s*\(\s*['"]?(-?\d+(?:[.,]\d+)?)['"]?\s*,\s*['"]?(-?\d+(?:[.,]\d+)?)/gi,
   ];
+  const toNum = (s) => Number(String(s).replace(",", "."));
   const candidatos = [];
   for (const re of patrones) {
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(src))) {
-      const rawA = Number(m[1]);
-      const rawB = Number(m[2]);
+      const rawA = toNum(m[1]);
+      const rawB = toNum(m[2]);
       const fixed = normalizeLatLngSimple(rawA, rawB);
       if (fixed) candidatos.push({ ...fixed, raw_a: rawA, raw_b: rawB });
     }
   }
-  // Solo puntos dentro de Perú (si no hay, null — mejor que océano)
+  // 1) Perú  2) cualquier par geo válido (como Python)
   const enPeru = candidatos.find((c) => inPeruBBox(c.lat, c.lng));
   if (enPeru) return enPeru;
+  if (candidatos.length) return candidatos[0];
   return null;
 }
 
@@ -345,7 +348,31 @@ function rowInfo(html, plate, tracto) {
   }
 
   // Solo irAMonitoreo / atributos — nunca números de celdas de la grilla
-  const coords = obtenerLatLonDesdeFila($, row);
+  let coords = obtenerLatLonDesdeFila($, row);
+  // Fallback: buscar irAMonitoreo en un ventana de HTML alrededor del texto de la placa/tracto
+  if (!coords) {
+    const mainHtml = String(html || "");
+    const keys = [plate, tracto].filter(Boolean).map((x) => String(x).trim()).filter(Boolean);
+    for (const key of keys) {
+      if (!key || key.length < 3) continue;
+      const idx = mainHtml.toUpperCase().indexOf(key.toUpperCase());
+      if (idx < 0) continue;
+      const slice = mainHtml.slice(Math.max(0, idx - 500), Math.min(mainHtml.length, idx + 2500));
+      const fakeRow = { 0: slice }; // not used
+      // reusar regex sobre el slice
+      const re = /irAMonitoreo\s*\(\s*['"]?(-?\d+[.,]\d+)['"]?\s*,\s*['"]?(-?\d+[.,]\d+)/gi;
+      const toNum = (s) => Number(String(s).replace(",", "."));
+      let m;
+      while ((m = re.exec(slice))) {
+        const fixed = normalizeLatLngSimple(toNum(m[1]), toNum(m[2]));
+        if (fixed && inPeruBBox(fixed.lat, fixed.lng)) {
+          coords = { ...fixed, raw_a: toNum(m[1]), raw_b: toNum(m[2]) };
+          break;
+        }
+      }
+      if (coords) break;
+    }
+  }
   const ultimo_monitoreo = coords
     ? {
         lat: coords.lat,
