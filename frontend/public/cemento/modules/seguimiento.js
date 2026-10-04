@@ -772,9 +772,17 @@ function wire(container, runtime) {
       });
       const meta = loadMeta();
       await cacheGPS(
-        { ...data, placa: unit.placa, tracto: unit.tracto, run_id: meta?.id, desde, hasta },
+        { ...data, ok: true, placa: unit.placa, tracto: unit.tracto, run_id: meta?.id, desde, hasta },
         gpsKey(meta?.id, unit.tracto, unit.placa),
       );
+      const nPts = data?.puntos_gps?.length ?? data?.puntos ?? 0;
+      const src = data?.debug_ultimo?.fuente_ultimo || (data?.ultimo ? "OK" : "NINGUNA");
+      $("route-update-status").textContent =
+        nPts >= 2
+          ? `LISTO · ${nPts} PUNTOS`
+          : data?.ultimo || data?.ultimo_monitoreo
+            ? `SIN TRAMO · ÚLTIMO PUNTO (${src})`
+            : `SIN PUNTOS NI ÚLTIMO (${src})`;
       await focusUnit(container, state.selectedKey, runtime);
     } catch (e) {
       $("route-update-status").textContent = "ERROR";

@@ -207,11 +207,19 @@ function normalizeLatLng(a, b) {
   return null;
 }
 
+function parseDecimal(text) {
+  const s = String(text || "").trim();
+  if (!s) return NaN;
+  // Decimal latino: -16,409047
+  if (/^-?\d+,\d+$/.test(s)) return Number(s.replace(",", "."));
+  return Number(s.replace(/\s/g, ""));
+}
+
 function parseCoordPair(text) {
-  const s = String(text || "").replace(/,/g, " ").trim();
-  // Acepta "lat lng", "lng lat", con espacio o coma
-  let m = s.match(/(-?\d{1,3}\.\d{3,})\s+(-?\d{1,3}\.\d{3,})/);
-  if (m) return normalizeLatLng(m[1], m[2]);
+  const s = String(text || "").trim();
+  // Par con espacio o punto y coma: "-16.40 -71.53" | "-16,40; -71,53"
+  let m = s.match(/(-?\d+[.,]\d+)\s*[;,\s]\s*(-?\d+[.,]\d+)/);
+  if (m) return normalizeLatLng(parseDecimal(m[1]), parseDecimal(m[2]));
   return null;
 }
 
@@ -277,8 +285,9 @@ function rowInfo(html, plate, tracto) {
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     const nums = [];
     for (const td of tds) {
-      const text = $(td).text().trim().replace(",", ".");
-      if (/^-?\d{1,3}\.\d{3,}$/.test(text)) nums.push(Number(text));
+      const text = $(td).text().trim();
+      const n = parseDecimal(text);
+      if (Number.isFinite(n) && Math.abs(n) <= 180 && String(text).match(/\d+[.,]\d{3,}/)) nums.push(n);
     }
     for (let i = 0; i < nums.length - 1; i++) {
       const pair = normalizeLatLng(nums[i], nums[i + 1]);
@@ -686,11 +695,16 @@ async function recorrido(plate, tracto, from, to, cartography) {
   const points = [];
   for (const item of list){
     const p = item?.map ?? item;
-    if (Number.isFinite(Number(p?.latitud)) && Number.isFinite(Number(p?.longitud))) points.push({
-      lat: Number(p.latitud),
-      lng: Number(p.longitud),
-      fecha: p.fechaFinToString || p.fechaInicioToString || null
-    });
+    const lat = Number(p?.latitud ?? p?.lat ?? p?.latitude);
+    const lng = Number(p?.longitud ?? p?.lng ?? p?.lon ?? p?.longitude);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      const fixed = normalizeLatLng(lat, lng) || { lat, lng };
+      points.push({
+        lat: fixed.lat,
+        lng: fixed.lng,
+        fecha: p.fechaFinToString || p.fechaInicioToString || p.fecha || null
+      });
+    }
   }
   const last = points.at(-1) || null;
   // Si no hay puntos en el rango, usar último reporte de la tabla principal de monitoreo
@@ -712,6 +726,12 @@ async function recorrido(plate, tracto, from, to, cartography) {
     ultimo,
     ultimo_monitoreo: ultimoMonitoreo,
     sin_movimiento: points.length < 2,
+    // ayuda a diagnosticar unidades sin U (ej. R-404)
+    debug_ultimo: {
+      tiene_puntos_rango: points.length,
+      tiene_monitoreo: !!ultimoMonitoreo,
+      fuente_ultimo: last ? "RANGO" : ultimoMonitoreo ? "MONITOREO_PRINCIPAL" : "NINGUNA"
+    },
     puntos_gps: points,
     analisis: analysis,
     geocercas: [
