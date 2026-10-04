@@ -807,13 +807,30 @@ function wire(container, runtime) {
         gpsKey(meta?.id, unit.tracto, unit.placa),
       );
       const u = data?.ultimo || data?.ultimo_monitoreo || null;
-      const nPts = data?.puntos_gps?.length ?? data?.puntos ?? 0;
-      if (u && (nPts < 2)) {
-        $("route-update-status").textContent =
-          `U DIAG · lat=${Number(u.lat).toFixed(6)} lng=${Number(u.lng).toFixed(6)} · ${u.fecha || "sin hora"} · ${u.fuente || data?.ultimo_monitoreo?.fuente || ""}`;
-      } else {
-        $("route-update-status").textContent = `LISTO · ${nPts} PUNTOS`;
+      const um = data?.ultimo_monitoreo || null;
+      const nPts = Array.isArray(data?.puntos_gps) ? data.puntos_gps.length : Number(data?.puntos || 0);
+      const statusEl = $("route-update-status");
+      const diagEl = container.querySelector("#map-u-diag");
+      const resumen = [
+        `API pts=${nPts}`,
+        `ultimo=${u ? Number(u.lat).toFixed(6) + "," + Number(u.lng).toFixed(6) : "null"}`,
+        `monitoreo=${um ? Number(um.lat).toFixed(6) + "," + Number(um.lng).toFixed(6) : "null"}`,
+        `fecha=${(u && u.fecha) || (um && um.fecha) || "—"}`,
+        `fuente=${(u && u.fuente) || (um && um.fuente) || "—"}`,
+        `raw=${um && um.raw_irAMonitoreo ? JSON.stringify(um.raw_irAMonitoreo) : "—"}`,
+      ].join(" · ");
+      if (statusEl) statusEl.textContent = nPts >= 2 ? `LISTO · ${nPts} PUNTOS` : resumen;
+      if (diagEl) {
+        diagEl.textContent = `${unit.tracto || unit.placa} · ${resumen}`;
+        diagEl.style.background = u || um ? "#14532d" : "#7f1d1d";
       }
+      console.info("CLocator respuesta ultimo", {
+        puntos: nPts,
+        ultimo: data?.ultimo,
+        ultimo_monitoreo: data?.ultimo_monitoreo,
+        primero: data?.primero,
+        sin_movimiento: data?.sin_movimiento,
+      });
       await focusUnit(container, state.selectedKey, runtime);
     } catch (e) {
       $("route-update-status").textContent = "ERROR";
