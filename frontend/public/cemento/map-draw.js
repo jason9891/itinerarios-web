@@ -15,23 +15,10 @@ let inspectionEnabled = false;
 let infoWindow = null;
 let currentPoints = [];
 
-function fixLatLngOrder(lat, lng) {
-  // Perú: lat ~ -20..5, lng ~ -85..-60. Si vienen invertidos, corregir.
-  const inLat = (v) => v >= -20 && v <= 5;
-  const inLng = (v) => v >= -85 && v <= -60;
-  if (inLat(lat) && inLng(lng)) return { lat, lng };
-  if (inLat(lng) && inLng(lat)) return { lat: lng, lng: lat };
-  if (Math.abs(lat) > 50 && Math.abs(lng) < 50) return { lat: lng, lng: lat };
-  return { lat, lng };
-}
-
 function normalizeGpsPoint(p, index) {
-  let lat = Number(p?.lat ?? p?.latitude ?? p?.latitud);
-  let lng = Number(p?.lng ?? p?.lon ?? p?.longitude ?? p?.longitud);
+  const lat = Number(p?.lat ?? p?.latitude);
+  const lng = Number(p?.lng ?? p?.lon ?? p?.longitude);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
-  ({ lat, lng } = fixLatLngOrder(lat, lng));
-  // Descartar basura cerca de (0,0) — golfo de Guinea
-  if (Math.abs(lat) < 1 && Math.abs(lng) < 1) return null;
   return {
     lat,
     lng,
@@ -66,46 +53,20 @@ export function loadMaps(apiKey) {
 export async function ensureTrackingMap(mapEl, getToken) {
   if (!mapEl) return null;
   if (mapInstance && mapConfigLoaded) {
-    try {
-      google.maps.event.trigger(mapInstance, "resize");
-    } catch (_) {}
+    google.maps.event.trigger(mapInstance, "resize");
     return mapInstance;
   }
-
-  async function fetchConfig(force) {
-    const token = await getToken(force);
-    if (!token) throw new Error("Sesión expirada: vuelva a iniciar sesión");
-    const r = await fetch(API.clocator, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${token}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ action: "map_config" }),
-    });
-    const cfg = await r.json().catch(() => ({}));
-    if (!r.ok) {
-      const msg = cfg.error || cfg.message || `HTTP ${r.status}`;
-      throw new Error(`Mapa: ${msg}`);
-    }
-    if (!cfg.google_maps_api_key) {
-      throw new Error("Mapa: la function no devolvió GOOGLE_MAPS_API_KEY");
-    }
-    return cfg;
-  }
-
-  let cfg;
-  try {
-    cfg = await fetchConfig(false);
-  } catch (e1) {
-    // Un reintento forzando token fresco (Firebase a veces entrega JWT viejo)
-    try {
-      cfg = await fetchConfig(true);
-    } catch (e2) {
-      throw new Error(String(e2.message || e1.message || "No se pudo cargar configuración del mapa"));
-    }
-  }
-
+  const token = await getToken();
+  const r = await fetch(API.clocator, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${token}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ action: "map_config" }),
+  });
+  const cfg = await r.json();
+  if (!r.ok) throw new Error(cfg.error || "No se pudo cargar configuración del mapa");
   await loadMaps(cfg.google_maps_api_key);
   mapEl.innerHTML = "";
   mapEl.dataset.mapsBound = "1";

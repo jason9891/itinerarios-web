@@ -597,7 +597,6 @@ async function bootstrap(container, runtime) {
               <label><span>HASTA</span><input id="route-to" type="datetime-local" step="1" value="${esc(peToInput(hastaDef))}"></label>
               <button type="button" id="refresh-route">ACTUALIZAR RECORRIDO</button>
               <small id="route-update-status">USA LA PRECARGA DISPONIBLE</small>
-              <pre id="coord-debug" style="display:none;margin:6px 0 0;padding:8px;background:#0f172a;color:#e2e8f0;font-size:11px;line-height:1.35;border-radius:8px;max-height:180px;overflow:auto;white-space:pre-wrap;word-break:break-word"></pre>
             </div>
           </div>
           <div class="tracking-map-wrap">
@@ -672,7 +671,7 @@ async function focusUnit(container, key, runtime) {
   const mapEl = container.querySelector("#tracking-map");
   try {
     // Token sin forzar refresh (ahorra cuota Firebase). map_config solo 1 vez.
-    await ensureTrackingMap(mapEl, (force) => runtime.auth.currentUser.getIdToken(!!force));
+    await ensureTrackingMap(mapEl, () => runtime.auth.currentUser.getIdToken(false));
     if (gps?.ok || (gps?.puntos_gps || gps?.puntos_lista || []).length) {
       const mapNode = container.querySelector("#tracking-map");
       drawTrackingRoute(gps, mapNode, cap, unitLabel);
@@ -761,66 +760,21 @@ function wire(container, runtime) {
     if (!desde) return alert("Indique DESDE válido.");
     $("route-update-status").textContent = "CONSULTANDO CLocator…";
     try {
-      let token = await runtime.auth.currentUser.getIdToken(true);
-      let data;
-      try {
-        data = await queryClocator({
-          endpoint: API.clocator,
-          token,
-          placa: unit.placa,
-          tracto: unit.tracto,
-          desde,
-          hasta,
-          includeMap: false,
-          timeoutMs: 120000,
-        });
-      } catch (err) {
-        // reintento con token fresco si falló auth
-        token = await runtime.auth.currentUser.getIdToken(true);
-        data = await queryClocator({
-          endpoint: API.clocator,
-          token,
-          placa: unit.placa,
-          tracto: unit.tracto,
-          desde,
-          hasta,
-          includeMap: false,
-          timeoutMs: 120000,
-        });
-      }
+      const token = await runtime.auth.currentUser.getIdToken(false);
+      const data = await queryClocator({
+        endpoint: API.clocator,
+        token,
+        placa: unit.placa,
+        tracto: unit.tracto,
+        desde,
+        hasta,
+        includeMap: false,
+      });
       const meta = loadMeta();
       await cacheGPS(
-        { ...data, ok: true, placa: unit.placa, tracto: unit.tracto, run_id: meta?.id, desde, hasta },
+        { ...data, placa: unit.placa, tracto: unit.tracto, run_id: meta?.id, desde, hasta },
         gpsKey(meta?.id, unit.tracto, unit.placa),
       );
-      const nPts = data?.puntos_gps?.length ?? data?.puntos ?? 0;
-      const src = data?.debug_ultimo?.fuente_ultimo || (data?.ultimo ? "OK" : "NINGUNA");
-      $("route-update-status").textContent =
-        nPts >= 2
-          ? `LISTO · ${nPts} PUNTOS`
-          : data?.ultimo || data?.ultimo_monitoreo
-            ? `SIN TRAMO · ÚLTIMO PUNTO (${src})`
-            : `SIN PUNTOS NI ÚLTIMO (${src})`;
-
-      // Diagnóstico de lat/lng (no debe romper el flujo)
-      try {
-        const dbg = $("coord-debug");
-        if (dbg) {
-          const f = data?.debug_ultimo?.fila_monitoreo || {};
-          const u = data?.debug_ultimo?.ultimo_enviado || data?.ultimo || data?.ultimo_monitoreo;
-          const lines = [
-            "UNIDAD: " + (unit.tracto || "") + " / " + (unit.placa || ""),
-            "FUENTE ÚLTIMO: " + src,
-            "PUNTOS EN RANGO: " + nPts,
-            "LAT: " + (u?.lat ?? f.lat_leida ?? "null"),
-            "LNG: " + (u?.lng ?? f.lng_leida ?? "null"),
-            "FECHA: " + (u?.fecha || f.fecha_leida || "—"),
-            "ÚLTIMO: " + (u ? JSON.stringify(u) : "null"),
-          ];
-          dbg.textContent = lines.join("\n");
-          dbg.style.display = "block";
-        }
-      } catch (_) {}
       await focusUnit(container, state.selectedKey, runtime);
     } catch (e) {
       $("route-update-status").textContent = "ERROR";
@@ -943,7 +897,7 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-21";
+  st.id = "cem-sg-v3-style-18";
   st.textContent = `
     body.tracking-active { overflow: hidden !important; }
     body.tracking-active .desktop-tracking.grid-03 {

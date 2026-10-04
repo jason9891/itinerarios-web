@@ -96,85 +96,6 @@ function nowPE() {
     ]));
   return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}:${p.second}`;
 }
-/** Resta días a una fecha PE dd/mm/yyyy hh:mm:ss (aprox. en zona Lima). */
-function shiftPEDays(pe, days) {
-  const m = String(pe || "").match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
-  if (!m) return pe;
-  const iso = `${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:${m[6]}-05:00`;
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return pe;
-  d.setTime(d.getTime() + days * 86400000);
-  const parts = new Intl.DateTimeFormat("en-GB", {
-    timeZone: "America/Lima",
-    day: "2-digit",
-    month: "2-digit",
-    year: "numeric",
-    hour: "2-digit",
-    minute: "2-digit",
-    second: "2-digit",
-    hour12: false
-  }).formatToParts(d);
-  const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
-  return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}:${p.second}`;
-}
-function pointsFromList(list) {
-  const points = [];
-  for (const item of list || []) {
-    const p = item?.map ?? item;
-    const lat = Number(p?.latitud ?? p?.lat ?? p?.latitude);
-    const lng = Number(p?.longitud ?? p?.lng ?? p?.lon ?? p?.longitude);
-    if (Number.isFinite(lat) && Number.isFinite(lng)) {
-      const fixed = normalizeLatLng(lat, lng) || { lat, lng };
-      points.push({
-        lat: fixed.lat,
-        lng: fixed.lng,
-        fecha: p.fechaFinToString || p.fechaInicioToString || p.fecha || null
-      });
-    }
-  }
-  return points;
-}
-async function fetchRecorridoList(fetcher, view, startField, endField, from, to) {
-  const rForm = await postForm(fetcher, MAIN, {
-    "javax.faces.partial.ajax": "true",
-    "javax.faces.source": "frmRecorrido:fnBuscarRecorridoDeVehiculo",
-    "javax.faces.partial.execute": "@all",
-    "frmRecorrido:fnBuscarRecorridoDeVehiculo": "frmRecorrido:fnBuscarRecorridoDeVehiculo",
-    pDialogIsOpen: "false",
-    frmRecorrido: "frmRecorrido",
-    "frmRecorrido:cmbOpcionRecorrido_input": "PERSONALIZADO",
-    "frmRecorrido:cmbOpcionRecorrido_focus": "",
-    "frmRecorrido:cmbMensual_input": "0",
-    "frmRecorrido:cmbMensual_focus": "",
-    [startField]: from,
-    [endField]: to,
-    "javax.faces.ViewState": view
-  }, MAIN, true);
-  if (!rForm.ok) throw new Error(`Buscar recorrido devolvió HTTP ${rForm.status}`);
-  const view2 = viewPartial(await rForm.text()) || view;
-  const r = await fetcher(RPC, {
-    method: "POST",
-    headers: {
-      accept: "application/json, text/javascript, */*; q=0.01",
-      "content-type": "application/json",
-      "x-requested-with": "XMLHttpRequest",
-      origin: "https://clocatorplus.comsatel.com.pe",
-      referer: MAIN
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      method: "recorridoMBean.getRecorridoAgregado",
-      params: [],
-      id: 6
-    })
-  });
-  if (!r.ok) throw new Error(`JSON-RPC devolvió HTTP ${r.status}`);
-  const data = await r.json();
-  if (data.error) throw new Error(`JSON-RPC: ${JSON.stringify(data.error)}`);
-  const list = data?.result?.map?.listHistorica?.list;
-  if (!Array.isArray(list)) throw new Error("CLocator no devolvió listHistorica.list");
-  return { list, view: view2, points: pointsFromList(list) };
-}
 function norm(v) {
   return String(v ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
@@ -269,7 +190,6 @@ async function login(user, password) {
     view: viewHtml(main)
   };
 }
-/** Ordena lat/lng para Perú / costa oeste SA (evita invertir y caer cerca de 0,0). */
 function normalizeLatLng(a, b) {
   const x = Number(a), y = Number(b);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
@@ -277,93 +197,37 @@ function normalizeLatLng(a, b) {
   const inLngPE = (v) => v >= -85 && v <= -60;
   if (inLatPE(x) && inLngPE(y)) return { lat: x, lng: y };
   if (inLatPE(y) && inLngPE(x)) return { lat: y, lng: x };
-  // Heurística: en esta operación |lng| suele ser mayor (~70) que |lat| (~16)
-  if (Math.abs(x) <= 90 && Math.abs(y) <= 180) {
-    if (Math.abs(x) > 50 && Math.abs(y) < 50) return { lat: y, lng: x };
-    return { lat: x, lng: y };
+  if (Math.abs(x) > 50 && Math.abs(y) < 50 && Math.abs(y) <= 90) return { lat: y, lng: x };
+  if (Math.abs(x) <= 90 && Math.abs(y) <= 180) return { lat: x, lng: y };
+  return null;
+}
+
+/** Coordenadas del main: están en irAMonitoreo(lat, lon) del HTML de la fila. */
+function obtenerLatLonDesdeFila(htmlFila) {
+  const src = String(htmlFila || "");
+  const re = /irAMonitoreo\s*\(\s*['"]?(-?\d+(?:\.\d+)?)['"]?\s*,\s*['"]?(-?\d+(?:\.\d+)?)/gi;
+  let m;
+  while ((m = re.exec(src))) {
+    const fixed = normalizeLatLng(Number(m[1]), Number(m[2]));
+    if (fixed && Math.abs(fixed.lat) > 0.1 && Math.abs(fixed.lng) > 0.1) return fixed;
   }
-  if (Math.abs(y) <= 90 && Math.abs(x) <= 180) return { lat: y, lng: x };
   return null;
 }
 
-function parseDecimal(text) {
-  const s = String(text || "").trim();
-  if (!s) return NaN;
-  // Decimal latino: -16,409047
-  if (/^-?\d+,\d+$/.test(s)) return Number(s.replace(",", "."));
-  return Number(s.replace(/\s/g, ""));
-}
-
-function parseCoordPair(text) {
-  const s = String(text || "").trim();
-  // Par con espacio o punto y coma: "-16.40 -71.53" | "-16,40; -71,53"
-  let m = s.match(/(-?\d+[.,]\d+)\s*[;,\s]\s*(-?\d+[.,]\d+)/);
-  if (m) return normalizeLatLng(parseDecimal(m[1]), parseDecimal(m[2]));
-  return null;
-}
-
-function parseFechaHora(text) {
+function parseFechaCelda(text) {
   const s = String(text || "").trim();
   let m = s.match(/(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2}(?::\d{2})?)/);
   if (m) return `${m[1]} ${m[2].length === 5 ? m[2] + ":00" : m[2]}`;
-  m = s.match(/(\d{4}-\d{2}-\d{2})[T\s](\d{2}:\d{2}(?::\d{2})?)/);
-  if (m) {
-    const [y, mo, d] = m[1].split("-");
-    const tm = m[2].length === 5 ? m[2] + ":00" : m[2];
-    return `${d}/${mo}/${y} ${tm}`;
-  }
-  return "";
+  return s || null;
 }
 
-/**
- * Coordenadas desde HTML de la fila del monitoreo.
- * En CLocator NO están en el texto de celdas: están en irAMonitoreo(lat, lon)
- * (validado con el extractor Python de snapshot base).
- */
-function obtenerLatLonDesdeFila(htmlFila) {
-  const src = String(htmlFila || "");
-  const patrones = [
-    /irAMonitoreo\s*\(\s*['"]?(-?\d+(?:\.\d+)?)['"]?\s*,\s*['"]?(-?\d+(?:\.\d+)?)/gi,
-    /irAMonitoreo\s*\(\s*['"](-?\d+(?:\.\d+)?)['"]\s*,\s*['"](-?\d+(?:\.\d+)?)['"]/gi,
-  ];
-  for (const re of patrones) {
-    re.lastIndex = 0;
-    let m;
-    while ((m = re.exec(src))) {
-      const a = Number(m[1]);
-      const b = Number(m[2]);
-      if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
-      if (Math.abs(a) < 0.1 && Math.abs(b) < 0.1) continue;
-      const fixed = normalizeLatLng(a, b);
-      if (fixed) return { ...fixed, como: "irAMonitoreo" };
-      if (Math.abs(a) <= 90 && Math.abs(b) <= 180) {
-        return { lat: a, lng: b, como: "irAMonitoreo_raw" };
-      }
-    }
-  }
-  // Fallback: onclick/href con dos decimales
-  const nums = [...src.matchAll(/-?\d+\.\d+/g)].map((x) => Number(x[0]));
-  for (let i = 0; i < nums.length - 1; i++) {
-    const fixed = normalizeLatLng(nums[i], nums[i + 1]);
-    if (fixed && Math.abs(fixed.lat) > 0.1 && Math.abs(fixed.lng) > 0.1) {
-      return { ...fixed, como: "attrs_numericos" };
-    }
-  }
-  return null;
-}
-
-/** Extrae data-rk + último punto desde la fila del monitoreo principal. */
+/** data-rk + último punto (irAMonitoreo + Fecha Última Localización). */
 function rowInfo(html, plate, tracto) {
   const $ = load(html);
   const targets = new Set([norm(plate), norm(tracto)].filter(Boolean));
-
-  // Preferir tbody de la tabla de monitoreo (igual que el script Python)
   let $scope = $("#frmMonitoreo\\:dtTablaMonitoreo_data");
   if (!$scope.length) {
-    $scope = $("tbody").filter((_, el) => {
-      const id = String($(el).attr("id") || "");
-      return id.endsWith("dtTablaMonitoreo_data");
-    }).first();
+    $scope = $("tbody").filter((_, el) => String($(el).attr("id") || "").endsWith("dtTablaMonitoreo_data")).first();
   }
   if (!$scope.length) $scope = $.root();
 
@@ -373,7 +237,6 @@ function rowInfo(html, plate, tracto) {
     const vals = $(tr).find("td").map((_, td) => norm($(td).text())).get();
     if (vals.some((v) => targets.has(v))) found = tr;
   });
-  // fallback: toda la página
   if (!found) {
     $("tr").each((_, tr) => {
       if (found) return;
@@ -382,68 +245,18 @@ function rowInfo(html, plate, tracto) {
     });
   }
   if (!found) throw new Error(`No se encontró ${plate} / ${tracto} en el monitoreo CLocator`);
-
   const row = $(found);
   const rk = row.attr("data-rk");
   if (!rk) throw new Error("La unidad encontrada no contiene data-rk");
 
-  const tds = row.find("td").toArray();
-  const celdas = tds.map((td) => {
-    const cell = $(td);
-    return {
-      texto: cell.text().replace(/\s+/g, " ").trim().slice(0, 120),
-      title: String(cell.attr("title") || "").slice(0, 80),
-    };
-  });
-
-  // Columnas validadas en CLocator main (índice 0 = Placa, 4 = Fecha Última Localización)
-  // 0 Placa, 1 Código Externo, 2 Conductor, 3 Rumbo, 4 Fecha Última Localización
-  let fecha = "";
-  if (celdas[4]?.texto) fecha = parseFechaHora(celdas[4].texto) || celdas[4].texto;
-  if (!fecha) {
-    for (const c of celdas) {
-      const fh = parseFechaHora(c.texto) || parseFechaHora(c.title);
-      if (fh) {
-        fecha = fh;
-        break;
-      }
-    }
-  }
-
-  const htmlFila = $.html(found) || String(found);
-  const coords = obtenerLatLonDesdeFila(htmlFila);
-  let lat = coords?.lat;
-  let lng = coords?.lng;
-  let como = coords?.como || "";
-
-  const ultimo_monitoreo =
-    Number.isFinite(lat) && Number.isFinite(lng)
-      ? {
-          lat,
-          lng,
-          fecha: fecha || null,
-          fuente: "MONITOREO_PRINCIPAL",
-          como: como || "irAMonitoreo",
-        }
-      : null;
-
-  return {
-    rk,
-    ultimo_monitoreo,
-    debug_fila: {
-      placa_buscada: plate,
-      tracto_buscado: tracto,
-      data_rk: rk,
-      celdas,
-      lat_leida: Number.isFinite(lat) ? lat : null,
-      lng_leida: Number.isFinite(lng) ? lng : null,
-      fecha_leida: fecha || null,
-      como_se_obtuvo: como || null,
-      interpretacion: ultimo_monitoreo
-        ? `lat=${ultimo_monitoreo.lat}, lng=${ultimo_monitoreo.lng}, fecha=${ultimo_monitoreo.fecha || "—"}`
-        : "NO se encontró irAMonitoreo(lat,lon) en la fila",
-    },
-  };
+  const textos = row.find("td").map((_, td) => $(td).text().replace(/\s+/g, " ").trim()).get();
+  // Columna 4 = Fecha Última Localización (orden validado en CLocator)
+  const fecha = parseFechaCelda(textos[4] || "") || null;
+  const coords = obtenerLatLonDesdeFila($.html(found) || "");
+  const ultimo_monitoreo = coords
+    ? { lat: coords.lat, lng: coords.lng, fecha, fuente: "MONITOREO_PRINCIPAL" }
+    : null;
+  return { rk, ultimo_monitoreo };
 }
 
 function rowData(html, plate, tracto) {
@@ -756,7 +569,6 @@ async function recorrido(plate, tracto, from, to, cartography) {
   const info = rowInfo(s.main, plate, tracto);
   const rk = info.rk;
   const ultimoMonitoreo = info.ultimo_monitoreo;
-  const debugFila = info.debug_fila;
   const common = {
     frmMonitoreo: "frmMonitoreo",
     "frmMonitoreo:cmbBuscarMonitoreo_input": "Placa",
@@ -789,34 +601,55 @@ async function recorrido(plate, tracto, from, to, cartography) {
   view = viewPartial(xml);
   if (!view) throw new Error("CLocator no abrió Mostrar Recorrido");
   const [startField, endField] = dateFields(xml);
-  // 1) Recorrido del rango solicitado
-  let fetched = await fetchRecorridoList(s.fetcher, view, startField, endField, from, to);
-  view = fetched.view;
-  const points = fetched.points;
-  const list = fetched.list;
-  let last = points.at(-1) || null;
-  let ultimoFueraRango = null;
-  let fuenteUltimoExtra = null;
-
-  // 2) Si 0 puntos en rango: ampliar ventana (90 días) para obtener SIEMPRE el último GPS
-  //    (todas las unidades tienen última posición en Comsatel)
-  if (points.length === 0) {
-    const wideFrom = shiftPEDays(to || nowPE(), -90);
-    try {
-      fetched = await fetchRecorridoList(s.fetcher, view, startField, endField, wideFrom, to || nowPE());
-      view = fetched.view;
-      const widePoints = fetched.points;
-      if (widePoints.length) {
-        ultimoFueraRango = widePoints.at(-1);
-        fuenteUltimoExtra = "HISTORICO_90D";
-      }
-    } catch (_) {
-      // no romper el flujo del rango principal
-    }
+  r = await postForm(s.fetcher, MAIN, {
+    "javax.faces.partial.ajax": "true",
+    "javax.faces.source": "frmRecorrido:fnBuscarRecorridoDeVehiculo",
+    "javax.faces.partial.execute": "@all",
+    "frmRecorrido:fnBuscarRecorridoDeVehiculo": "frmRecorrido:fnBuscarRecorridoDeVehiculo",
+    pDialogIsOpen: "false",
+    frmRecorrido: "frmRecorrido",
+    "frmRecorrido:cmbOpcionRecorrido_input": "PERSONALIZADO",
+    "frmRecorrido:cmbOpcionRecorrido_focus": "",
+    "frmRecorrido:cmbMensual_input": "0",
+    "frmRecorrido:cmbMensual_focus": "",
+    [startField]: from,
+    [endField]: to,
+    "javax.faces.ViewState": view
+  }, MAIN, true);
+  if (!r.ok) throw new Error(`Buscar recorrido devolvió HTTP ${r.status}`);
+  r = await s.fetcher(RPC, {
+    method: "POST",
+    headers: {
+      accept: "application/json, text/javascript, */*; q=0.01",
+      "content-type": "application/json",
+      "x-requested-with": "XMLHttpRequest",
+      origin: "https://clocatorplus.comsatel.com.pe",
+      referer: MAIN
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      method: "recorridoMBean.getRecorridoAgregado",
+      params: [],
+      id: 6
+    })
+  });
+  if (!r.ok) throw new Error(`JSON-RPC devolvió HTTP ${r.status}`);
+  const data = await r.json();
+  if (data.error) throw new Error(`JSON-RPC: ${JSON.stringify(data.error)}`);
+  const list = data?.result?.map?.listHistorica?.list;
+  if (!Array.isArray(list)) throw new Error("CLocator no devolvió listHistorica.list");
+  const points = [];
+  for (const item of list){
+    const p = item?.map ?? item;
+    if (Number.isFinite(Number(p?.latitud)) && Number.isFinite(Number(p?.longitud))) points.push({
+      lat: Number(p.latitud),
+      lng: Number(p.longitud),
+      fecha: p.fechaFinToString || p.fechaInicioToString || null
+    });
   }
-
-  // 3) Preferencia: último del rango → histórico ampliado → fila monitoreo
-  const ultimo = last || ultimoFueraRango || ultimoMonitoreo || null;
+  const last = points.at(-1) || null;
+  // Sin puntos en el rango: usar irAMonitoreo del main (siempre hay última posición)
+  const ultimo = last || ultimoMonitoreo || null;
   const analysis = analyze(points, cartography.geocercas), network = classifyNetwork(ultimo, analysis, cartography);
   Object.assign(analysis, network);
   // Alias conservado para no romper consumidores de 19.3.
@@ -827,13 +660,6 @@ async function recorrido(plate, tracto, from, to, cartography) {
     "COBERTURA_RUTA_MADRE",
     "FUERA_DE_RED_VALIDADA_REVISAR"
   ];
-  const fuenteUltimo = last
-    ? "RANGO"
-    : ultimoFueraRango
-      ? fuenteUltimoExtra
-      : ultimoMonitoreo
-        ? "MONITOREO_PRINCIPAL"
-        : "NINGUNA";
   return {
     puntos: points.length,
     total_original: list.length,
@@ -841,14 +667,6 @@ async function recorrido(plate, tracto, from, to, cartography) {
     ultimo,
     ultimo_monitoreo: ultimoMonitoreo,
     sin_movimiento: points.length < 2,
-    debug_ultimo: {
-      tiene_puntos_rango: points.length,
-      tiene_monitoreo: !!ultimoMonitoreo,
-      tiene_historico_ampliado: !!ultimoFueraRango,
-      fuente_ultimo: fuenteUltimo,
-      ultimo_enviado: ultimo,
-      fila_monitoreo: debugFila,
-    },
     puntos_gps: points,
     analisis: analysis,
     geocercas: [
@@ -867,22 +685,24 @@ Deno.serve(async (req)=>{
     error: "Método no permitido"
   }, 405);
   try {
+    const { db, user } = await secure(req), cartography = await publishedCartography(db);
     const body = await req.json().catch(()=>({}));
-    // map_config: solo auth + API key (no cartografía ni CLocator)
     if (body.action === "map_config") {
-      const { db, user } = await secure(req);
-      const key = Deno.env.get("GOOGLE_MAPS_API_KEY") || "";
-      if (!key) {
-        return reply(req, { error: "Falta secret GOOGLE_MAPS_API_KEY en Supabase" }, 500);
-      }
       const out = {
         ok: true,
-        google_maps_api_key: key,
+        origen_cartografia: cartography.origen,
+        conteos_cartografia: {
+          geocercas: cartography.geocercas.length,
+          geocerca_tramo: cartography.geocerca_tramo.length,
+          rutas_madre: cartography.rutas_madre.length
+        },
+        // VERSIÓN 2: Seguimiento usa la cartografía en el servidor para analizar,
+        // pero no la descarga ni la dibuja sobre el mapa operativo.
+        google_maps_api_key: Deno.env.get("GOOGLE_MAPS_API_KEY") || ""
       };
       await registrarEgress(db, user, "CLOCATOR_MAPA", out);
       return reply(req, out);
     }
-    const { db, user } = await secure(req), cartography = await publishedCartography(db);
     const valid = /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}$/, plate = String(body.placa || "").trim(), tracto = String(body.tracto || "").trim(), requestedFrom = String(body.desde || "").trim(), requestedTo = String(body.hasta || "").trim(), from = valid.test(requestedFrom) ? requestedFrom : "", to = valid.test(requestedTo) ? requestedTo : nowPE();
     if (!plate && !tracto) throw new Error("Falta placa o tracto");
     if (!from) throw new Error("Falta una fecha de inicio válida para el recorrido");
