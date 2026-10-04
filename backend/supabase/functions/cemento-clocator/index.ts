@@ -193,20 +193,72 @@ async function login(user, password) {
 function normalizeLatLngSimple(a, b) {
   const x = Number(a), y = Number(b);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
+  if (Math.abs(x) < 0.1 && Math.abs(y) < 0.1) return null;
+  // Preferencia estricta Perú / costa oeste
   if (x >= -20 && x <= 5 && y >= -85 && y <= -60) return { lat: x, lng: y };
   if (y >= -20 && y <= 5 && x >= -85 && x <= -60) return { lat: y, lng: x };
-  if (Math.abs(x) > 50 && Math.abs(y) < 50) return { lat: y, lng: x };
+  // Heurística: |lng| ~70, |lat| ~16
+  if (Math.abs(x) > 50 && Math.abs(y) < 50 && Math.abs(y) <= 90) return { lat: y, lng: x };
   if (Math.abs(x) <= 90 && Math.abs(y) <= 180) return { lat: x, lng: y };
   return null;
 }
 
-/** Lat/lng del main CLocator: vienen en irAMonitoreo(lat, lon) del HTML de la fila. */
-function obtenerLatLonDesdeFila(htmlFila) {
-  const re = /irAMonitoreo\s*\(\s*['"]?(-?\d+(?:\.\d+)?)['"]?\s*,\s*['"]?(-?\d+(?:\.\d+)?)/gi;
-  let m;
-  while ((m = re.exec(String(htmlFila || "")))) {
-    const fixed = normalizeLatLngSimple(Number(m[1]), Number(m[2]));
-    if (fixed && Math.abs(fixed.lat) > 0.1 && Math.abs(fixed.lng) > 0.1) return fixed;
+function parseFechaMonitoreo(text) {
+  const s = String(text || "").replace(/\s+/g, " ").trim();
+  let m = s.match(/(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2})(?::(\d{2}))?/);
+  if (m) return `${m[1]} ${m[2]}:${m[3] || "00"}`;
+  m = s.match(/(\d{2})-(\d{2})-(\d{4})\s+(\d{2}:\d{2})(?::(\d{2}))?/);
+  if (m) return `${m[1]}/${m[2]}/${m[3]} ${m[4]}:${m[5] || "00"}`;
+  m = s.match(/(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}:\d{2})(?::(\d{2}))?/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5] || "00"}`;
+  return "";
+}
+
+/**
+ * Lat/lng del main: irAMonitoreo(lat, lon) en onclick/HTML de la fila
+ * (mismo criterio que el extractor Python de snapshot).
+ */
+function obtenerLatLonDesdeFila($, row) {
+  const chunks = [];
+  chunks.push($.html(row) || "");
+  row.find("*").addBack().each((_, el) => {
+    const node = $(el);
+    for (const attr of ["onclick", "ondblclick", "href", "data-href", "data-url", "data-lat", "data-lon", "data-longitude", "data-latitude", "title"]) {
+      const v = node.attr(attr);
+      if (v) chunks.push(String(v));
+    }
+    // concatenar data-* restantes
+    const attribs = el.attribs || {};
+    for (const [k, v] of Object.entries(attribs)) {
+      if (k.startsWith("data-") && v) chunks.push(String(v));
+    }
+  });
+  const src = chunks.join("\n");
+  const patrones = [
+    /irAMonitoreo\s*\(\s*['"]?(-?\d+(?:\.\d+)?)['"]?\s*,\s*['"]?(-?\d+(?:\.\d+)?)/gi,
+    /irAMonitoreo\s*\(\s*['"](-?\d+(?:\.\d+)?)['"]\s*,\s*['"](-?\d+(?:\.\d+)?)['"]/gi,
+  ];
+  const candidatos = [];
+  for (const re of patrones) {
+    re.lastIndex = 0;
+    let m;
+    while ((m = re.exec(src))) {
+      const fixed = normalizeLatLngSimple(Number(m[1]), Number(m[2]));
+      if (fixed) candidatos.push(fixed);
+    }
+  }
+  // Preferir punto claramente en Perú
+  const enPeru = candidatos.find((c) => c.lat >= -20 && c.lat <= 5 && c.lng >= -85 && c.lng <= -60);
+  if (enPeru) return enPeru;
+  if (candidatos.length) return candidatos[0];
+
+  // Fallback: pares de números decimales en atributos
+  const nums = [...src.matchAll(/-?\d+\.\d{3,}/g)].map((x) => Number(x[0]));
+  for (let i = 0; i < nums.length - 1; i++) {
+    const fixed = normalizeLatLngSimple(nums[i], nums[i + 1]);
+    if (fixed && fixed.lat >= -20 && fixed.lat <= 5 && fixed.lng >= -85 && fixed.lng <= -60) {
+      return fixed;
+    }
   }
   return null;
 }
@@ -232,16 +284,33 @@ function rowInfo(html, plate, tracto) {
   const row = $(found);
   const rk = row.attr("data-rk");
   if (!rk) throw new Error("La unidad encontrada no contiene data-rk");
+
   const textos = row.find("td").map((_, td) => $(td).text().replace(/\s+/g, " ").trim()).get();
-  // Columna 4 = Fecha Última Localización
-  let fecha = textos[4] || null;
-  if (fecha) {
-    const m = String(fecha).match(/(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2}(?::\d{2})?)/);
-    if (m) fecha = `${m[1]} ${m[2].length === 5 ? m[2] + ":00" : m[2]}`;
+
+  // Fecha: columna 4 (Fecha Última Localización) o cualquier celda con patrón fecha+hora
+  let fecha = parseFechaMonitoreo(textos[4] || "");
+  if (!fecha) {
+    for (const tx of textos) {
+      fecha = parseFechaMonitoreo(tx);
+      if (fecha) break;
+    }
   }
-  const coords = obtenerLatLonDesdeFila($.html(found) || "");
+  // title de celdas
+  if (!fecha) {
+    row.find("td").each((_, td) => {
+      if (fecha) return;
+      fecha = parseFechaMonitoreo($(td).attr("title") || "");
+    });
+  }
+
+  const coords = obtenerLatLonDesdeFila($, row);
   const ultimo_monitoreo = coords
-    ? { lat: coords.lat, lng: coords.lng, fecha: fecha || null, fuente: "MONITOREO_PRINCIPAL" }
+    ? {
+        lat: coords.lat,
+        lng: coords.lng,
+        fecha: fecha || null,
+        fuente: "MONITOREO_PRINCIPAL",
+      }
     : null;
   return { rk, ultimo_monitoreo };
 }
