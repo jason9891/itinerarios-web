@@ -298,10 +298,162 @@ function paintUnitList(container) {
   const units = filteredUnits();
   if (!units.length) {
     list.innerHTML = `<p style="padding:16px;color:#64748b">No hay unidades en este filtro.</p>`;
+  } else {
+    list.innerHTML = units.map((u, i) => unitGroupHtml(u, i + 1)).join("");
+  }
+  paintClosedSection(container);
+}
+
+function closedField(p, col) {
+  return field(p, col);
+}
+
+function closedOcCardHtml(oc) {
+  const id = oc.id;
+  const p = oc.payload || {};
+  const expanded = state.closedExpanded.has(String(id));
+  const orden = oc.orden_carga || "—";
+  const fechaRef = oc.fecha_referencia || closedField(p, "Fecha de Orden") || closedField(p, "Fecha Carga Real") || "";
+  const fechaCierre =
+    closedField(p, "FECHA CIERRE SEGUIMIENTO") ||
+    closedField(p, "FECHA FIN DE RETORNO AQP/YURA/CRCT") ||
+    "";
+  const placa = p.PLACA || p["PLACA TRACTO"] || "";
+  const conductor = p.CONDUCTOR || "";
+  const ruta = p.Ruta || p.RUTA || "";
+  const chevron = expanded ? "▼" : "▶";
+
+  const body = !expanded
+    ? ""
+    : `
+    <div style="padding:10px;border-top:1px solid #e2e8f0;background:#fff">
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;font-size:12px;margin-bottom:10px">
+        <div><span style="color:#64748b">Placa</span><br><b>${esc(placa || "—")}</b></div>
+        <div><span style="color:#64748b">Conductor</span><br><b>${esc(conductor || "—")}</b></div>
+        <div style="grid-column:1/-1"><span style="color:#64748b">Ruta</span><br><b>${esc(ruta || "—")}</b></div>
+        <div><span style="color:#64748b">Fecha OC</span><br><b>${esc(fechaRef || "—")}</b></div>
+        <div><span style="color:#64748b">Fecha cierre</span><br><b>${esc(fechaCierre || "—")}</b></div>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
+        <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;font-weight:800;color:#475569">ESTADO
+          <select data-cfield="estado_fisico" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px">${stateOptions(closedField(p, "ESTADO"))}</select>
+        </label>
+        <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;font-weight:800;color:#475569">SALIDA DE PLANTA
+          <input data-cfield="salida_planta" type="text" value="${esc(closedField(p, "FECHA DE SALIDA PLANTA YURA/CARACOTO"))}" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;font-weight:800;color:#475569">LLEGADA A DESTINO
+          <input data-cfield="llegada_destino" type="text" value="${esc(closedField(p, "FECHA LLEGADA A DESTINO"))}" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;font-weight:800;color:#475569">INICIO RETORNO
+          <input data-cfield="inicio_retorno" type="text" value="${esc(closedField(p, "FECHA INICIO DE RETORNO"))}" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;font-weight:800;color:#475569">FIN DE RETORNO
+          <input data-cfield="fin_de_ciclo" type="text" value="${esc(closedField(p, "FECHA FIN DE RETORNO AQP/YURA/CRCT"))}" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;font-weight:800;color:#475569">CARGA RETORNO
+          <input data-cfield="carga_retorno" type="text" value="${esc(closedField(p, "CARGA DE RETORNO"))}" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px">
+        </label>
+        <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;font-weight:800;color:#475569">UBICACIÓN
+          <input data-cfield="ubicacion" type="text" value="${esc(closedField(p, "UBICACIÓN") || closedField(p, "UBICACION"))}" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px">
+        </label>
+        <label style="grid-column:1/-1;display:flex;flex-direction:column;gap:2px;font-size:10px;font-weight:800;color:#475569">OBSERVACIONES
+          <textarea data-cfield="observaciones" rows="2" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;resize:vertical">${esc(closedField(p, "OBSERVACIONES"))}</textarea>
+        </label>
+      </div>
+      <div style="margin-top:10px;display:flex;justify-content:flex-end">
+        <button type="button" data-closed-save="${id}"
+          style="background:#edf5ff;color:#124f95;border:1px solid #7ea6d7;border-radius:5px;padding:6px 12px;font-size:11px;font-weight:900;cursor:pointer">💾 GUARDAR</button>
+      </div>
+      <p style="margin:8px 0 0;font-size:11px;color:#64748b">OC histórica · estado CERRADA · guardar no reabre el ciclo</p>
+    </div>`;
+
+  return `
+  <article data-closed-id="${id}" style="border:1px solid #cbd5e1;border-radius:8px;margin:0 0 8px;background:#f1f5f9;overflow:hidden">
+    <button type="button" data-closed-toggle="${id}"
+      style="width:100%;display:flex;align-items:center;gap:10px;padding:10px 12px;border:0;background:transparent;cursor:pointer;text-align:left">
+      <span style="font-weight:900;color:#334155">${chevron}</span>
+      <span style="font-size:11px;font-weight:900;color:#64748b">OC</span>
+      <strong style="font-size:15px;font-weight:950;color:#0f172a">${esc(orden)}</strong>
+      <span style="background:#dcfce7;color:#166534;border:1px solid #86efac;border-radius:999px;padding:2px 8px;font-size:10px;font-weight:900">✓ CERRADA</span>
+      <span style="margin-left:auto;font-size:11px;color:#64748b">${esc(fechaCierre || fechaRef || "")}</span>
+    </button>
+    ${body}
+  </article>`;
+}
+
+function paintClosedSection(container) {
+  const btn = container.querySelector("#toggle-closed");
+  const panel = container.querySelector("#closed-panel");
+  const countEl = container.querySelector("#closed-count");
+  if (!btn || !panel) return;
+
+  if (!state.closedOpen) {
+    btn.textContent = "VER CERRADAS";
+    panel.hidden = true;
+    panel.innerHTML = "";
+    if (countEl) countEl.textContent = state.closedOcs.length ? String(state.closedOcs.length) : "—";
     return;
   }
-  list.innerHTML = units.map((u, i) => unitGroupHtml(u, i + 1)).join("");
+
+  btn.textContent = "OCULTAR CERRADAS";
+  panel.hidden = false;
+
+  if (state.closedLoading) {
+    panel.innerHTML = `<p style="padding:8px;color:#64748b;font-size:13px">Cargando OCs cerradas…</p>`;
+    return;
+  }
+
+  const unit = state.units.find((u) => nplate(u.placa) === state.selectedKey);
+  const tractoLabel = shortTracto(state.closedTracto || unit?.tracto || unit?.placa || "");
+  if (countEl) countEl.textContent = String(state.closedOcs.length);
+
+  if (!state.closedOcs.length) {
+    panel.innerHTML = `<p style="padding:8px;color:#64748b;font-size:13px">No hay OCs cerradas (histórico) para <b>${esc(tractoLabel)}</b>.</p>`;
+    return;
+  }
+
+  panel.innerHTML = `
+    <div style="margin:0 0 8px;font-size:12px;color:#475569">
+      <b style="color:#0f172a">${esc(tractoLabel)}</b>
+      · ${state.closedOcs.length} OC(s) en histórico
+    </div>
+    ${state.closedOcs.map((oc) => closedOcCardHtml(oc)).join("")}
+  `;
 }
+
+async function loadClosedForSelected(container) {
+  const unit = state.units.find((u) => nplate(u.placa) === state.selectedKey);
+  if (!unit) {
+    state.closedOcs = [];
+    state.closedTracto = "";
+    paintClosedSection(container);
+    return;
+  }
+  const tracto = unit.tracto || unit.placa;
+  state.closedLoading = true;
+  state.closedTracto = tracto;
+  paintClosedSection(container);
+  try {
+    const data = await trackApi({ action: "cerradas_por_tracto", tracto });
+    state.closedOcs = data.ocs || [];
+    state.closedExpanded = new Set();
+  } catch (e) {
+    state.closedOcs = [];
+    alert(e.message || "No se pudo cargar OCs cerradas");
+  } finally {
+    state.closedLoading = false;
+    paintClosedSection(container);
+  }
+}
+
+function collectClosedData(article) {
+  const datos = {};
+  article.querySelectorAll("[data-cfield]").forEach((el) => {
+    datos[el.dataset.cfield] = el.value;
+  });
+  return datos;
+}
+
 
 function renderEventsHtml(gps) {
   if (!gps?.ok && !gps?.analisis) {
@@ -472,6 +624,12 @@ export async function mount(container, runtime) {
     montadosMap: new Map(),
     selectedKey: "",
     filter: "activas",
+    // OC CERRADAS (histórico — no se mezcla con activas)
+    closedOpen: false,
+    closedLoading: false,
+    closedTracto: "",
+    closedOcs: [],
+    closedExpanded: new Set(),
   };
   bindRuntime(runtime);
   document.body.classList.add("tracking-active");
@@ -626,6 +784,19 @@ async function bootstrap(container, runtime) {
             <button type="button" class="pg-filter" data-filter="todas">TODAS · ${state.units.length}</button>
           </div>
           <div id="unit-list" class="plate-grid-scroll"></div>
+          <div id="closed-section" style="border-top:2px solid #cbd5e1;margin-top:8px;background:#f8fafc">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px">
+              <div style="display:flex;align-items:center;gap:10px">
+                <b style="font-size:13px;font-weight:950;color:#0f172a;letter-spacing:.04em">CERRADAS</b>
+                <span id="closed-count" style="font-size:12px;font-weight:800;color:#64748b">—</span>
+              </div>
+              <button type="button" id="toggle-closed"
+                style="background:#fff;border:1px solid #94a3b8;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:900;color:#1e293b;cursor:pointer">
+                VER CERRADAS
+              </button>
+            </div>
+            <div id="closed-panel" hidden style="padding:0 10px 12px"></div>
+          </div>
         </section>
         <section class="track-right">
           <header><b>SECUENCIA DE EVENTOS GPS</b></header>
@@ -763,6 +934,58 @@ function wire(container, runtime) {
     };
   });
 
+  const toggleClosed = container.querySelector("#toggle-closed");
+  if (toggleClosed) {
+    toggleClosed.onclick = async () => {
+      state.closedOpen = !state.closedOpen;
+      if (state.closedOpen) {
+        await loadClosedForSelected(container);
+      } else {
+        paintClosedSection(container);
+      }
+    };
+  }
+
+  const closedPanel = container.querySelector("#closed-panel");
+  if (closedPanel) {
+    closedPanel.onclick = async (ev) => {
+      const tgl = ev.target.closest("[data-closed-toggle]");
+      if (tgl) {
+        const id = String(tgl.dataset.closedToggle);
+        if (state.closedExpanded.has(id)) state.closedExpanded.delete(id);
+        else state.closedExpanded.add(id);
+        paintClosedSection(container);
+        return;
+      }
+      const saveBtn = ev.target.closest("[data-closed-save]");
+      if (saveBtn) {
+        const id = +saveBtn.dataset.closedSave;
+        const article = saveBtn.closest("article[data-closed-id]");
+        if (!article) return;
+        const datos = collectClosedData(article);
+        saveBtn.disabled = true;
+        const old = saveBtn.textContent;
+        saveBtn.textContent = "GUARDANDO…";
+        try {
+          const r = await trackApi({ action: "guardar_cerrada", id, datos });
+          saveBtn.textContent = r.accion === "SIN CAMBIOS" ? "SIN CAMBIOS" : "GUARDADO";
+          // refrescar lista histórica sin cambiar estado CERRADA
+          const data = await trackApi({
+            action: "cerradas_por_tracto",
+            tracto: state.closedTracto,
+          });
+          state.closedOcs = data.ocs || [];
+          setTimeout(() => paintClosedSection(container), 600);
+        } catch (e) {
+          alert(e.message);
+          saveBtn.textContent = old;
+        } finally {
+          saveBtn.disabled = false;
+        }
+      }
+    };
+  }
+
   $("refresh-route").onclick = async () => {
     const unit = state.units.find((u) => nplate(u.placa) === state.selectedKey);
     if (!unit) return alert("Seleccione una unidad (clic en el mapa o en VALIDAR de una fila).");
@@ -816,6 +1039,7 @@ function wire(container, runtime) {
 
     if (btn.dataset.map) {
       await focusUnit(container, btn.dataset.map, runtime);
+      if (state.closedOpen) await loadClosedForSelected(container);
       return;
     }
 
