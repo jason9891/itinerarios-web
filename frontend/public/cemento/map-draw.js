@@ -66,20 +66,46 @@ export function loadMaps(apiKey) {
 export async function ensureTrackingMap(mapEl, getToken) {
   if (!mapEl) return null;
   if (mapInstance && mapConfigLoaded) {
-    google.maps.event.trigger(mapInstance, "resize");
+    try {
+      google.maps.event.trigger(mapInstance, "resize");
+    } catch (_) {}
     return mapInstance;
   }
-  const token = await getToken();
-  const r = await fetch(API.clocator, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ action: "map_config" }),
-  });
-  const cfg = await r.json();
-  if (!r.ok) throw new Error(cfg.error || "No se pudo cargar configuración del mapa");
+
+  async function fetchConfig(force) {
+    const token = await getToken(force);
+    if (!token) throw new Error("Sesión expirada: vuelva a iniciar sesión");
+    const r = await fetch(API.clocator, {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${token}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ action: "map_config" }),
+    });
+    const cfg = await r.json().catch(() => ({}));
+    if (!r.ok) {
+      const msg = cfg.error || cfg.message || `HTTP ${r.status}`;
+      throw new Error(`Mapa: ${msg}`);
+    }
+    if (!cfg.google_maps_api_key) {
+      throw new Error("Mapa: la function no devolvió GOOGLE_MAPS_API_KEY");
+    }
+    return cfg;
+  }
+
+  let cfg;
+  try {
+    cfg = await fetchConfig(false);
+  } catch (e1) {
+    // Un reintento forzando token fresco (Firebase a veces entrega JWT viejo)
+    try {
+      cfg = await fetchConfig(true);
+    } catch (e2) {
+      throw new Error(String(e2.message || e1.message || "No se pudo cargar configuración del mapa"));
+    }
+  }
+
   await loadMaps(cfg.google_maps_api_key);
   mapEl.innerHTML = "";
   mapEl.dataset.mapsBound = "1";

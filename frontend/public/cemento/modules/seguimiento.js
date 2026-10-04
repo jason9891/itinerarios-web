@@ -672,7 +672,7 @@ async function focusUnit(container, key, runtime) {
   const mapEl = container.querySelector("#tracking-map");
   try {
     // Token sin forzar refresh (ahorra cuota Firebase). map_config solo 1 vez.
-    await ensureTrackingMap(mapEl, () => runtime.auth.currentUser.getIdToken(false));
+    await ensureTrackingMap(mapEl, (force) => runtime.auth.currentUser.getIdToken(!!force));
     if (gps?.ok || (gps?.puntos_gps || gps?.puntos_lista || []).length) {
       const mapNode = container.querySelector("#tracking-map");
       drawTrackingRoute(gps, mapNode, cap, unitLabel);
@@ -761,16 +761,33 @@ function wire(container, runtime) {
     if (!desde) return alert("Indique DESDE válido.");
     $("route-update-status").textContent = "CONSULTANDO CLocator…";
     try {
-      const token = await runtime.auth.currentUser.getIdToken(false);
-      const data = await queryClocator({
-        endpoint: API.clocator,
-        token,
-        placa: unit.placa,
-        tracto: unit.tracto,
-        desde,
-        hasta,
-        includeMap: false,
-      });
+      let token = await runtime.auth.currentUser.getIdToken(true);
+      let data;
+      try {
+        data = await queryClocator({
+          endpoint: API.clocator,
+          token,
+          placa: unit.placa,
+          tracto: unit.tracto,
+          desde,
+          hasta,
+          includeMap: false,
+          timeoutMs: 120000,
+        });
+      } catch (err) {
+        // reintento con token fresco si falló auth
+        token = await runtime.auth.currentUser.getIdToken(true);
+        data = await queryClocator({
+          endpoint: API.clocator,
+          token,
+          placa: unit.placa,
+          tracto: unit.tracto,
+          desde,
+          hasta,
+          includeMap: false,
+          timeoutMs: 120000,
+        });
+      }
       const meta = loadMeta();
       await cacheGPS(
         { ...data, ok: true, placa: unit.placa, tracto: unit.tracto, run_id: meta?.id, desde, hasta },

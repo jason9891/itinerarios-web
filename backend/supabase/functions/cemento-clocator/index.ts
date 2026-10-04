@@ -850,24 +850,22 @@ Deno.serve(async (req)=>{
     error: "Método no permitido"
   }, 405);
   try {
-    const { db, user } = await secure(req), cartography = await publishedCartography(db);
     const body = await req.json().catch(()=>({}));
+    // map_config: solo auth + API key (no cartografía ni CLocator)
     if (body.action === "map_config") {
+      const { db, user } = await secure(req);
+      const key = Deno.env.get("GOOGLE_MAPS_API_KEY") || "";
+      if (!key) {
+        return reply(req, { error: "Falta secret GOOGLE_MAPS_API_KEY en Supabase" }, 500);
+      }
       const out = {
         ok: true,
-        origen_cartografia: cartography.origen,
-        conteos_cartografia: {
-          geocercas: cartography.geocercas.length,
-          geocerca_tramo: cartography.geocerca_tramo.length,
-          rutas_madre: cartography.rutas_madre.length
-        },
-        // VERSIÓN 2: Seguimiento usa la cartografía en el servidor para analizar,
-        // pero no la descarga ni la dibuja sobre el mapa operativo.
-        google_maps_api_key: Deno.env.get("GOOGLE_MAPS_API_KEY") || ""
+        google_maps_api_key: key,
       };
       await registrarEgress(db, user, "CLOCATOR_MAPA", out);
       return reply(req, out);
     }
+    const { db, user } = await secure(req), cartography = await publishedCartography(db);
     const valid = /^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}$/, plate = String(body.placa || "").trim(), tracto = String(body.tracto || "").trim(), requestedFrom = String(body.desde || "").trim(), requestedTo = String(body.hasta || "").trim(), from = valid.test(requestedFrom) ? requestedFrom : "", to = valid.test(requestedTo) ? requestedTo : nowPE();
     if (!plate && !tracto) throw new Error("Falta placa o tracto");
     if (!from) throw new Error("Falta una fecha de inicio válida para el recorrido");
