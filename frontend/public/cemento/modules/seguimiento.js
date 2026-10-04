@@ -785,29 +785,25 @@ function wire(container, runtime) {
             ? `SIN TRAMO · ÚLTIMO PUNTO (${src})`
             : `SIN PUNTOS NI ÚLTIMO (${src})`;
 
-      // Mostrar qué se leyó de lat/lng (fila monitoreo + último)
-      const dbg = $("coord-debug");
-      if (dbg) {
-        const f = data?.debug_ultimo?.fila_monitoreo || {};
-        const u = data?.debug_ultimo?.ultimo_enviado || data?.ultimo || data?.ultimo_monitoreo;
-        const lines = [
-          `UNIDAD: ${unit.tracto || ""} / ${unit.placa || ""}`,
-          `FUENTE ÚLTIMO: ${src}`,
-          `PUNTOS EN RANGO: ${nPts}`,
-          `LAT LEÍDA: ${f.lat_leida ?? "null"}`,
-          `LNG LEÍDA: ${f.lng_leida ?? "null"}`,
-          `FECHA LEÍDA: ${f.fecha_leida || "—"}`,
-          `CÓMO: ${f.como_se_obtuvo || "—"}`,
-          `INTERPRETACIÓN: ${f.interpretacion || "—"}`,
-          `ÚLTIMO ENVIADO: ${u ? JSON.stringify(u) : "null"}`,
-          `NÚMEROS CANDIDATOS: ${JSON.stringify(f.numeros_candidatos || [])}`,
-          `CELDAS (${(f.celdas || []).length}):`,
-          ...(f.celdas || []).map((c, i) => `  [${i}] ${c.texto || ""}${c.title ? " | title=" + c.title : ""}`),
-          `ATTRS TR: ${JSON.stringify(f.attrs || {})}`,
-        ];
-        dbg.textContent = lines.join("\n");
-        dbg.style.display = "block";
-      }
+      // Diagnóstico de lat/lng (no debe romper el flujo)
+      try {
+        const dbg = $("coord-debug");
+        if (dbg) {
+          const f = data?.debug_ultimo?.fila_monitoreo || {};
+          const u = data?.debug_ultimo?.ultimo_enviado || data?.ultimo || data?.ultimo_monitoreo;
+          const lines = [
+            "UNIDAD: " + (unit.tracto || "") + " / " + (unit.placa || ""),
+            "FUENTE ÚLTIMO: " + src,
+            "PUNTOS EN RANGO: " + nPts,
+            "LAT: " + (u?.lat ?? f.lat_leida ?? "null"),
+            "LNG: " + (u?.lng ?? f.lng_leida ?? "null"),
+            "FECHA: " + (u?.fecha || f.fecha_leida || "—"),
+            "ÚLTIMO: " + (u ? JSON.stringify(u) : "null"),
+          ];
+          dbg.textContent = lines.join("\n");
+          dbg.style.display = "block";
+        }
+      } catch (_) {}
       await focusUnit(container, state.selectedKey, runtime);
     } catch (e) {
       $("route-update-status").textContent = "ERROR";

@@ -96,6 +96,85 @@ function nowPE() {
     ]));
   return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}:${p.second}`;
 }
+/** Resta días a una fecha PE dd/mm/yyyy hh:mm:ss (aprox. en zona Lima). */
+function shiftPEDays(pe, days) {
+  const m = String(pe || "").match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2}):(\d{2})/);
+  if (!m) return pe;
+  const iso = `${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:${m[6]}-05:00`;
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return pe;
+  d.setTime(d.getTime() + days * 86400000);
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    timeZone: "America/Lima",
+    day: "2-digit",
+    month: "2-digit",
+    year: "numeric",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false
+  }).formatToParts(d);
+  const p = Object.fromEntries(parts.map((x) => [x.type, x.value]));
+  return `${p.day}/${p.month}/${p.year} ${p.hour}:${p.minute}:${p.second}`;
+}
+function pointsFromList(list) {
+  const points = [];
+  for (const item of list || []) {
+    const p = item?.map ?? item;
+    const lat = Number(p?.latitud ?? p?.lat ?? p?.latitude);
+    const lng = Number(p?.longitud ?? p?.lng ?? p?.lon ?? p?.longitude);
+    if (Number.isFinite(lat) && Number.isFinite(lng)) {
+      const fixed = normalizeLatLng(lat, lng) || { lat, lng };
+      points.push({
+        lat: fixed.lat,
+        lng: fixed.lng,
+        fecha: p.fechaFinToString || p.fechaInicioToString || p.fecha || null
+      });
+    }
+  }
+  return points;
+}
+async function fetchRecorridoList(fetcher, view, startField, endField, from, to) {
+  const rForm = await postForm(fetcher, MAIN, {
+    "javax.faces.partial.ajax": "true",
+    "javax.faces.source": "frmRecorrido:fnBuscarRecorridoDeVehiculo",
+    "javax.faces.partial.execute": "@all",
+    "frmRecorrido:fnBuscarRecorridoDeVehiculo": "frmRecorrido:fnBuscarRecorridoDeVehiculo",
+    pDialogIsOpen: "false",
+    frmRecorrido: "frmRecorrido",
+    "frmRecorrido:cmbOpcionRecorrido_input": "PERSONALIZADO",
+    "frmRecorrido:cmbOpcionRecorrido_focus": "",
+    "frmRecorrido:cmbMensual_input": "0",
+    "frmRecorrido:cmbMensual_focus": "",
+    [startField]: from,
+    [endField]: to,
+    "javax.faces.ViewState": view
+  }, MAIN, true);
+  if (!rForm.ok) throw new Error(`Buscar recorrido devolvió HTTP ${rForm.status}`);
+  const view2 = viewPartial(await rForm.text()) || view;
+  const r = await fetcher(RPC, {
+    method: "POST",
+    headers: {
+      accept: "application/json, text/javascript, */*; q=0.01",
+      "content-type": "application/json",
+      "x-requested-with": "XMLHttpRequest",
+      origin: "https://clocatorplus.comsatel.com.pe",
+      referer: MAIN
+    },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      method: "recorridoMBean.getRecorridoAgregado",
+      params: [],
+      id: 6
+    })
+  });
+  if (!r.ok) throw new Error(`JSON-RPC devolvió HTTP ${r.status}`);
+  const data = await r.json();
+  if (data.error) throw new Error(`JSON-RPC: ${JSON.stringify(data.error)}`);
+  const list = data?.result?.map?.listHistorica?.list;
+  if (!Array.isArray(list)) throw new Error("CLocator no devolvió listHistorica.list");
+  return { list, view: view2, points: pointsFromList(list) };
+}
 function norm(v) {
   return String(v ?? "").toUpperCase().replace(/[^A-Z0-9]/g, "");
 }
@@ -693,60 +772,34 @@ async function recorrido(plate, tracto, from, to, cartography) {
   view = viewPartial(xml);
   if (!view) throw new Error("CLocator no abrió Mostrar Recorrido");
   const [startField, endField] = dateFields(xml);
-  r = await postForm(s.fetcher, MAIN, {
-    "javax.faces.partial.ajax": "true",
-    "javax.faces.source": "frmRecorrido:fnBuscarRecorridoDeVehiculo",
-    "javax.faces.partial.execute": "@all",
-    "frmRecorrido:fnBuscarRecorridoDeVehiculo": "frmRecorrido:fnBuscarRecorridoDeVehiculo",
-    pDialogIsOpen: "false",
-    frmRecorrido: "frmRecorrido",
-    "frmRecorrido:cmbOpcionRecorrido_input": "PERSONALIZADO",
-    "frmRecorrido:cmbOpcionRecorrido_focus": "",
-    "frmRecorrido:cmbMensual_input": "0",
-    "frmRecorrido:cmbMensual_focus": "",
-    [startField]: from,
-    [endField]: to,
-    "javax.faces.ViewState": view
-  }, MAIN, true);
-  if (!r.ok) throw new Error(`Buscar recorrido devolvió HTTP ${r.status}`);
-  r = await s.fetcher(RPC, {
-    method: "POST",
-    headers: {
-      accept: "application/json, text/javascript, */*; q=0.01",
-      "content-type": "application/json",
-      "x-requested-with": "XMLHttpRequest",
-      origin: "https://clocatorplus.comsatel.com.pe",
-      referer: MAIN
-    },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      method: "recorridoMBean.getRecorridoAgregado",
-      params: [],
-      id: 6
-    })
-  });
-  if (!r.ok) throw new Error(`JSON-RPC devolvió HTTP ${r.status}`);
-  const data = await r.json();
-  if (data.error) throw new Error(`JSON-RPC: ${JSON.stringify(data.error)}`);
-  const list = data?.result?.map?.listHistorica?.list;
-  if (!Array.isArray(list)) throw new Error("CLocator no devolvió listHistorica.list");
-  const points = [];
-  for (const item of list){
-    const p = item?.map ?? item;
-    const lat = Number(p?.latitud ?? p?.lat ?? p?.latitude);
-    const lng = Number(p?.longitud ?? p?.lng ?? p?.lon ?? p?.longitude);
-    if (Number.isFinite(lat) && Number.isFinite(lng)) {
-      const fixed = normalizeLatLng(lat, lng) || { lat, lng };
-      points.push({
-        lat: fixed.lat,
-        lng: fixed.lng,
-        fecha: p.fechaFinToString || p.fechaInicioToString || p.fecha || null
-      });
+  // 1) Recorrido del rango solicitado
+  let fetched = await fetchRecorridoList(s.fetcher, view, startField, endField, from, to);
+  view = fetched.view;
+  const points = fetched.points;
+  const list = fetched.list;
+  let last = points.at(-1) || null;
+  let ultimoFueraRango = null;
+  let fuenteUltimoExtra = null;
+
+  // 2) Si 0 puntos en rango: ampliar ventana (90 días) para obtener SIEMPRE el último GPS
+  //    (todas las unidades tienen última posición en Comsatel)
+  if (points.length === 0) {
+    const wideFrom = shiftPEDays(to || nowPE(), -90);
+    try {
+      fetched = await fetchRecorridoList(s.fetcher, view, startField, endField, wideFrom, to || nowPE());
+      view = fetched.view;
+      const widePoints = fetched.points;
+      if (widePoints.length) {
+        ultimoFueraRango = widePoints.at(-1);
+        fuenteUltimoExtra = "HISTORICO_90D";
+      }
+    } catch (_) {
+      // no romper el flujo del rango principal
     }
   }
-  const last = points.at(-1) || null;
-  // Si no hay puntos en el rango, usar último reporte de la tabla principal de monitoreo
-  const ultimo = last || ultimoMonitoreo || null;
+
+  // 3) Preferencia: último del rango → histórico ampliado → fila monitoreo
+  const ultimo = last || ultimoFueraRango || ultimoMonitoreo || null;
   const analysis = analyze(points, cartography.geocercas), network = classifyNetwork(ultimo, analysis, cartography);
   Object.assign(analysis, network);
   // Alias conservado para no romper consumidores de 19.3.
@@ -757,6 +810,13 @@ async function recorrido(plate, tracto, from, to, cartography) {
     "COBERTURA_RUTA_MADRE",
     "FUERA_DE_RED_VALIDADA_REVISAR"
   ];
+  const fuenteUltimo = last
+    ? "RANGO"
+    : ultimoFueraRango
+      ? fuenteUltimoExtra
+      : ultimoMonitoreo
+        ? "MONITOREO_PRINCIPAL"
+        : "NINGUNA";
   return {
     puntos: points.length,
     total_original: list.length,
@@ -764,11 +824,11 @@ async function recorrido(plate, tracto, from, to, cartography) {
     ultimo,
     ultimo_monitoreo: ultimoMonitoreo,
     sin_movimiento: points.length < 2,
-    // ayuda a diagnosticar unidades sin U (ej. R-404)
     debug_ultimo: {
       tiene_puntos_rango: points.length,
       tiene_monitoreo: !!ultimoMonitoreo,
-      fuente_ultimo: last ? "RANGO" : ultimoMonitoreo ? "MONITOREO_PRINCIPAL" : "NINGUNA",
+      tiene_historico_ampliado: !!ultimoFueraRango,
+      fuente_ultimo: fuenteUltimo,
       ultimo_enviado: ultimo,
       fila_monitoreo: debugFila,
     },
