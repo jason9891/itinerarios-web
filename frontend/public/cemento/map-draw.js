@@ -15,10 +15,20 @@ let inspectionEnabled = false;
 let infoWindow = null;
 let currentPoints = [];
 
+function inPeruBBox(lat, lng) {
+  return lat >= -19.5 && lat <= 0.5 && lng >= -82 && lng <= -68;
+}
+
 function normalizeGpsPoint(p, index) {
-  const lat = Number(p?.lat ?? p?.latitude);
-  const lng = Number(p?.lng ?? p?.lon ?? p?.longitude);
+  let lat = Number(p?.lat ?? p?.latitude);
+  let lng = Number(p?.lng ?? p?.lon ?? p?.longitude);
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  // Si vienen invertidas y el swap cae en Perú, corregir
+  if (!inPeruBBox(lat, lng) && inPeruBBox(lng, lat)) {
+    const t = lat;
+    lat = lng;
+    lng = t;
+  }
   return {
     lat,
     lng,
@@ -165,23 +175,30 @@ export function drawTrackingRoute(gps, mapEl, captionEl, unitLabel = "") {
   // Sin recorrido útil (≥2 puntos): mostrar U del último reporte
   if (data.length < 2) {
     if (ultimo) {
-      currentPoints = [ultimo];
-      addLetterMarker(
-        { lat: ultimo.lat, lng: ultimo.lng },
-        "U",
-        "#7c3aed",
-        "Último reporte GPS",
-        ultimo.fecha,
-      );
-      mapInstance.setCenter({ lat: ultimo.lat, lng: ultimo.lng });
-      mapInstance.setZoom(12);
-      if (captionEl) {
-        const latS = Number(ultimo.lat).toFixed(6);
-        const lngS = Number(ultimo.lng).toFixed(6);
-        captionEl.textContent =
-          `${unitLabel ? unitLabel + " · " : ""}U · lat=${latS} lng=${lngS} · ${ultimo.fecha || "sin hora"} (clic en U)`;
+      const latS = Number(ultimo.lat).toFixed(6);
+      const lngS = Number(ultimo.lng).toFixed(6);
+      const okPe = inPeruBBox(ultimo.lat, ultimo.lng);
+      if (okPe) {
+        currentPoints = [ultimo];
+        addLetterMarker(
+          { lat: ultimo.lat, lng: ultimo.lng },
+          "U",
+          "#7c3aed",
+          "Último reporte GPS",
+          ultimo.fecha,
+        );
+        mapInstance.setCenter({ lat: ultimo.lat, lng: ultimo.lng });
+        mapInstance.setZoom(12);
+      } else {
+        mapInstance.setCenter({ lat: -12.05, lng: -77.05 });
+        mapInstance.setZoom(6);
       }
-      return { points: 0, ultimo: true, lat: ultimo.lat, lng: ultimo.lng, fecha: ultimo.fecha || null };
+      if (captionEl) {
+        captionEl.textContent = okPe
+          ? `${unitLabel ? unitLabel + " · " : ""}U · lat=${latS} lng=${lngS} · ${ultimo.fecha || "sin hora"} (clic en U)`
+          : `${unitLabel ? unitLabel + " · " : ""}U RECHAZADO (fuera de Perú) · lat=${latS} lng=${lngS} · ${ultimo.fecha || "sin hora"}`;
+      }
+      return { points: 0, ultimo: true, lat: ultimo.lat, lng: ultimo.lng, fecha: ultimo.fecha || null, en_peru: okPe };
     }
     if (captionEl) {
       captionEl.textContent = unitLabel

@@ -643,13 +643,6 @@ async function focusUnit(container, key, runtime) {
   const st = getStatus(unit.placa);
   const statusEl = container.querySelector("#route-update-status");
   const cap = container.querySelector("#map-caption");
-  if (gps?.ok) {
-    if (statusEl) statusEl.textContent = `${unitLabel} · ANÁLISIS LISTO · ${gps.puntos ?? st?.puntos ?? 0} PUNTOS`;
-    if (cap) cap.textContent = `${unitLabel} · ${gps.desde || meta?.desde || ""} — ${gps.hasta || meta?.hasta || ""}`;
-  } else {
-    if (statusEl) statusEl.textContent = st ? `${unitLabel} · PRECARGA: ${st.estado}` : `${unitLabel} · SIN RECORRIDO PRECARGADO`;
-    if (cap) cap.textContent = `${unitLabel} · Sin caché GPS`;
-  }
 
   const events = container.querySelector("#gps-events");
   if (events) {
@@ -670,21 +663,28 @@ async function focusUnit(container, key, runtime) {
 
   const mapEl = container.querySelector("#tracking-map");
   try {
-    // Token sin forzar refresh (ahorra cuota Firebase). map_config solo 1 vez.
     await ensureTrackingMap(mapEl, () => runtime.auth.currentUser.getIdToken(false));
-    if (gps?.ok || (gps?.puntos_gps || gps?.puntos_lista || []).length) {
-      const mapNode = container.querySelector("#tracking-map");
-      drawTrackingRoute(gps, mapNode, cap, unitLabel);
-    } else if (mapEl) {
-      drawTrackingRoute({ ok: false }, mapEl, cap, unitLabel);
-      if (mapEl.dataset.mapsBound !== "1") {
-        mapEl.innerHTML = `<div style="padding:12px;text-align:center">Sin puntos GPS en caché para ${esc(unitLabel)}.</div>`;
+    const mapNode = container.querySelector("#tracking-map");
+    const drawn = drawTrackingRoute(gps || { ok: false }, mapNode, cap, unitLabel);
+
+    // Diagnóstico visible y persistente (no lo pisa el texto genérico)
+    const u = gps?.ultimo || gps?.ultimo_monitoreo || null;
+    const nPts = Array.isArray(gps?.puntos_gps) ? gps.puntos_gps.length : Number(gps?.puntos || 0);
+    if (statusEl) {
+      if (u && nPts < 2) {
+        statusEl.textContent =
+          `U · lat=${Number(u.lat).toFixed(6)} lng=${Number(u.lng).toFixed(6)} · ${u.fecha || "sin hora"} · ${u.fuente || ""}`;
+      } else if (gps?.ok || nPts > 0) {
+        statusEl.textContent = `${unitLabel} · ${nPts} PUNTOS EN RANGO`;
+      } else {
+        statusEl.textContent = st ? `${unitLabel} · PRECARGA: ${st.estado}` : `${unitLabel} · SIN RECORRIDO`;
       }
     }
   } catch (e) {
     if (mapEl) {
       mapEl.innerHTML = `<div style="padding:12px;text-align:center;color:#fca5a5">Mapa: ${esc(e.message)}</div>`;
     }
+    if (statusEl) statusEl.textContent = `ERROR MAPA: ${e.message}`;
   }
 }
 

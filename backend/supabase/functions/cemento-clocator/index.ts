@@ -190,16 +190,18 @@ async function login(user, password) {
     view: viewHtml(main)
   };
 }
+function inPeruBBox(lat, lng) {
+  // Caja amplia del territorio operativo (Perú + borde sur Ecuador / norte Chile)
+  return lat >= -19.5 && lat <= 0.5 && lng >= -82 && lng <= -68;
+}
+
 function normalizeLatLngSimple(a, b) {
   const x = Number(a), y = Number(b);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
   if (Math.abs(x) < 0.1 && Math.abs(y) < 0.1) return null;
-  // Preferencia estricta Perú / costa oeste
-  if (x >= -20 && x <= 5 && y >= -85 && y <= -60) return { lat: x, lng: y };
-  if (y >= -20 && y <= 5 && x >= -85 && x <= -60) return { lat: y, lng: x };
-  // Heurística: |lng| ~70, |lat| ~16
-  if (Math.abs(x) > 50 && Math.abs(y) < 50 && Math.abs(y) <= 90) return { lat: y, lng: x };
-  if (Math.abs(x) <= 90 && Math.abs(y) <= 180) return { lat: x, lng: y };
+  // Solo aceptamos puntos dentro de Perú (evita océano / otros continentes)
+  if (inPeruBBox(x, y)) return { lat: x, lng: y };
+  if (inPeruBBox(y, x)) return { lat: y, lng: x };
   return null;
 }
 
@@ -249,12 +251,9 @@ function obtenerLatLonDesdeFila($, row) {
       if (fixed) candidatos.push({ ...fixed, raw_a: rawA, raw_b: rawB });
     }
   }
-  // Preferir punto claramente en Perú
-  const enPeru = candidatos.find((c) => c.lat >= -20 && c.lat <= 5 && c.lng >= -85 && c.lng <= -60);
+  // Solo puntos dentro de Perú (si no hay, null — mejor que océano)
+  const enPeru = candidatos.find((c) => inPeruBBox(c.lat, c.lng));
   if (enPeru) return enPeru;
-  if (candidatos.length) return candidatos[0];
-
-  // Sin fallback a números de la grilla: solo irAMonitoreo (como el snapshot Python)
   return null;
 }
 
@@ -263,11 +262,20 @@ function rowInfo(html, plate, tracto) {
   const targets = new Set([norm(plate), norm(tracto)].filter(Boolean));
   let found = null;
   const tryFind = (scope) => {
+    // 1) coincidencia exacta en primeras celdas (Placa / Código Externo)
     scope.find("tr").each((_, tr) => {
       if (found) return;
       const vals = $(tr).find("td").map((_, td) => norm($(td).text())).get();
-      if (vals.some((v) => targets.has(v))) found = tr;
+      if (vals.length && (targets.has(vals[0]) || targets.has(vals[1]))) found = tr;
     });
+    // 2) cualquier celda
+    if (!found) {
+      scope.find("tr").each((_, tr) => {
+        if (found) return;
+        const vals = $(tr).find("td").map((_, td) => norm($(td).text())).get();
+        if (vals.some((v) => targets.has(v))) found = tr;
+      });
+    }
   };
   let $scope = $("#frmMonitoreo\\:dtTablaMonitoreo_data");
   if (!$scope.length) {
