@@ -190,71 +190,58 @@ async function login(user, password) {
     view: viewHtml(main)
   };
 }
-function normalizeLatLng(a, b) {
+function normalizeLatLngSimple(a, b) {
   const x = Number(a), y = Number(b);
   if (!Number.isFinite(x) || !Number.isFinite(y)) return null;
-  const inLatPE = (v) => v >= -20 && v <= 5;
-  const inLngPE = (v) => v >= -85 && v <= -60;
-  if (inLatPE(x) && inLngPE(y)) return { lat: x, lng: y };
-  if (inLatPE(y) && inLngPE(x)) return { lat: y, lng: x };
-  if (Math.abs(x) > 50 && Math.abs(y) < 50 && Math.abs(y) <= 90) return { lat: y, lng: x };
+  if (x >= -20 && x <= 5 && y >= -85 && y <= -60) return { lat: x, lng: y };
+  if (y >= -20 && y <= 5 && x >= -85 && x <= -60) return { lat: y, lng: x };
+  if (Math.abs(x) > 50 && Math.abs(y) < 50) return { lat: y, lng: x };
   if (Math.abs(x) <= 90 && Math.abs(y) <= 180) return { lat: x, lng: y };
   return null;
 }
 
-/** Coordenadas del main: están en irAMonitoreo(lat, lon) del HTML de la fila. */
+/** Lat/lng del main CLocator: vienen en irAMonitoreo(lat, lon) del HTML de la fila. */
 function obtenerLatLonDesdeFila(htmlFila) {
-  const src = String(htmlFila || "");
   const re = /irAMonitoreo\s*\(\s*['"]?(-?\d+(?:\.\d+)?)['"]?\s*,\s*['"]?(-?\d+(?:\.\d+)?)/gi;
   let m;
-  while ((m = re.exec(src))) {
-    const fixed = normalizeLatLng(Number(m[1]), Number(m[2]));
+  while ((m = re.exec(String(htmlFila || "")))) {
+    const fixed = normalizeLatLngSimple(Number(m[1]), Number(m[2]));
     if (fixed && Math.abs(fixed.lat) > 0.1 && Math.abs(fixed.lng) > 0.1) return fixed;
   }
   return null;
 }
 
-function parseFechaCelda(text) {
-  const s = String(text || "").trim();
-  let m = s.match(/(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2}(?::\d{2})?)/);
-  if (m) return `${m[1]} ${m[2].length === 5 ? m[2] + ":00" : m[2]}`;
-  return s || null;
-}
-
-/** data-rk + último punto (irAMonitoreo + Fecha Última Localización). */
 function rowInfo(html, plate, tracto) {
   const $ = load(html);
   const targets = new Set([norm(plate), norm(tracto)].filter(Boolean));
-  let $scope = $("#frmMonitoreo\\:dtTablaMonitoreo_data");
-  if (!$scope.length) {
-    $scope = $("tbody").filter((_, el) => String($(el).attr("id") || "").endsWith("dtTablaMonitoreo_data")).first();
-  }
-  if (!$scope.length) $scope = $.root();
-
   let found = null;
-  $scope.find("tr").each((_, tr) => {
-    if (found) return;
-    const vals = $(tr).find("td").map((_, td) => norm($(td).text())).get();
-    if (vals.some((v) => targets.has(v))) found = tr;
-  });
-  if (!found) {
-    $("tr").each((_, tr) => {
+  const tryFind = (scope) => {
+    scope.find("tr").each((_, tr) => {
       if (found) return;
       const vals = $(tr).find("td").map((_, td) => norm($(td).text())).get();
       if (vals.some((v) => targets.has(v))) found = tr;
     });
+  };
+  let $scope = $("#frmMonitoreo\\:dtTablaMonitoreo_data");
+  if (!$scope.length) {
+    $scope = $("tbody").filter((_, el) => String($(el).attr("id") || "").endsWith("dtTablaMonitoreo_data")).first();
   }
+  if ($scope.length) tryFind($scope);
+  if (!found) tryFind($.root());
   if (!found) throw new Error(`No se encontró ${plate} / ${tracto} en el monitoreo CLocator`);
   const row = $(found);
   const rk = row.attr("data-rk");
   if (!rk) throw new Error("La unidad encontrada no contiene data-rk");
-
   const textos = row.find("td").map((_, td) => $(td).text().replace(/\s+/g, " ").trim()).get();
-  // Columna 4 = Fecha Última Localización (orden validado en CLocator)
-  const fecha = parseFechaCelda(textos[4] || "") || null;
+  // Columna 4 = Fecha Última Localización
+  let fecha = textos[4] || null;
+  if (fecha) {
+    const m = String(fecha).match(/(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2}(?::\d{2})?)/);
+    if (m) fecha = `${m[1]} ${m[2].length === 5 ? m[2] + ":00" : m[2]}`;
+  }
   const coords = obtenerLatLonDesdeFila($.html(found) || "");
   const ultimo_monitoreo = coords
-    ? { lat: coords.lat, lng: coords.lng, fecha, fuente: "MONITOREO_PRINCIPAL" }
+    ? { lat: coords.lat, lng: coords.lng, fecha: fecha || null, fuente: "MONITOREO_PRINCIPAL" }
     : null;
   return { rk, ultimo_monitoreo };
 }
@@ -648,7 +635,7 @@ async function recorrido(plate, tracto, from, to, cartography) {
     });
   }
   const last = points.at(-1) || null;
-  // Sin puntos en el rango: usar irAMonitoreo del main (siempre hay última posición)
+  // 0 puntos en rango → última posición del main (irAMonitoreo)
   const ultimo = last || ultimoMonitoreo || null;
   const analysis = analyze(points, cartography.geocercas), network = classifyNetwork(ultimo, analysis, cartography);
   Object.assign(analysis, network);
