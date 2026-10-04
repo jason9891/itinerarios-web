@@ -227,22 +227,36 @@ function parseFechaMonitoreo(text) {
  * Lat/lng del main: irAMonitoreo(lat, lon) en onclick/HTML de la fila
  * (mismo criterio que el extractor Python de snapshot).
  */
+function decodeHtmlEntities(s) {
+  return String(s || "")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
 function obtenerLatLonDesdeFila($, row) {
   const chunks = [];
   chunks.push($.html(row) || "");
   row.find("*").addBack().each((_, el) => {
     const node = $(el);
-    for (const attr of ["onclick", "ondblclick", "href", "data-href", "data-url", "data-lat", "data-lon", "data-longitude", "data-latitude", "title"]) {
+    for (const attr of ["onclick", "ondblclick", "href", "data-href", "data-url", "data-lat", "data-lon", "data-longitude", "data-latitude", "title", "data-geocode", "data-pos"]) {
       const v = node.attr(attr);
       if (v) chunks.push(String(v));
     }
-    // concatenar data-* restantes
     const attribs = el.attribs || {};
     for (const [k, v] of Object.entries(attribs)) {
-      if (k.startsWith("data-") && v) chunks.push(String(v));
+      if (v) chunks.push(String(v));
     }
   });
-  const src = chunks.join("\n");
+  // También todo el HTML interno de la fila (scripts, etc.)
+  chunks.push(row.html() || "");
+  const src = decodeHtmlEntities(chunks.join("\n"));
   // Acepta punto o coma decimal: -16.40 / -16,40
   const patrones = [
     /irAMonitoreo\s*\(\s*['"]?(-?\d+[.,]\d+)['"]?\s*,\s*['"]?(-?\d+[.,]\d+)/gi,
@@ -373,6 +387,10 @@ function rowInfo(html, plate, tracto) {
       if (coords) break;
     }
   }
+  const onclicks = [];
+  row.find("[onclick]").each((_, el) => {
+    onclicks.push(String($(el).attr("onclick") || "").slice(0, 180));
+  });
   const ultimo_monitoreo = coords
     ? {
         lat: coords.lat,
@@ -382,7 +400,18 @@ function rowInfo(html, plate, tracto) {
         raw_irAMonitoreo: [coords.raw_a, coords.raw_b],
       }
     : null;
-  return { rk, ultimo_monitoreo };
+  return {
+    rk,
+    ultimo_monitoreo,
+    debug_fila: {
+      celdas_0_6: textos.slice(0, 7),
+      fecha,
+      coords: coords || null,
+      onclicks,
+      html_len: String($.html(row) || "").length,
+      tiene_irAMonitoreo: /irAMonitoreo/i.test(String($.html(row) || "") + onclicks.join(" ")),
+    },
+  };
 }
 
 function rowData(html, plate, tracto) {
@@ -695,6 +724,7 @@ async function recorrido(plate, tracto, from, to, cartography) {
   const info = rowInfo(s.main, plate, tracto);
   const rk = info.rk;
   const ultimoMonitoreo = info.ultimo_monitoreo;
+  const debugFila = info.debug_fila || null;
   const common = {
     frmMonitoreo: "frmMonitoreo",
     "frmMonitoreo:cmbBuscarMonitoreo_input": "Placa",
@@ -800,6 +830,7 @@ async function recorrido(plate, tracto, from, to, cartography) {
     ultimo,
     ultimo_monitoreo: ultimoMonitoreo,
     sin_movimiento: points.length < 2,
+    debug_fila: debugFila,
     puntos_gps: points,
     analisis: analysis,
     geocercas: [

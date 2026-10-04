@@ -681,7 +681,16 @@ async function focusUnit(container, key, runtime) {
     // Diagnóstico visible y persistente (no lo pisa el texto genérico)
     const u = gps?.ultimo || gps?.ultimo_monitoreo || null;
     const nPts = Array.isArray(gps?.puntos_gps) ? gps.puntos_gps.length : Number(gps?.puntos || 0);
-    const diagEl = container.querySelector("#map-u-diag");
+    let diagEl = container.querySelector("#map-u-diag");
+    if (!diagEl) {
+      const wrap = container.querySelector("#map-caption")?.parentElement;
+      if (wrap) {
+        diagEl = document.createElement("div");
+        diagEl.id = "map-u-diag";
+        diagEl.style.cssText = "display:block;margin-top:4px;padding:6px 8px;background:#0f172a;color:#f8fafc;font-size:12px;font-family:ui-monospace,monospace;border-radius:6px;line-height:1.35;word-break:break-all";
+        wrap.appendChild(diagEl);
+      }
+    }
     if (statusEl) {
       if (u && nPts < 2) {
         statusEl.textContent =
@@ -821,17 +830,28 @@ function wire(container, runtime) {
       ].join(" · ");
       if (statusEl) statusEl.textContent = nPts >= 2 ? `LISTO · ${nPts} PUNTOS` : resumen;
       if (diagEl) {
+        diagEl.style.display = "block";
         diagEl.textContent = `${unit.tracto || unit.placa} · ${resumen}`;
         diagEl.style.background = u || um ? "#14532d" : "#7f1d1d";
       }
-      console.info("CLocator respuesta ultimo", {
-        puntos: nPts,
-        ultimo: data?.ultimo,
-        ultimo_monitoreo: data?.ultimo_monitoreo,
-        primero: data?.primero,
-        sin_movimiento: data?.sin_movimiento,
-      });
+      const dbg = data?.debug_fila;
+      const extra = dbg
+        ? `\nceldas=${JSON.stringify(dbg.celdas_0_6 || [])}\nirA=${dbg.tiene_irAMonitoreo}\nonclick=${JSON.stringify(dbg.onclicks || [])}`
+        : "";
+      // Visible sí o sí (el caption se pisa fácil en móvil)
+      alert(
+        (nPts >= 2 ? `LISTO ${nPts} puntos` : resumen) +
+          (extra ? "\n" + extra : "")
+      );
+      console.info("CLocator respuesta ultimo", data);
       await focusUnit(container, state.selectedKey, runtime);
+      // Reaplicar diag después de focusUnit (que a veces pisa el texto)
+      if (diagEl) {
+        diagEl.style.display = "block";
+        diagEl.textContent = `${unit.tracto || unit.placa} · ${resumen}`;
+        diagEl.style.background = u || um ? "#14532d" : "#7f1d1d";
+      }
+      if (statusEl && nPts < 2) statusEl.textContent = resumen;
     } catch (e) {
       $("route-update-status").textContent = "ERROR";
       alert(e.message);
