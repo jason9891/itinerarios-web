@@ -243,8 +243,10 @@ function obtenerLatLonDesdeFila($, row) {
     re.lastIndex = 0;
     let m;
     while ((m = re.exec(src))) {
-      const fixed = normalizeLatLngSimple(Number(m[1]), Number(m[2]));
-      if (fixed) candidatos.push(fixed);
+      const rawA = Number(m[1]);
+      const rawB = Number(m[2]);
+      const fixed = normalizeLatLngSimple(rawA, rawB);
+      if (fixed) candidatos.push({ ...fixed, raw_a: rawA, raw_b: rawB });
     }
   }
   // Preferir punto claramente en Perú
@@ -307,6 +309,7 @@ function rowInfo(html, plate, tracto) {
         lng: coords.lng,
         fecha: fecha || null,
         fuente: "MONITOREO_PRINCIPAL",
+        raw_irAMonitoreo: [coords.raw_a, coords.raw_b],
       }
     : null;
   return { rk, ultimo_monitoreo };

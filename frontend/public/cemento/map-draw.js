@@ -176,9 +176,12 @@ export function drawTrackingRoute(gps, mapEl, captionEl, unitLabel = "") {
       mapInstance.setCenter({ lat: ultimo.lat, lng: ultimo.lng });
       mapInstance.setZoom(12);
       if (captionEl) {
-        captionEl.textContent = `${unitLabel ? unitLabel + " · " : ""}Sin tramo en rango · Último punto ${ultimo.fecha || "—"} (clic en U)`;
+        const latS = Number(ultimo.lat).toFixed(6);
+        const lngS = Number(ultimo.lng).toFixed(6);
+        captionEl.textContent =
+          `${unitLabel ? unitLabel + " · " : ""}U · lat=${latS} lng=${lngS} · ${ultimo.fecha || "sin hora"} (clic en U)`;
       }
-      return { points: 0, ultimo: true };
+      return { points: 0, ultimo: true, lat: ultimo.lat, lng: ultimo.lng, fecha: ultimo.fecha || null };
     }
     if (captionEl) {
       captionEl.textContent = unitLabel

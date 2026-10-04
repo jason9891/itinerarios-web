@@ -775,6 +775,14 @@ function wire(container, runtime) {
         { ...data, placa: unit.placa, tracto: unit.tracto, run_id: meta?.id, desde, hasta },
         gpsKey(meta?.id, unit.tracto, unit.placa),
       );
+      const u = data?.ultimo || data?.ultimo_monitoreo || null;
+      const nPts = data?.puntos_gps?.length ?? data?.puntos ?? 0;
+      if (u && (nPts < 2)) {
+        $("route-update-status").textContent =
+          `U DIAG · lat=${Number(u.lat).toFixed(6)} lng=${Number(u.lng).toFixed(6)} · ${u.fecha || "sin hora"} · ${u.fuente || data?.ultimo_monitoreo?.fuente || ""}`;
+      } else {
+        $("route-update-status").textContent = `LISTO · ${nPts} PUNTOS`;
+      }
       await focusUnit(container, state.selectedKey, runtime);
     } catch (e) {
       $("route-update-status").textContent = "ERROR";
