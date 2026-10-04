@@ -257,24 +257,35 @@ function obtenerLatLonDesdeFila($, row) {
   // También todo el HTML interno de la fila (scripts, etc.)
   chunks.push(row.html() || "");
   const src = decodeHtmlEntities(chunks.join("\n"));
-  // Acepta punto o coma decimal: -16.40 / -16,40
-  const patrones = [
-    /irAMonitoreo\s*\(\s*['"]?(-?\d+[.,]\d+)['"]?\s*,\s*['"]?(-?\d+[.,]\d+)/gi,
-    /irAMonitoreo\s*\(\s*['"]?(-?\d+(?:[.,]\d+)?)['"]?\s*,\s*['"]?(-?\d+(?:[.,]\d+)?)/gi,
-  ];
+  // Formato REAL CLocator (validado en vivo):
+  //   irAMonitoreo(8689952,'-16.403656666666667','-71.600115','0')
+  //   → (idVehiculo, lat, lng, flag)  NO es (lat, lng)
   const toNum = (s) => Number(String(s).replace(",", "."));
   const candidatos = [];
-  for (const re of patrones) {
-    re.lastIndex = 0;
-    let m;
-    while ((m = re.exec(src))) {
+
+  // 1) Firma de 3+ args: id, lat, lng
+  const reIdLatLng = /irAMonitoreo\s*\(\s*['"]?\d+['"]?\s*,\s*['"]?(-?\d+[.,]\d+)['"]?\s*,\s*['"]?(-?\d+[.,]\d+)/gi;
+  let m;
+  while ((m = reIdLatLng.exec(src))) {
+    const rawA = toNum(m[1]);
+    const rawB = toNum(m[2]);
+    const fixed = normalizeLatLngSimple(rawA, rawB);
+    if (fixed) candidatos.push({ ...fixed, raw_a: rawA, raw_b: rawB, firma: "id,lat,lng" });
+  }
+
+  // 2) Firma antigua de 2 args: lat, lng (por si alguna fila la usa)
+  if (!candidatos.length) {
+    const reLatLng = /irAMonitoreo\s*\(\s*['"]?(-?\d+[.,]\d+)['"]?\s*,\s*['"]?(-?\d+[.,]\d+)/gi;
+    while ((m = reLatLng.exec(src))) {
       const rawA = toNum(m[1]);
       const rawB = toNum(m[2]);
+      // Evitar tomar (id, lat) cuando id es entero sin decimal
+      if (!String(m[1]).includes(".") && !String(m[1]).includes(",") && Math.abs(rawA) > 180) continue;
       const fixed = normalizeLatLngSimple(rawA, rawB);
-      if (fixed) candidatos.push({ ...fixed, raw_a: rawA, raw_b: rawB });
+      if (fixed) candidatos.push({ ...fixed, raw_a: rawA, raw_b: rawB, firma: "lat,lng" });
     }
   }
-  // 1) Perú  2) cualquier par geo válido (como Python)
+
   const enPeru = candidatos.find((c) => inPeruBBox(c.lat, c.lng));
   if (enPeru) return enPeru;
   if (candidatos.length) return candidatos[0];
@@ -374,7 +385,7 @@ function rowInfo(html, plate, tracto) {
       const slice = mainHtml.slice(Math.max(0, idx - 500), Math.min(mainHtml.length, idx + 2500));
       const fakeRow = { 0: slice }; // not used
       // reusar regex sobre el slice
-      const re = /irAMonitoreo\s*\(\s*['"]?(-?\d+[.,]\d+)['"]?\s*,\s*['"]?(-?\d+[.,]\d+)/gi;
+      const re = /irAMonitoreo\s*\(\s*['"]?\d+['"]?\s*,\s*['"]?(-?\d+[.,]\d+)['"]?\s*,\s*['"]?(-?\d+[.,]\d+)/gi;
       const toNum = (s) => Number(String(s).replace(",", "."));
       let m;
       while ((m = re.exec(slice))) {
