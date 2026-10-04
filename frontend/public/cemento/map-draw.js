@@ -206,8 +206,8 @@ export function drawTrackingRoute(gps, mapEl, captionEl, unitLabel = "") {
       }
       if (captionEl) {
         captionEl.textContent = okPe
-          ? `${unitLabel ? unitLabel + " · " : ""}U · lat=${latS} lng=${lngS} · ${ultimo.fecha || "sin hora"} (clic en U)`
-          : `${unitLabel ? unitLabel + " · " : ""}U RECHAZADO (fuera de Perú) · lat=${latS} lng=${lngS} · ${ultimo.fecha || "sin hora"}`;
+          ? `${unitLabel ? unitLabel + " · " : ""}Sin tramo en rango · Último punto ${ultimo.fecha || "—"} (clic en U)`
+          : `${unitLabel ? unitLabel + " · " : ""}Sin recorrido ni último punto válido`;
       }
       return { points: 0, ultimo: true, lat: ultimo.lat, lng: ultimo.lng, fecha: ultimo.fecha || null, en_peru: okPe };
     }

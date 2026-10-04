@@ -676,55 +676,26 @@ async function focusUnit(container, key, runtime) {
   try {
     await ensureTrackingMap(mapEl, () => runtime.auth.currentUser.getIdToken(false));
     const mapNode = container.querySelector("#tracking-map");
-    const drawn = drawTrackingRoute(gps || { ok: false }, mapNode, cap, unitLabel);
+    drawTrackingRoute(gps || { ok: false }, mapNode, cap, unitLabel);
 
-    // Diagnóstico visible y persistente (no lo pisa el texto genérico)
     const u = gps?.ultimo || gps?.ultimo_monitoreo || null;
     const nPts = Array.isArray(gps?.puntos_gps) ? gps.puntos_gps.length : Number(gps?.puntos || 0);
-    let diagEl = container.querySelector("#map-u-diag");
-    if (!diagEl) {
-      const wrap = container.querySelector("#map-caption")?.parentElement;
-      if (wrap) {
-        diagEl = document.createElement("div");
-        diagEl.id = "map-u-diag";
-        diagEl.style.cssText = "display:block;margin-top:4px;padding:6px 8px;background:#0f172a;color:#f8fafc;font-size:12px;font-family:ui-monospace,monospace;border-radius:6px;line-height:1.35;word-break:break-all";
-        wrap.appendChild(diagEl);
-      }
-    }
     if (statusEl) {
       if (u && nPts < 2) {
-        statusEl.textContent =
-          `U · lat=${Number(u.lat).toFixed(6)} lng=${Number(u.lng).toFixed(6)} · ${u.fecha || "sin hora"} · ${u.fuente || ""}`;
+        statusEl.textContent = `${unitLabel} · SIN TRAMO · ÚLTIMO PUNTO`;
       } else if (gps?.ok || nPts > 0) {
-        statusEl.textContent = `${unitLabel} · ${nPts} PUNTOS EN RANGO`;
+        statusEl.textContent = `${unitLabel} · ${nPts} PUNTOS`;
       } else {
         statusEl.textContent = st ? `${unitLabel} · PRECARGA: ${st.estado}` : `${unitLabel} · SIN RECORRIDO`;
       }
     }
-    if (diagEl) {
-      if (u) {
-        const pe = Number(u.lat) >= -19.5 && Number(u.lat) <= 0.5 && Number(u.lng) >= -82 && Number(u.lng) <= -68;
-        diagEl.textContent =
-          `${unitLabel} · U lat=${Number(u.lat).toFixed(6)} lng=${Number(u.lng).toFixed(6)} · ${u.fecha || "sin hora"} · pts=${nPts} · ${pe ? "PERÚ OK" : "FUERA DE CAJA"} · ${u.fuente || ""}`;
-        diagEl.style.background = pe ? "#14532d" : "#7f1d1d";
-      } else if (nPts >= 2) {
-        diagEl.textContent = `${unitLabel} · tramo con ${nPts} puntos (sin U)`;
-        diagEl.style.background = "#0f172a";
-      } else {
-        diagEl.textContent = `${unitLabel} · sin último punto en caché — pulse ACTUALIZAR RECORRIDO`;
-        diagEl.style.background = "#0f172a";
-      }
-    }
+    // Quitar barra de diagnóstico si quedó de versiones anteriores
+    container.querySelector("#map-u-diag")?.remove();
   } catch (e) {
     if (mapEl) {
       mapEl.innerHTML = `<div style="padding:12px;text-align:center;color:#fca5a5">Mapa: ${esc(e.message)}</div>`;
     }
-    if (statusEl) statusEl.textContent = `ERROR MAPA: ${e.message}`;
-    const diagEl = container.querySelector("#map-u-diag");
-    if (diagEl) {
-      diagEl.textContent = `ERROR: ${e.message}`;
-      diagEl.style.background = "#7f1d1d";
-    }
+    if (statusEl) statusEl.textContent = `ERROR MAPA`;
   }
 }
 
@@ -816,42 +787,18 @@ function wire(container, runtime) {
         gpsKey(meta?.id, unit.tracto, unit.placa),
       );
       const u = data?.ultimo || data?.ultimo_monitoreo || null;
-      const um = data?.ultimo_monitoreo || null;
       const nPts = Array.isArray(data?.puntos_gps) ? data.puntos_gps.length : Number(data?.puntos || 0);
       const statusEl = $("route-update-status");
-      const diagEl = container.querySelector("#map-u-diag");
-      const resumen = [
-        `API pts=${nPts}`,
-        `ultimo=${u ? Number(u.lat).toFixed(6) + "," + Number(u.lng).toFixed(6) : "null"}`,
-        `monitoreo=${um ? Number(um.lat).toFixed(6) + "," + Number(um.lng).toFixed(6) : "null"}`,
-        `fecha=${(u && u.fecha) || (um && um.fecha) || "—"}`,
-        `fuente=${(u && u.fuente) || (um && um.fuente) || "—"}`,
-        `raw=${um && um.raw_irAMonitoreo ? JSON.stringify(um.raw_irAMonitoreo) : "—"}`,
-      ].join(" · ");
-      if (statusEl) statusEl.textContent = nPts >= 2 ? `LISTO · ${nPts} PUNTOS` : resumen;
-      if (diagEl) {
-        diagEl.style.display = "block";
-        diagEl.textContent = `${unit.tracto || unit.placa} · ${resumen}`;
-        diagEl.style.background = u || um ? "#14532d" : "#7f1d1d";
+      if (statusEl) {
+        statusEl.textContent =
+          nPts >= 2
+            ? `LISTO · ${nPts} PUNTOS`
+            : u
+              ? `SIN TRAMO · ÚLTIMO PUNTO`
+              : `SIN PUNTOS`;
       }
-      const dbg = data?.debug_fila;
-      const extra = dbg
-        ? `\nceldas=${JSON.stringify(dbg.celdas_0_6 || [])}\nirA=${dbg.tiene_irAMonitoreo}\nonclick=${JSON.stringify(dbg.onclicks || [])}`
-        : "";
-      // Visible sí o sí (el caption se pisa fácil en móvil)
-      alert(
-        (nPts >= 2 ? `LISTO ${nPts} puntos` : resumen) +
-          (extra ? "\n" + extra : "")
-      );
-      console.info("CLocator respuesta ultimo", data);
+      container.querySelector("#map-u-diag")?.remove();
       await focusUnit(container, state.selectedKey, runtime);
-      // Reaplicar diag después de focusUnit (que a veces pisa el texto)
-      if (diagEl) {
-        diagEl.style.display = "block";
-        diagEl.textContent = `${unit.tracto || unit.placa} · ${resumen}`;
-        diagEl.style.background = u || um ? "#14532d" : "#7f1d1d";
-      }
-      if (statusEl && nPts < 2) statusEl.textContent = resumen;
     } catch (e) {
       $("route-update-status").textContent = "ERROR";
       alert(e.message);
