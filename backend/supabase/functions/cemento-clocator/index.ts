@@ -252,14 +252,7 @@ function obtenerLatLonDesdeFila($, row) {
   if (enPeru) return enPeru;
   if (candidatos.length) return candidatos[0];
 
-  // Fallback: pares de números decimales en atributos
-  const nums = [...src.matchAll(/-?\d+\.\d{3,}/g)].map((x) => Number(x[0]));
-  for (let i = 0; i < nums.length - 1; i++) {
-    const fixed = normalizeLatLngSimple(nums[i], nums[i + 1]);
-    if (fixed && fixed.lat >= -20 && fixed.lat <= 5 && fixed.lng >= -85 && fixed.lng <= -60) {
-      return fixed;
-    }
-  }
+  // Sin fallback a números de la grilla: solo irAMonitoreo (como el snapshot Python)
   return null;
 }
 
@@ -287,15 +280,18 @@ function rowInfo(html, plate, tracto) {
 
   const textos = row.find("td").map((_, td) => $(td).text().replace(/\s+/g, " ").trim()).get();
 
-  // Fecha: columna 4 (Fecha Última Localización) o cualquier celda con patrón fecha+hora
-  let fecha = parseFechaMonitoreo(textos[4] || "");
+  // Snapshot real CLocator (Python):
+  // - Fecha Última Localización (idx 4) suele venir vacía
+  // - La hora del último reporte GPS está en "T. Parada" (idx 5), ej. "03/10/2026 23:10:10"
+  // - LAT/LNG NO salen del texto de la grilla: solo de irAMonitoreo en el HTML de la fila
+  let fecha = parseFechaMonitoreo(textos[5] || ""); // T. Parada
+  if (!fecha) fecha = parseFechaMonitoreo(textos[4] || ""); // fallback Fecha Última Localización
   if (!fecha) {
     for (const tx of textos) {
       fecha = parseFechaMonitoreo(tx);
       if (fecha) break;
     }
   }
-  // title de celdas
   if (!fecha) {
     row.find("td").each((_, td) => {
       if (fecha) return;
@@ -303,6 +299,7 @@ function rowInfo(html, plate, tracto) {
     });
   }
 
+  // Solo irAMonitoreo / atributos — nunca números de celdas de la grilla
   const coords = obtenerLatLonDesdeFila($, row);
   const ultimo_monitoreo = coords
     ? {
