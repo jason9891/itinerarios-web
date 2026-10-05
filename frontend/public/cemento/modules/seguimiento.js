@@ -65,16 +65,47 @@ function shortTracto(v) {
   return String(v || "—").replace(/^20-/i, "");
 }
 
+/** Muestra en inputs: dd/mm/aa HH:mm:ss (24h, sin AM/PM). */
 function peToInput(pe) {
-  const m = String(pe || "").match(/^(\d{2})\/(\d{2})\/(\d{4})[ T](\d{2}):(\d{2})(?::(\d{2}))?/);
-  if (!m) return "";
-  return `${m[3]}-${m[2]}-${m[1]}T${m[4]}:${m[5]}:${m[6] || "00"}`;
+  const s = String(pe || "").trim();
+  // Ya viene dd/mm/aa o dd/mm/aaaa
+  let m = s.match(/^(\d{2})\/(\d{2})\/(\d{2,4})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    const yy = m[3].length === 4 ? m[3].slice(-2) : m[3].padStart(2, "0");
+    const hh = String(m[4]).padStart(2, "0");
+    const mm = m[5];
+    const ss = (m[6] || "00").padStart(2, "0");
+    return `${m[1]}/${m[2]}/${yy} ${hh}:${mm}:${ss}`;
+  }
+  // ISO / datetime-local residual
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    return `${m[3]}/${m[2]}/${m[1].slice(-2)} ${m[4]}:${m[5]}:${(m[6] || "00")}`;
+  }
+  return s;
 }
 
+/** Interpreta input dd/mm/aa HH:mm:ss → PE dd/mm/aaaa HH:mm:ss para CLocator. */
 function inputToPE(v) {
-  const m = String(v || "").match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/);
-  if (!m) return "";
-  return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}:${m[6] || "00"}`;
+  const s = String(v || "").trim();
+  // dd/mm/aa[aa] HH:mm[:ss]
+  let m = s.match(/^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})[ T]+(\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    const dd = String(m[1]).padStart(2, "0");
+    const mm = String(m[2]).padStart(2, "0");
+    let yyyy = m[3];
+    if (yyyy.length === 2) yyyy = Number(yyyy) >= 70 ? `19${yyyy}` : `20${yyyy}`;
+    const hh = String(m[4]).padStart(2, "0");
+    const mi = m[5];
+    const ss = (m[6] || "00").padStart(2, "0");
+    return `${dd}/${mm}/${yyyy} ${hh}:${mi}:${ss}`;
+  }
+  // datetime-local residual
+  m = s.match(/^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}:${m[6] || "00"}`;
+  }
+  return "";
 }
 
 /** Mapa API key → columna payload (igual que backend MAP). */
@@ -964,10 +995,14 @@ async function bootstrap(container, runtime) {
       <main>
         <section class="track-left">
           <div class="map-unit-bar">
-            <div id="map-unit-id" class="map-unit-id">—</div>
+            <div id="map-unit-id" class="map-unit-id">RECORRIDO EN EL MAPA</div>
             <div class="route-refresh">
-              <label><span>DESDE</span><input id="route-from" type="datetime-local" step="1" value="${esc(peToInput(desdeDef))}"></label>
-              <label><span>HASTA</span><input id="route-to" type="datetime-local" step="1" value="${esc(peToInput(hastaDef))}"></label>
+              <label><span>DESDE (dd/mm/aa hh:mm:ss)</span>
+                <input id="route-from" type="text" inputmode="numeric" autocomplete="off"
+                  placeholder="04/10/26 00:00:01" value="${esc(peToInput(desdeDef))}"></label>
+              <label><span>HASTA (24h)</span>
+                <input id="route-to" type="text" inputmode="numeric" autocomplete="off"
+                  placeholder="04/10/26 15:30:00" value="${esc(peToInput(hastaDef))}"></label>
               <button type="button" id="refresh-route">ACTUALIZAR RECORRIDO</button>
               <small id="route-update-status">USA LA PRECARGA DISPONIBLE</small>
             </div>
@@ -1023,7 +1058,7 @@ async function focusUnit(container, key, runtime) {
   if (!unit) return;
   const unitLabel = shortTracto(unit.tracto || unit.placa);
   const idEl = container.querySelector("#map-unit-id");
-  if (idEl) idEl.textContent = unitLabel;
+  if (idEl) idEl.textContent = unitLabel ? `RECORRIDO EN EL MAPA  ${unitLabel}` : "RECORRIDO EN EL MAPA";
 
   const meta = loadMeta();
   const gps = await readGPS(gpsKey(meta?.id, unit.tracto, unit.placa));
@@ -1435,7 +1470,7 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-19";
+  st.id = "cem-sg-v3-style-20";
   st.textContent = `
     body.tracking-active { overflow: hidden !important; }
     body.tracking-active .desktop-tracking.grid-03 {
@@ -1512,12 +1547,32 @@ function ensureStyles() {
       color: #fff !important;
       border: 1px solid #1e40af !important;
     }
-    body.tracking-active .route-refresh {
-      display: grid !important; grid-template-columns: 1fr 1fr auto !important; gap: 6px !important; align-items: end !important; margin: 8px !important;
+    body.tracking-active .map-unit-bar {
+      flex: 0 0 auto !important; padding: 8px 10px 6px !important; border-bottom: 1px solid #e2e8f0 !important;
     }
-    body.tracking-active .route-refresh label { display: flex !important; flex-direction: column !important; gap: 2px !important; font-size: 10px !important; font-weight: 800 !important; }
+    body.tracking-active .map-unit-id,
+    body.tracking-active #map-unit-id {
+      display: block !important;
+      font-size: 20px !important;
+      font-weight: 950 !important;
+      letter-spacing: 0.03em !important;
+      color: #0f172a !important;
+      line-height: 1.2 !important;
+      margin: 0 0 8px 0 !important;
+      padding: 8px 12px !important;
+      background: linear-gradient(90deg, #dbeafe 0%, #eff6ff 55%, #fff 100%) !important;
+      border: 2px solid #2563eb !important;
+      border-radius: 8px !important;
+      text-transform: uppercase !important;
+    }
+    body.tracking-active .route-refresh {
+      display: grid !important; grid-template-columns: 1fr 1fr auto !important; gap: 6px !important; align-items: end !important; margin: 0 !important;
+    }
+    body.tracking-active .route-refresh label { display: flex !important; flex-direction: column !important; gap: 2px !important; font-size: 10px !important; font-weight: 800 !important; color: #334155 !important; }
     body.tracking-active .route-refresh input {
-      padding: 6px !important; border-radius: 6px !important; border: 1px solid #cbd5e1 !important; background: #fff !important; color: #0f172a !important;
+      padding: 8px !important; border-radius: 6px !important; border: 1px solid #64748b !important; background: #fff !important; color: #0f172a !important;
+      font-size: 14px !important; font-weight: 700 !important; font-variant-numeric: tabular-nums !important;
+      min-width: 11em !important;
     }
     body.tracking-active .tracking-map-wrap { position: relative !important; flex: 1 !important; min-height: 160px !important; margin: 0 8px !important; }
     body.tracking-active #tracking-map {
