@@ -145,7 +145,6 @@ function showTimePopup(marker, title, fecha, copied) {
     pixelOffset: new google.maps.Size(0, -6),
   });
   const t = fecha || "Sin hora";
-  // Solo código de unidad (sin "· Inicio")
   const code = String(title || "")
     .split("·")[0]
     .trim()
@@ -154,10 +153,10 @@ function showTimePopup(marker, title, fecha, copied) {
   const copyMsg = copied
     ? `<div style="margin-top:4px;color:#15803d;font-size:11px;font-weight:800">✓ Copiado</div>`
     : `<div style="margin-top:4px;color:#64748b;font-size:10px">Clic en la hora para copiar</div>`;
-  // Título en la misma recta del cerrar (padding-right deja hueco a la X), azul oscuro, más grande
+  // Código en la franja del botón cerrar (se sube con margen negativo + domready)
   infoWindow.setContent(
-    `<div style="font:13px/1.25 system-ui,sans-serif;padding:2px 2px 2px 0;margin:0;min-width:150px">
-      <div style="font-size:17px;font-weight:950;color:#0b2f68;letter-spacing:.04em;margin:0 22px 6px 0;line-height:1.1;padding-top:1px">${code}</div>
+    `<div id="gm-iw-root" style="font:13px/1.25 system-ui,sans-serif;padding:0;margin:0;min-width:150px;position:relative">
+      <div id="gm-iw-code" style="font-size:17px;font-weight:950;color:#0b2f68;letter-spacing:.04em;line-height:1;margin:0 28px 6px 0">${code}</div>
       <button type="button" id="gm-copy-hora" data-hora="${safeT}"
         style="display:block;width:100%;text-align:left;border:0;background:#eef2ff;border-radius:6px;padding:7px 9px;cursor:pointer;font-size:14px;font-weight:900;color:#0f172a">
         ${safeT}
@@ -169,16 +168,48 @@ function showTimePopup(marker, title, fecha, copied) {
   google.maps.event.addListenerOnce(infoWindow, "domready", () => {
     const btn = document.getElementById("gm-copy-hora");
     const msg = document.getElementById("gm-copy-msg");
-    // Compactar padding nativo del InfoWindow de Google
+    const codeEl = document.getElementById("gm-iw-code");
     try {
-      const iw = btn?.closest(".gm-style-iw");
-      if (iw) {
-        iw.style.padding = "8px 10px";
-        const c = iw.querySelector(".gm-style-iw-d");
-        if (c) {
-          c.style.overflow = "hidden";
-          c.style.maxHeight = "none";
-        }
+      // Contenedor blanco del InfoWindow
+      const iwC = document.querySelector(".gm-style-iw-c");
+      const iwD = document.querySelector(".gm-style-iw-d");
+      const closeBtn = document.querySelector(".gm-ui-hover-effect");
+      if (iwC) {
+        iwC.style.padding = "0";
+        iwC.style.borderRadius = "10px";
+      }
+      if (iwD) {
+        iwD.style.overflow = "hidden";
+        iwD.style.maxHeight = "none";
+        iwD.style.padding = "0";
+      }
+      // Poner el código en la misma franja que la X
+      if (codeEl && closeBtn && iwC) {
+        const bar = document.createElement("div");
+        bar.style.cssText =
+          "display:flex;align-items:center;justify-content:space-between;gap:8px;" +
+          "padding:8px 6px 4px 12px;min-height:32px;box-sizing:border-box";
+        const label = document.createElement("div");
+        label.textContent = codeEl.textContent || "";
+        label.style.cssText =
+          "font-size:17px;font-weight:950;color:#0b2f68;letter-spacing:.04em;line-height:1;flex:1;min-width:0";
+        bar.appendChild(label);
+        // Mover la X dentro de la barra (misma línea)
+        closeBtn.style.position = "relative";
+        closeBtn.style.top = "0";
+        closeBtn.style.right = "0";
+        closeBtn.style.width = "28px";
+        closeBtn.style.height = "28px";
+        closeBtn.style.flex = "0 0 28px";
+        bar.appendChild(closeBtn);
+        iwC.insertBefore(bar, iwC.firstChild);
+        codeEl.remove();
+        // Contenido (hora) con padding propio
+        const root = document.getElementById("gm-iw-root");
+        if (root) root.style.padding = "0 12px 10px 12px";
+      } else if (codeEl) {
+        // Fallback: subir el código hacia la X
+        codeEl.style.margin = "-2px 28px 6px 0";
       }
     } catch (_) {}
     if (!btn) return;
