@@ -784,14 +784,14 @@ async function bootstrap(container, runtime) {
             <button type="button" class="pg-filter" data-filter="todas">TODAS · ${state.units.length}</button>
           </div>
           <div id="unit-list" class="plate-grid-scroll"></div>
-          <div id="closed-section" style="border-top:2px solid #cbd5e1;margin-top:8px;background:#f8fafc">
-            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px">
+          <div id="closed-section">
+            <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;flex:0 0 auto">
               <div style="display:flex;align-items:center;gap:10px">
-                <b style="font-size:13px;font-weight:950;color:#0f172a;letter-spacing:.04em">CERRADAS</b>
+                <b style="font-size:14px;font-weight:950;color:#0f172a;letter-spacing:.04em">CERRADAS</b>
                 <span id="closed-count" style="font-size:12px;font-weight:800;color:#64748b">—</span>
               </div>
               <button type="button" id="toggle-closed"
-                style="background:#fff;border:1px solid #94a3b8;border-radius:6px;padding:6px 12px;font-size:11px;font-weight:900;color:#1e293b;cursor:pointer">
+                style="background:#1d4ed8;border:1px solid #1e40af;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:900;color:#fff;cursor:pointer">
                 VER CERRADAS
               </button>
             </div>
@@ -1144,7 +1144,7 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-18";
+  st.id = "cem-sg-v3-style-19";
   st.textContent = `
     body.tracking-active { overflow: hidden !important; }
     body.tracking-active .desktop-tracking.grid-03 {
@@ -1198,7 +1198,28 @@ function ensureStyles() {
     }
     body.tracking-active #unit-list,
     body.tracking-active .plate-grid-scroll {
-      flex: 1 1 auto !important; overflow: auto !important; min-height: 200px !important; padding: 10px !important;
+      flex: 1 1 auto !important; overflow: auto !important; min-height: 120px !important; min-width: 0 !important; padding: 10px !important;
+    }
+    /* CERRADAS siempre visible al pie del panel central (no la come el scroll de la lista) */
+    body.tracking-active #closed-section {
+      flex: 0 0 auto !important;
+      max-height: 42% !important;
+      display: flex !important;
+      flex-direction: column !important;
+      overflow: hidden !important;
+      border-top: 2px solid #94a3b8 !important;
+      background: #f1f5f9 !important;
+      z-index: 5 !important;
+    }
+    body.tracking-active #closed-panel {
+      overflow: auto !important;
+      flex: 1 1 auto !important;
+      min-height: 0 !important;
+    }
+    body.tracking-active #toggle-closed {
+      background: #1d4ed8 !important;
+      color: #fff !important;
+      border: 1px solid #1e40af !important;
     }
     body.tracking-active .route-refresh {
       display: grid !important; grid-template-columns: 1fr 1fr auto !important; gap: 6px !important; align-items: end !important; margin: 8px !important;
