@@ -788,34 +788,54 @@ async function loadData(onProgress) {
   const lista = await trackApi({ action: "lista" });
   const plates = lista.placas || [];
   const metaPre = loadMeta();
+  const results = metaPre?.resultados || {};
   const reviewed = new Set();
-  // 1) Marcas manuales / ya guardadas en sesión
-  for (const p of plates) {
-    if (p.revisada) reviewed.add(nplate(p.placa));
-  }
-  // 2) Auto-revisadas por precarga: sin movimiento / 0 puntos → no requieren seguimiento
-  const autoMark = [];
+  const toMark = [];
+  const toUnmark = [];
+
+  // REVISADAS se reconstruye desde la precarga ACTUAL (no marcas viejas de sesión):
+  // - 0 puntos / sin movimiento → revisada (auto)
+  // - con puntos y marcada en servidor → se respeta (revisión manual de una unidad con ruta)
+  // - marcada en servidor pero sin resultado de precarga o ya con puntos y era auto → se limpia
   for (const p of plates) {
     const k = nplate(p.placa);
-    if (reviewed.has(k)) continue;
-    const r = metaPre?.resultados?.[k];
-    if (!r) continue;
-    const st = String(r.estado || "").toUpperCase();
-    const pts = Number(r.puntos ?? 0);
+    const r = results[k];
+    const st = String(r?.estado || "").toUpperCase();
+    const pts = Number(r?.puntos ?? 0);
     const sinMov =
       st === "SIN MOVIMIENTO" ||
       st === "SIN PUNTOS" ||
       (st === "COMPLETO" && pts === 0);
-    if (!sinMov) continue;
-    reviewed.add(k);
-    autoMark.push(p.placa);
+    const doneOk =
+      st === "SIN MOVIMIENTO" ||
+      st === "SIN PUNTOS" ||
+      st === "COMPLETO" ||
+      st === "ERROR FINAL";
+
+    if (r && sinMov) {
+      reviewed.add(k);
+      if (!p.revisada) toMark.push(p.placa);
+      continue;
+    }
+    if (r && doneOk && pts > 0 && p.revisada) {
+      // Manual: unidad con recorrido que el operador marcó ✓
+      reviewed.add(k);
+      continue;
+    }
+    if (p.revisada) {
+      // Marca vieja (p.ej. auto de una precarga anterior) → limpiar
+      toUnmark.push(p.placa);
+    }
   }
-  // Persistir auto-marcas en servidor (en segundo plano)
-  if (autoMark.length) {
+
+  if (toMark.length) {
     Promise.all(
-      autoMark.map((placa) =>
-        trackApi({ action: "marcar_revisada", placa }).catch(() => null),
-      ),
+      toMark.map((placa) => trackApi({ action: "marcar_revisada", placa }).catch(() => null)),
+    ).catch(() => null);
+  }
+  if (toUnmark.length) {
+    Promise.all(
+      toUnmark.map((placa) => trackApi({ action: "desmarcar_revisada", placa }).catch(() => null)),
     ).catch(() => null);
   }
 
@@ -1311,6 +1331,33 @@ function wire(container, runtime) {
   };
   center.addEventListener("click", onCenter);
   cleanup.push(() => center.removeEventListener("click", onCenter));
+
+
+  const offReset = runtime.bus.on("cemento:precarga-reset", () => {
+    if (!state) return;
+    // Reinicio de precarga: todas vuelven a ACTIVAS; el 2º plano irá marcando 0 pts
+    const prev = [...state.reviewed];
+    state.reviewed = new Set();
+    const n = state.units.length;
+    const rc = container.querySelector("#review-count");
+    if (rc) rc.textContent = `REVISADAS 0/${n}`;
+    container.querySelectorAll(".pg-filter[data-filter]").forEach((b) => {
+      if (b.dataset.filter === "activas") b.textContent = `ACTIVAS · ${n}`;
+      if (b.dataset.filter === "revisadas") b.textContent = `REVISADAS · 0`;
+    });
+    if (state.filter === "revisadas" || state.filter === "activas") {
+      paintUnitList(container);
+    }
+    // Limpiar marcas en servidor (sesión)
+    Promise.all(
+      prev.map((k) => {
+        const u = state.units.find((x) => nplate(x.placa) === k);
+        const placa = u?.placa || k;
+        return trackApi({ action: "desmarcar_revisada", placa }).catch(() => null);
+      }),
+    ).catch(() => null);
+  });
+  cleanup.push(offReset);
 
   const off = runtime.bus.on("cemento:precarga-unit", (ev) => {
     if (!state) return;

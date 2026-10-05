@@ -166,19 +166,28 @@ export async function startPreload(units, opts = {}) {
   let meta = loadMeta();
   const corteCambio = meta && meta.desde && meta.desde !== desde;
   if (opts.forceNew || corteCambio || !meta || meta.completo || !meta.id) {
+    const wipeResults = !!(opts.forceNew || corteCambio || meta?.completo);
     meta = {
       id: crypto.randomUUID(),
       desde,
       hasta,
       total: unitsSnapshot.length,
       completo: false,
-      resultados: corteCambio || opts.forceNew ? {} : meta?.resultados || {},
-      intentos: corteCambio || opts.forceNew ? {} : meta?.intentos || {},
+      resultados: wipeResults ? {} : meta?.resultados || {},
+      intentos: wipeResults ? {} : meta?.intentos || {},
       started_at: Date.now(),
     };
-    if (corteCambio || opts.forceNew) {
+    if (wipeResults) {
       meta.resultados = {};
       meta.intentos = {};
+      // Seguimiento: limpiar REVISADAS auto; se vuelven a marcar al completar 0 pts
+      emit("cemento:precarga-reset", {
+        desde,
+        hasta,
+        forceNew: !!opts.forceNew,
+        corteCambio: !!corteCambio,
+        completoPrev: true,
+      });
     }
   } else {
     meta.hasta = hasta;

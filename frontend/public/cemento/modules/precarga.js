@@ -260,6 +260,9 @@ async function render(container, runtime) {
       started_at: Date.now(),
     };
     saveMeta(meta);
+    try {
+      runtime.bus.emit("cemento:precarga-reset", { desde: full, forceNew: true, corteCambio: true });
+    } catch (_) {}
     for (const u of units) {
       paintRow(container, nplate(u.placa), { estado: "PENDIENTE", puntos: "—", visitas: "—" });
     }
