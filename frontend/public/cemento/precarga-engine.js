@@ -207,8 +207,7 @@ export async function startPreload(units, opts = {}) {
     total: unitsSnapshot.length,
   });
 
-  const token = await auth.currentUser.getIdToken(true);
-
+  // Token fresco por unidad (evita JWT vencido a mitad de la cola)
   const process = async (list, second) => {
     for (const u of list) {
       if (stopFlag) break;
@@ -235,6 +234,8 @@ export async function startPreload(units, opts = {}) {
       controller = new AbortController();
       const timer = setTimeout(() => controller.abort("timeout"), TIMEOUT_MS);
       try {
+        if (!auth.currentUser) throw new Error("Sesión cerrada");
+        const token = await auth.currentUser.getIdToken(false);
         const data = await queryClocator({
           endpoint: API.clocator,
           token,
@@ -267,12 +268,18 @@ export async function startPreload(units, opts = {}) {
         const msg = controller?.signal?.aborted
           ? "Tiempo de respuesta agotado"
           : String(e.message || e);
-        if (!second && (meta.intentos[k] || 0) <= 1) {
+        const networky = /networkerror|failed to fetch|load failed|abort/i.test(msg);
+        // Primer fallo de red → REINTENTO; en segundo pase o muchos intentos → ERROR FINAL
+        if (!second && ((meta.intentos[k] || 0) <= 2 || networky)) {
           meta.resultados[k] = { estado: "REINTENTO", mensaje: msg };
         } else {
           meta.resultados[k] = { estado: "ERROR FINAL", mensaje: msg };
         }
         emit("cemento:precarga-unit", { placa: u.placa, tracto: u.tracto, ...meta.resultados[k] });
+        // Pausa breve tras error de red para no tumbar toda la cola
+        if (networky && !stopFlag) {
+          await new Promise((r) => setTimeout(r, 800));
+        }
       } finally {
         controller = null;
         currentPlaca = null;
@@ -283,10 +290,26 @@ export async function startPreload(units, opts = {}) {
           total: unitsSnapshot.length,
         });
       }
+      // Respiro entre unidades (deja vivo el event loop al cambiar de módulo)
+      if (!stopFlag) await new Promise((r) => setTimeout(r, 120));
     }
   };
 
   try {
+    // Destrabar estados a medias de una corrida anterior
+    for (const u of unitsSnapshot) {
+      const k = nplate(u.placa);
+      const s = String(meta.resultados[k]?.estado || "");
+      if (s === "PROCESANDO" || s === "SEGUNDO INTENTO") {
+        meta.resultados[k] = {
+          ...meta.resultados[k],
+          estado: "PENDIENTE",
+          mensaje: "Reanudado",
+        };
+      }
+    }
+    saveMeta(meta);
+
     const first = unitsSnapshot.filter((u) => {
       const s = meta.resultados[nplate(u.placa)]?.estado;
       return !DONE_STATES.has(s);

@@ -122,7 +122,7 @@ async function render(container, runtime) {
         </div>
       </div>
       <div class="activity" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-top:12px">
-        <div><small>ESTADO</small><b id="cem-pre-state">${runningNow ? "EN CURSO (2º PLANO)" : meta?.completo ? "COMPLETO" : meta ? "PENDIENTE" : "LISTO"}</b></div>
+        <div><small>ESTADO</small><b id="cem-pre-state">${runningNow ? "EN CURSO · 2º PLANO" : meta?.completo ? "COMPLETO" : meta ? "PENDIENTE" : "LISTO"}</b></div>
         <div><small>PROGRESO</small><b id="cem-pre-count">${c0.done}/${units.length}</b></div>
         <div><small>LISTAS SEG.</small><b id="cem-pre-ok">${c0.ready}</b></div>
         <div><small>ERRORES</small><b id="cem-pre-errors">${c0.errors}</b></div>
@@ -196,7 +196,7 @@ async function render(container, runtime) {
     if (el("#cem-pre-current")) el("#cem-pre-current").textContent = getCurrentPlaca() || "—";
     if (el("#cem-pre-state")) {
       el("#cem-pre-state").textContent = isRunning()
-        ? "EN CURSO (2º PLANO)"
+        ? "EN CURSO · 2º PLANO"
         : meta?.completo
           ? c.errors
             ? "COMPLETO CON ERRORES"
@@ -292,4 +292,23 @@ async function render(container, runtime) {
   });
 
   refreshHud();
+
+  // Reanudar sola si quedó incompleta (p.ej. al volver de Seguimiento o tras NetworkError)
+  if (!isRunning() && units.length && meta && !meta.completo) {
+    const pending = units.some((u) => {
+      const s = meta.resultados?.[nplate(u.placa)]?.estado;
+      return !DONE_STATES.has(s);
+    });
+    if (pending) {
+      const desde = normalizeDesde(inputDesde?.value) || resolveDesde();
+      if (btnStart) {
+        btnStart.disabled = true;
+        btnStart.textContent = "EN CURSO…";
+      }
+      if (btnStop) btnStop.disabled = false;
+      startPreload(units, { desde })
+        .then(() => refreshHud())
+        .catch(() => refreshHud());
+    }
+  }
 }
