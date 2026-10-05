@@ -313,7 +313,7 @@ function ocRowHtml(oc, unitIndex, ocIndex, totalOcs, unit) {
         <div style="grid-column:1;grid-row:1/3;padding:8px;border-right:1px solid #d5e0eb;box-sizing:border-box">
           <div style="font-size:10px;font-weight:900;color:#142f4b;margin:0 0 4px 0">ESTADO</div>
           <select data-f="${id}-estado" data-original="${esc(field(o, "ESTADO") || "")}"
-            style="display:block;width:100%;height:54px;box-sizing:border-box;padding:4px 6px;border:1px solid #7a93ad;border-radius:4px;background:#fff;color:#132f4c;font-size:12px;font-weight:700">
+            style="display:block;width:100%;height:54px;box-sizing:border-box;padding:4px 6px;border:1px solid #7a93ad;border-radius:4px;background:#fff;color:#0f172a;-webkit-text-fill-color:#0f172a;font-size:12px;font-weight:700;color-scheme:light">
             ${stateOptions(estado)}
           </select>
         </div>
@@ -444,7 +444,7 @@ function closedOcCardHtml(oc) {
       </div>
       <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px">
         <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;font-weight:800;color:#475569">ESTADO
-          <select data-cfield="estado_fisico" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px">${stateOptions(closedField(p, "ESTADO"))}</select>
+          <select data-cfield="estado_fisico" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px;background:#fff;color:#0f172a;-webkit-text-fill-color:#0f172a;color-scheme:light">${stateOptions(closedField(p, "ESTADO"))}</select>
         </label>
         <label style="display:flex;flex-direction:column;gap:2px;font-size:10px;font-weight:800;color:#475569">SALIDA DE PLANTA
           <input data-cfield="salida_planta" type="text" value="${esc(closedField(p, "FECHA DE SALIDA PLANTA YURA/CARACOTO"))}" style="padding:6px;border:1px solid #cbd5e1;border-radius:4px;font-size:12px">
@@ -1470,7 +1470,7 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-20";
+  st.id = "cem-sg-v3-style-21";
   st.textContent = `
     body.tracking-active { overflow: hidden !important; }
     body.tracking-active .desktop-tracking.grid-03 {
@@ -1547,6 +1547,46 @@ function ensureStyles() {
       color: #fff !important;
       border: 1px solid #1e40af !important;
     }
+
+    /* Forzar esquema claro: root es color-scheme:dark y blanquea el hover de <select> */
+    body.tracking-active,
+    body.tracking-active .desktop-tracking,
+    body.tracking-active .track-center,
+    body.tracking-active .track-left,
+    body.tracking-active .track-right {
+      color-scheme: light !important;
+    }
+    body.tracking-active select,
+    body.tracking-active select:hover,
+    body.tracking-active select:focus,
+    body.tracking-active select:active {
+      background: #ffffff !important;
+      color: #0f172a !important;
+      -webkit-text-fill-color: #0f172a !important;
+      caret-color: #0f172a !important;
+      color-scheme: light !important;
+    }
+    body.tracking-active select option,
+    body.tracking-active select optgroup {
+      background: #ffffff !important;
+      color: #0f172a !important;
+      -webkit-text-fill-color: #0f172a !important;
+    }
+    body.tracking-active select option:checked,
+    body.tracking-active select option:hover,
+    body.tracking-active select option:focus {
+      background: #dbeafe !important;
+      color: #0f172a !important;
+      -webkit-text-fill-color: #0f172a !important;
+    }
+    body.tracking-active input,
+    body.tracking-active textarea {
+      color-scheme: light !important;
+      background: #ffffff !important;
+      color: #0f172a !important;
+      -webkit-text-fill-color: #0f172a !important;
+    }
+
     body.tracking-active .map-unit-bar {
       flex: 0 0 auto !important; padding: 8px 10px 6px !important; border-bottom: 1px solid #e2e8f0 !important;
     }
