@@ -1061,6 +1061,102 @@ async function loadData(onProgress) {
   return { units, reviewed, montadosMap, total_ocs: lista.total_ocs || 0 };
 }
 
+
+const MIN_ROUTES_TO_OPEN = 5;
+const PRECARGA_DONE = new Set(["COMPLETO", "SIN MOVIMIENTO", "SIN PUNTOS", "ERROR FINAL"]);
+
+/** Unidades con recorrido GPS (puntos > 0) según precarga actual. */
+function countUnitsWithRoute(units) {
+  const res = loadMeta()?.resultados || {};
+  let n = 0;
+  for (const u of units || []) {
+    if (Number(res[nplate(u.placa)]?.puntos ?? 0) > 0) n++;
+  }
+  return n;
+}
+
+/** Todas las placas de la lista ya tienen estado final de precarga. */
+function allUnitsPrecargaSettled(units) {
+  const res = loadMeta()?.resultados || {};
+  const list = units || [];
+  if (!list.length) return true;
+  return list.every((u) => PRECARGA_DONE.has(String(res[nplate(u.placa)]?.estado || "").toUpperCase()));
+}
+
+/**
+ * Espera al menos MIN_ROUTES_TO_OPEN unidades con puntos.
+ * Si al terminar la precarga de todas hay menos de 5, continúa igual.
+ */
+function waitForMinRoutes(container, units, runtime) {
+  return new Promise((resolve) => {
+    const total = units.length;
+    const paint = () => {
+      const withRoute = countUnitsWithRoute(units);
+      const settled = allUnitsPrecargaSettled(units);
+      const meta = loadMeta();
+      const c = counts(meta, total);
+      const running = isRunning();
+      const el = container.querySelector("#sg-load-progress");
+      const sub = container.querySelector("#sg-load-sub");
+      if (el) {
+        el.textContent = settled && withRoute < MIN_ROUTES_TO_OPEN
+          ? `Listo · ${withRoute} unidad(es) con ruta (menos de ${MIN_ROUTES_TO_OPEN} en total)`
+          : `Esperando unidades con ruta · ${withRoute}/${MIN_ROUTES_TO_OPEN}`;
+      }
+      if (sub) {
+        sub.textContent = running
+          ? `Precarga en curso ${c.done}/${c.total || total}. El mapa se abre al tener ${MIN_ROUTES_TO_OPEN} recorridos (o al terminar todas).`
+          : settled
+            ? `Precarga finalizada. Abriendo con ${withRoute} recorrido(s).`
+            : `Precarga en pausa o no iniciada. Con ${withRoute} ruta(s) de ${MIN_ROUTES_TO_OPEN} mínimas.`;
+      }
+      return { withRoute, settled, running };
+    };
+
+    const tryOpen = () => {
+      const { withRoute, settled } = paint();
+      if (withRoute >= MIN_ROUTES_TO_OPEN || settled) {
+        cleanupWait();
+        resolve({ withRoute, openedEarly: withRoute >= MIN_ROUTES_TO_OPEN });
+        return true;
+      }
+      return false;
+    };
+
+    let offUnit = null;
+    let offProg = null;
+    let timer = null;
+    const cleanupWait = () => {
+      if (timer) clearInterval(timer);
+      timer = null;
+      try { offUnit?.(); } catch (_) {}
+      try { offProg?.(); } catch (_) {}
+      offUnit = offProg = null;
+    };
+
+    // UI de espera (reemplaza el spinner de detalle OC)
+    container.innerHTML = `<section class="sg-boot" style="min-height:calc(100vh - 120px);display:flex;align-items:center;justify-content:center;padding:32px 16px;box-sizing:border-box">
+      <div style="text-align:center;max-width:420px">
+        <div class="sg-spinner" aria-hidden="true" style="width:56px;height:56px;margin:0 auto 18px;border-radius:50%;border:4px solid #1e3a5f;border-top-color:#38bdf8;animation:sg-spin .75s linear infinite"></div>
+        <h2 style="margin:0 0 8px;font-size:18px;font-weight:900;color:#e2e8f0;letter-spacing:.02em">Esperando unidades con ruta</h2>
+        <p id="sg-load-progress" style="margin:0;font-size:14px;font-weight:700;color:#7dd3fc">Esperando unidades con ruta · 0/${MIN_ROUTES_TO_OPEN}</p>
+        <p id="sg-load-sub" style="margin:12px 0 0;font-size:12px;line-height:1.45;color:#94a3b8">Se abrirá el mapa al precargar al menos ${MIN_ROUTES_TO_OPEN} recorridos con puntos GPS.</p>
+        <style>@keyframes sg-spin{to{transform:rotate(360deg)}}</style>
+      </div>
+    </section>`;
+
+    if (tryOpen()) return;
+
+    if (runtime?.bus?.on) {
+      offUnit = runtime.bus.on("cemento:precarga-unit", () => { tryOpen(); });
+      offProg = runtime.bus.on("cemento:precarga-progress", () => { tryOpen(); });
+    }
+    timer = setInterval(() => { tryOpen(); }, 1000);
+    // also register for unmount safety
+    cleanup.push(() => cleanupWait());
+  });
+}
+
 async function bootstrap(container, runtime) {
   ensureStyles();
   const data = await loadData((pct) => {
@@ -1070,6 +1166,9 @@ async function bootstrap(container, runtime) {
   state.units = data.units;
   state.reviewed = data.reviewed;
   state.montadosMap = data.montadosMap;
+
+  // No abrir mapa/lista hasta ≥5 rutas con puntos (o precarga total terminada con menos).
+  await waitForMinRoutes(container, state.units, runtime);
 
   const meta = loadMeta();
   const c = counts(meta, state.units.length);
