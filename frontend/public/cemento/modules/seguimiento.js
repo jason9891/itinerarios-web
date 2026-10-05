@@ -1306,6 +1306,7 @@ function wire(container, runtime) {
   cleanup.push(() => center.removeEventListener("click", onCenter));
 
   const off = runtime.bus.on("cemento:precarga-unit", (ev) => {
+    if (!state) return;
     const m = loadMeta();
     const c = counts(m, state.units.length);
     const el = $("preload-global");
@@ -1314,12 +1315,14 @@ function wire(container, runtime) {
         ? `PRECARGA ${c.done}/${m?.total || state.units.length}`
         : `GPS ${c.ready}/${state.units.length}`;
     }
-    // Auto-revisada: unidad sin movimiento (0 puntos) → pasa a REVISADAS
+
+    // Segundo plano: 0 puntos → REVISADAS sin tocar la unidad en pantalla
     try {
       const placa = ev?.placa;
-      if (!placa || !state) return;
+      if (!placa) return;
       const key = nplate(placa);
       if (state.reviewed.has(key)) return;
+
       const st = String(ev?.estado || m?.resultados?.[key]?.estado || "").toUpperCase();
       const pts = Number(ev?.puntos ?? m?.resultados?.[key]?.puntos ?? 0);
       const sinMov =
@@ -1327,8 +1330,10 @@ function wire(container, runtime) {
         st === "SIN PUNTOS" ||
         (st === "COMPLETO" && pts === 0);
       if (!sinMov) return;
+
       state.reviewed.add(key);
       trackApi({ action: "marcar_revisada", placa }).catch(() => null);
+
       const nAct = state.units.filter((u) => !isRevisadaEfectiva(u)).length;
       const nRev = state.units.filter((u) => isRevisadaEfectiva(u)).length;
       const rc = container.querySelector("#review-count");
@@ -1337,10 +1342,14 @@ function wire(container, runtime) {
         if (b.dataset.filter === "activas") b.textContent = `ACTIVAS · ${nAct}`;
         if (b.dataset.filter === "revisadas") b.textContent = `REVISADAS · ${nRev}`;
       });
-      // Si está viendo ACTIVAS, refrescar lista para que salga de ahí
-      if (state.filter === "activas" || state.filter === "revisadas") {
-        paintUnitList(container);
+
+      // Quitar solo esa tarjeta de ACTIVAS (sin repintar toda la lista ni el formulario actual)
+      if (state.filter === "activas" && key !== state.selectedKey) {
+        const node = container.querySelector(`#unit-list [data-placa="${key}"]`);
+        node?.remove();
       }
+      // Si es la unidad seleccionada y tiene 0 pts, no forzamos cambio de vista
+      // (el operador puede seguir; al cambiar de filtro o unidad se actualiza).
     } catch (_) {}
   });
   cleanup.push(off);
