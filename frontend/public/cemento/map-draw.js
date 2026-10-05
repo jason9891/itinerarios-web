@@ -141,31 +141,46 @@ async function copyToClipboard(text) {
 
 function showTimePopup(marker, title, fecha, copied) {
   infoWindow ??= new google.maps.InfoWindow({
-    maxWidth: 220,
-    pixelOffset: new google.maps.Size(0, -4),
+    maxWidth: 260,
+    pixelOffset: new google.maps.Size(0, -6),
   });
   const t = fecha || "Sin hora";
-  const safeTitle = String(title || "").replace(/</g, "&lt;");
+  // Solo código de unidad (sin "· Inicio")
+  const code = String(title || "")
+    .split("·")[0]
+    .trim()
+    .replace(/</g, "&lt;");
   const safeT = String(t).replace(/</g, "&lt;");
   const copyMsg = copied
-    ? `<div style="margin-top:3px;color:#15803d;font-size:11px;font-weight:800">✓ Copiado</div>`
-    : `<div style="margin-top:3px;color:#64748b;font-size:10px">Clic en la hora para copiar</div>`;
-  // Hora clickeable; título = código unidad (no "Punto GPS")
+    ? `<div style="margin-top:4px;color:#15803d;font-size:11px;font-weight:800">✓ Copiado</div>`
+    : `<div style="margin-top:4px;color:#64748b;font-size:10px">Clic en la hora para copiar</div>`;
+  // Título en la misma recta del cerrar (padding-right deja hueco a la X), azul oscuro, más grande
   infoWindow.setContent(
-    `<div style="font:12px/1.3 system-ui,sans-serif;padding:0;margin:0;min-width:120px">
-      <div style="font-size:12px;font-weight:800;color:#0f172a;margin:0 0 2px">${safeTitle}</div>
+    `<div style="font:13px/1.25 system-ui,sans-serif;padding:2px 2px 2px 0;margin:0;min-width:150px">
+      <div style="font-size:17px;font-weight:950;color:#0b2f68;letter-spacing:.04em;margin:0 22px 6px 0;line-height:1.1;padding-top:1px">${code}</div>
       <button type="button" id="gm-copy-hora" data-hora="${safeT}"
-        style="display:block;width:100%;text-align:left;border:0;background:#f1f5f9;border-radius:6px;padding:6px 8px;cursor:pointer;font-size:14px;font-weight:900;color:#0f172a">
+        style="display:block;width:100%;text-align:left;border:0;background:#eef2ff;border-radius:6px;padding:7px 9px;cursor:pointer;font-size:14px;font-weight:900;color:#0f172a">
         ${safeT}
       </button>
       <div id="gm-copy-msg">${copyMsg}</div>
     </div>`,
   );
   infoWindow.open({ map: mapInstance, anchor: marker });
-  // Enlazar clic en hora → copiar (tras pintar el DOM del InfoWindow)
   google.maps.event.addListenerOnce(infoWindow, "domready", () => {
     const btn = document.getElementById("gm-copy-hora");
     const msg = document.getElementById("gm-copy-msg");
+    // Compactar padding nativo del InfoWindow de Google
+    try {
+      const iw = btn?.closest(".gm-style-iw");
+      if (iw) {
+        iw.style.padding = "8px 10px";
+        const c = iw.querySelector(".gm-style-iw-d");
+        if (c) {
+          c.style.overflow = "hidden";
+          c.style.maxHeight = "none";
+        }
+      }
+    } catch (_) {}
     if (!btn) return;
     btn.onclick = async (ev) => {
       ev.preventDefault();
@@ -174,8 +189,8 @@ function showTimePopup(marker, title, fecha, copied) {
       const ok = await copyToClipboard(hora);
       if (msg) {
         msg.innerHTML = ok
-          ? `<div style="margin-top:3px;color:#15803d;font-size:11px;font-weight:800">✓ Copiado</div>`
-          : `<div style="margin-top:3px;color:#b91c1c;font-size:11px">No se pudo copiar</div>`;
+          ? `<div style="margin-top:4px;color:#15803d;font-size:11px;font-weight:800">✓ Copiado</div>`
+          : `<div style="margin-top:4px;color:#b91c1c;font-size:11px">No se pudo copiar</div>`;
       }
     };
   });

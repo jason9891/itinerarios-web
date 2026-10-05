@@ -241,13 +241,14 @@ function montadosTabHtml(unit) {
 
 function fieldCell(id, suffix, label, value, original, withPaste) {
   const pasteBtn = withPaste
-    ? `<button type="button" data-paste="${id}-${suffix}" title="Pegar" style="flex:0 0 28px;width:28px;height:28px;border:1px solid #cbd5e1;border-radius:4px;background:#f1f5f9;cursor:pointer;font-size:12px;padding:0">📋</button>`
+    ? `<button type="button" data-paste="${id}-${suffix}" title="Pegar" style="flex:0 0 30px;width:30px;height:36px;border:1px solid #b9c9de;border-radius:4px;background:#f8fafc;cursor:pointer;font-size:13px;padding:0">📋</button>`
     : "";
-  return `<div style="min-width:0;padding:6px 8px;box-sizing:border-box">
-  <div style="font-size:11px;font-weight:900;color:#142f4b;margin:0 0 3px 0;letter-spacing:.02em">${label}</div>
+  // min-width ~ fecha completa dd/mm/yyyy hh:mm:ss (como producción)
+  return `<div style="min-width:150px;padding:6px 8px;box-sizing:border-box">
+  <div style="font-size:10px;font-weight:900;color:#314a65;margin:0 0 3px 0;letter-spacing:.03em">${label}</div>
   <div style="display:flex;gap:4px;align-items:center">
     <input type="text" data-f="${id}-${suffix}" data-original="${esc(original)}" value="${esc(value)}" autocomplete="off"
-      style="flex:1 1 auto;min-width:0;width:100%;height:34px;box-sizing:border-box;padding:5px 8px;border:1px solid #7a93ad;border-radius:4px;background:#fff;color:#132f4c;font-size:14px;font-weight:700">
+      style="flex:1 1 auto;min-width:11.5em;width:100%;height:36px;box-sizing:border-box;padding:6px 8px;border:1px solid #b9c9de;border-radius:4px;background:#fff;color:#0b2f68;font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;letter-spacing:.01em">
     ${pasteBtn}
   </div>
 </div>`;
@@ -318,13 +319,13 @@ function ocRowHtml(oc, unitIndex, ocIndex, totalOcs, unit) {
       </div>
 
       <!-- Grilla compacta 5 columnas × 2 filas de campos -->
-      <div style="display:grid;grid-template-columns:minmax(110px,.85fr) minmax(140px,1.1fr) minmax(140px,1.1fr) minmax(140px,1.1fr) minmax(160px,1.25fr);grid-template-rows:auto auto;width:100%;box-sizing:border-box">
+      <div style="display:grid;grid-template-columns:minmax(150px,1fr) minmax(168px,1.15fr) minmax(168px,1.15fr) minmax(150px,1.05fr) minmax(160px,1.15fr);grid-template-rows:auto auto;width:100%;box-sizing:border-box">
         
         <!-- ESTADO (columna 1, ambas filas) -->
         <div style="grid-column:1;grid-row:1/3;padding:8px;border-right:1px solid #d5e0eb;box-sizing:border-box">
           <div style="font-size:10px;font-weight:900;color:#142f4b;margin:0 0 4px 0">ESTADO</div>
           <select data-f="${id}-estado" data-original="${esc(field(o, "ESTADO") || "")}"
-            style="display:block;width:100%;height:54px;box-sizing:border-box;padding:4px 6px;border:1px solid #7a93ad;border-radius:4px;background:#fff;color:#0f172a;-webkit-text-fill-color:#0f172a;font-size:12px;font-weight:700;color-scheme:light">
+            style="display:block;width:100%;min-height:72px;height:calc(100% - 18px);box-sizing:border-box;padding:8px 6px;border:1px solid #b9c9de;border-radius:4px;background:#fff;color:#0b2f68;-webkit-text-fill-color:#0b2f68;font-size:13px;font-weight:700;color-scheme:light">
             ${stateOptions(estado)}
           </select>
         </div>
@@ -1485,7 +1486,7 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-21";
+  st.id = "cem-sg-v3-style-22";
   st.textContent = `
     body.tracking-active { overflow: hidden !important; }
     body.tracking-active .desktop-tracking.grid-03 {
@@ -1540,6 +1541,24 @@ function ensureStyles() {
     body.tracking-active #unit-list,
     body.tracking-active .plate-grid-scroll {
       flex: 1 1 auto !important; overflow: auto !important; min-height: 120px !important; min-width: 0 !important; padding: 10px !important;
+    }
+    body.tracking-active #unit-list article input[type="text"] {
+      min-width: 11.5em !important;
+      font-size: 13px !important;
+      height: 36px !important;
+      color: #0b2f68 !important;
+      -webkit-text-fill-color: #0b2f68 !important;
+      font-variant-numeric: tabular-nums !important;
+    }
+    body.tracking-active #unit-list article select {
+      min-height: 64px !important;
+      font-size: 13px !important;
+      color: #0b2f68 !important;
+      -webkit-text-fill-color: #0b2f68 !important;
+    }
+    body.tracking-active #unit-list article textarea {
+      font-size: 13px !important;
+      color: #0b2f68 !important;
     }
     /* CERRADAS siempre visible al pie del panel central (no la come el scroll de la lista) */
     body.tracking-active #closed-section {
