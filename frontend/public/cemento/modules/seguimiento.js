@@ -499,6 +499,28 @@ function filteredUnits() {
   return state.units.filter((u) => !isRevisadaEfectiva(u));
 }
 
+/** Tras pasar una unidad a revisadas: mapa + selección = primera ACTIVA. */
+async function selectFirstActive(container, runtime) {
+  const first = state.units.find((u) => !isRevisadaEfectiva(u));
+  if (!first) {
+    state.selectedKey = "";
+    const idEl = container.querySelector("#map-unit-id");
+    if (idEl) idEl.textContent = "RECORRIDO EN EL MAPA";
+    paintUnitList(container);
+    return;
+  }
+  const key = nplate(first.placa);
+  // Mantener filtro en activas para que se vea la lista coherente
+  state.filter = "activas";
+  container.querySelectorAll(".pg-filter[data-filter]").forEach((b) => {
+    b.classList.toggle("active", b.dataset.filter === "activas");
+  });
+  state.selectedKey = key;
+  paintUnitList(container);
+  await focusUnit(container, key, runtime);
+}
+
+
 function paintUnitList(container) {
   const list = container.querySelector("#unit-list");
   if (!list) return;
@@ -1582,12 +1604,14 @@ function wire(container, runtime) {
       try {
         const placa = btn.dataset.review;
         const key = nplate(placa);
+        let marked = false;
         if (state.reviewed.has(key)) {
           await trackApi({ action: "desmarcar_revisada", placa });
           state.reviewed.delete(key);
         } else {
           await trackApi({ action: "marcar_revisada", placa });
           state.reviewed.add(key);
+          marked = true;
         }
         const nAct = state.units.filter((u) => !isRevisadaEfectiva(u)).length;
         const nRev = state.units.filter((u) => isRevisadaEfectiva(u)).length;
@@ -1596,7 +1620,12 @@ function wire(container, runtime) {
           if (b.dataset.filter === "activas") b.textContent = `ACTIVAS · ${nAct}`;
           if (b.dataset.filter === "revisadas") b.textContent = `REVISADAS · ${nRev}`;
         });
-        paintUnitList(container);
+        if (marked) {
+          // Mapa → primera unidad aún activa
+          await selectFirstActive(container, runtime);
+        } else {
+          paintUnitList(container);
+        }
       } catch (e) {
         uiToast(e.message, "err");
       }
@@ -1737,13 +1766,13 @@ function wire(container, runtime) {
         if (b.dataset.filter === "revisadas") b.textContent = `REVISADAS · ${nRev}`;
       });
 
-      // Quitar solo esa tarjeta de ACTIVAS (sin repintar toda la lista ni el formulario actual)
-      if (state.filter === "activas" && key !== state.selectedKey) {
+      // Si la unidad que acaba de pasar a revisadas es la del mapa → primera ACTIVA
+      if (key === state.selectedKey) {
+        selectFirstActive(container, runtime).catch(() => null);
+      } else if (state.filter === "activas") {
         const node = container.querySelector(`#unit-list [data-placa="${key}"]`);
         node?.remove();
       }
-      // Si es la unidad seleccionada y tiene 0 pts, no forzamos cambio de vista
-      // (el operador puede seguir; al cambiar de filtro o unidad se actualiza).
     } catch (_) {}
   });
   cleanup.push(off);
