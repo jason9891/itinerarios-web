@@ -1093,6 +1093,7 @@ async function bootstrap(container, runtime) {
         <span id="preload-global">${isRunning() ? `PRECARGA ${c.done}/${meta?.total || state.units.length}` : `GPS ${c.ready}/${state.units.length}`}</span>
         <span id="review-count">REVISADAS ${nRev}/${state.units.length}</span>
         <button type="button" id="save-partial">GUARDAR PARCIAL</button>
+        <button type="button" id="gen-report">GENERAR REPORTE</button>
         <button type="button" id="save-all">TERMINAR SEGUIMIENTO</button>
         <button type="button" id="exit-track">PAUSAR Y VOLVER</button>
       </header>
@@ -1225,11 +1226,19 @@ function flashBtn(btn, mark) {
 
 function wire(container, runtime) {
   const $ = (id) => container.querySelector("#" + id);
+  const on = (id, fn) => {
+    const el = $(id);
+    if (!el) {
+      console.warn("[seguimiento] falta #" + id);
+      return;
+    }
+    el.onclick = fn;
+  };
 
-  $("exit-track").onclick = () => {
+  on("exit-track", () => {
     document.body.classList.remove("tracking-active");
     document.querySelector('nav button[data-route="home"]')?.click();
-  };
+  });
 
   const goReporte = () => {
     document.body.classList.remove("tracking-active");
@@ -1241,7 +1250,7 @@ function wire(container, runtime) {
       .filter((u) => !state.reviewed.has(nplate(u.placa)))
       .map((u) => shortTracto(u.tracto || u.placa));
 
-  $("save-partial").onclick = async () => {
+  on("save-partial", async () => {
     const b = $("save-partial");
     b.disabled = true;
     const old = b.textContent;
@@ -1277,9 +1286,9 @@ function wire(container, runtime) {
       b.disabled = false;
       b.textContent = old;
     }
-  };
+  });
 
-  $("gen-report").onclick = async () => {
+  on("gen-report", async () => {
     if (!state.partialSaved && state.reviewed.size !== state.units.length) {
       const ok = await uiConfirm(
         "Aún no hay un guardado parcial en esta sesión.\n" +
@@ -1298,9 +1307,9 @@ function wire(container, runtime) {
       if (!go) return;
     }
     goReporte();
-  };
+  });
 
-  $("save-all").onclick = async () => {
+  on("save-all", async () => {
     const total = state.units.length;
     const rev = state.reviewed.size;
     const pend = pendingPlates();
@@ -1328,7 +1337,7 @@ function wire(container, runtime) {
       b.disabled = false;
       b.textContent = "TERMINAR SEGUIMIENTO";
     }
-  };
+  });
 
   container.querySelectorAll(".pg-filter[data-filter]").forEach((btn) => {
     btn.onclick = () => {
@@ -1390,7 +1399,7 @@ function wire(container, runtime) {
     };
   }
 
-  $("refresh-route").onclick = async () => {
+  on("refresh-route", async () => {
     const unit = state.units.find((u) => nplate(u.placa) === state.selectedKey);
     if (!unit) return uiAlert("Seleccione una unidad (clic en el mapa o en VALIDAR de una fila).");
     const desde = inputToPE($("route-from").value);
@@ -1430,11 +1439,11 @@ function wire(container, runtime) {
       $("route-update-status").textContent = "ERROR";
       uiToast(e.message, "err");
     }
-  };
+  });
 
-  $("view-hours").onclick = () => {
+  on("view-hours", () => {
     toggleInspection($("view-hours"));
-  };
+  });
 
   const center = container.querySelector(".track-center");
   const onCenter = async (ev) => {
