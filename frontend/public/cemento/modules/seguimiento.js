@@ -894,10 +894,14 @@ export async function mount(container, runtime) {
   };
   bindRuntime(runtime);
   document.body.classList.add("tracking-active");
-  container.innerHTML = `<section class="panel" style="padding:16px">
-    <p class="muted" style="margin:0 0 6px">Cargando seguimiento…</p>
-    <p class="muted" style="margin:0;font-size:13px" id="sg-load-progress">Listando placas…</p>
-    <p class="muted" style="margin:8px 0 0;font-size:12px">Se pide el detalle de cada unidad (OCs abiertas) en lotes. No descarga GPS aquí.</p>
+  container.innerHTML = `<section class="sg-boot" style="min-height:calc(100vh - 120px);display:flex;align-items:center;justify-content:center;padding:32px 16px;box-sizing:border-box">
+    <div style="text-align:center;max-width:360px">
+      <div class="sg-spinner" aria-hidden="true" style="width:56px;height:56px;margin:0 auto 18px;border-radius:50%;border:4px solid #1e3a5f;border-top-color:#38bdf8;animation:sg-spin .75s linear infinite"></div>
+      <h2 style="margin:0 0 8px;font-size:18px;font-weight:900;color:#e2e8f0;letter-spacing:.02em">Cargando información de las unidades</h2>
+      <p id="sg-load-progress" style="margin:0;font-size:14px;font-weight:700;color:#7dd3fc">Listando placas…</p>
+      <p style="margin:12px 0 0;font-size:12px;line-height:1.45;color:#94a3b8">Detalle de OCs abiertas por unidad. No se descarga GPS en este paso.</p>
+      <style>@keyframes sg-spin{to{transform:rotate(360deg)}}</style>
+    </div>
   </section>`;
   try {
     await bootstrap(container, runtime);
@@ -1061,7 +1065,7 @@ async function bootstrap(container, runtime) {
   ensureStyles();
   const data = await loadData((pct) => {
     const el = container.querySelector("#sg-load-progress");
-    if (el) el.textContent = `Detalle de unidades ${pct}%`;
+    if (el) el.textContent = pct <= 0 ? "Listando placas…" : `Unidades ${pct}%`;
   });
   state.units = data.units;
   state.reviewed = data.reviewed;

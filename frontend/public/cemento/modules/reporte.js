@@ -265,11 +265,12 @@ async function render(container, runtime) {
   const noticeColor = state.habilitado ? (partial ? "#9a3412" : "#065f46") : "#991b1b";
 
   container.innerHTML =
+    `<div id="cem-report-root" style="color:#0f172a"><style>#cem-report-root,#cem-report-root *{color:inherit}#cem-report-root .module-head h1{color:#f8fafc!important}#cem-report-root .module-head p,#cem-report-root .module-head .eyebrow{color:#94a3b8!important}#cem-report-root article h2{color:#0f172a!important}#cem-report-root article p{color:#334155!important}</style>` +
     moduleHead("Crear reporte", "Excel final y dos imágenes para correo, desde el último corte guardado.") +
-    `<section class="panel" style="border:1px solid ${noticeBorder};background:${noticeBg};color:${noticeColor};padding:14px 16px;border-radius:10px;margin-bottom:14px">
-      <b style="font-size:15px">${esc(title)}</b><br>
-      <span style="font-size:13px">${esc(state.mensaje || "—")} · ${state.revisadas || 0}/${state.total_placas || 0} placas revisadas · ${state.diario || 0} OCs abiertas.
-      ${state.completado_en ? `<br><small>ÚLTIMO CORTE: ${esc(cutText)}</small>` : ""}</span>
+    `<section style="border:1px solid ${noticeBorder};background:${noticeBg};color:${noticeColor};padding:14px 16px;border-radius:10px;margin-bottom:14px">
+      <b style="display:block;font-size:16px;font-weight:950;color:${noticeColor}">${esc(title)}</b>
+      <span style="display:block;margin-top:6px;font-size:13px;font-weight:600;color:${noticeColor};line-height:1.45">${esc(state.mensaje || "—")} · ${state.revisadas || 0}/${state.total_placas || 0} placas revisadas · ${state.diario || 0} OCs abiertas.
+      ${state.completado_en ? `<br><small style="opacity:.9">ÚLTIMO CORTE: ${esc(cutText)}</small>` : ""}</span>
     </section>
     <div style="margin:0 0 16px">
       <button type="button" id="report-all" ${state.habilitado ? "" : "disabled"}
@@ -279,43 +280,43 @@ async function render(container, runtime) {
     </div>
     <section class="panel" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">
       <article style="border:1px solid #e2e8f0;border-radius:10px;padding:14px;background:#fff">
-        <div style="width:40px;height:40px;border-radius:10px;background:#dcfce7;display:grid;place-items:center;margin-bottom:10px">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <div style="width:64px;height:64px;border-radius:14px;background:#dcfce7;display:grid;place-items:center;margin-bottom:10px">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M6 2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" stroke="#15803d" stroke-width="1.8"/>
             <path d="M14 2v4h4" stroke="#15803d" stroke-width="1.8"/>
             <path d="M8 12h8M8 16h5" stroke="#15803d" stroke-width="1.8" stroke-linecap="round"/>
           </svg>
         </div>
-        <h2 style="margin:0 0 6px;font-size:15px">Excel operativo</h2>
-        <p style="margin:0 0 12px;font-size:12px;color:#64748b">31 columnas y formato autorizado de Cemento.</p>
+        <h2 style="margin:0 0 6px;font-size:16px;font-weight:900;color:#0f172a">Excel operativo</h2>
+        <p style="margin:0 0 12px;font-size:13px;color:#334155;line-height:1.4">31 columnas y formato autorizado de Cemento.</p>
         <button type="button" id="report-xlsx" ${state.habilitado ? "" : "disabled"}
           style="width:100%;padding:10px;border-radius:6px;border:1px solid #1d4ed8;background:#eff6ff;color:#1e3a8a;font-weight:800;cursor:pointer">DESCARGAR EXCEL</button>
       </article>
       <article style="border:1px solid #e2e8f0;border-radius:10px;padding:14px;background:#fff">
-        <div style="width:40px;height:40px;border-radius:10px;background:#e0f2fe;display:grid;place-items:center;margin-bottom:10px">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <div style="width:64px;height:64px;border-radius:14px;background:#e0f2fe;display:grid;place-items:center;margin-bottom:10px">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <rect x="3" y="4" width="18" height="14" rx="2" stroke="#0369a1" stroke-width="1.8"/>
             <path d="M7 14l3-3 3 2 4-5" stroke="#0369a1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
           </svg>
         </div>
-        <h2 style="margin:0 0 6px;font-size:15px">Resumen de datos</h2>
-        <p style="margin:0 0 12px;font-size:12px;color:#64748b">Rutas, unidades en base y total operativo validado.</p>
+        <h2 style="margin:0 0 6px;font-size:16px;font-weight:900;color:#0f172a">Resumen de datos</h2>
+        <p style="margin:0 0 12px;font-size:13px;color:#334155;line-height:1.4">Rutas, unidades en base y total operativo validado.</p>
         <button type="button" id="report-data" ${state.habilitado ? "" : "disabled"}
           style="width:100%;padding:10px;border-radius:6px;border:1px solid #1d4ed8;background:#eff6ff;color:#1e3a8a;font-weight:800;cursor:pointer">DESCARGAR IMAGEN</button>
       </article>
       <article style="border:1px solid #e2e8f0;border-radius:10px;padding:14px;background:#fff">
-        <div style="width:40px;height:40px;border-radius:10px;background:#fef3c7;display:grid;place-items:center;margin-bottom:10px">
-          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+        <div style="width:64px;height:64px;border-radius:14px;background:#fef3c7;display:grid;place-items:center;margin-bottom:10px">
+          <svg width="34" height="34" viewBox="0 0 24 24" fill="none" aria-hidden="true">
             <path d="M6 18V10M12 18V6M18 18v-7" stroke="#b45309" stroke-width="2" stroke-linecap="round"/>
           </svg>
         </div>
-        <h2 style="margin:0 0 6px;font-size:15px">Distribución por ruta</h2>
-        <p style="margin:0 0 12px;font-size:12px;color:#64748b">Resumen gráfico por ruta: cargadas y vacías.</p>
+        <h2 style="margin:0 0 6px;font-size:16px;font-weight:900;color:#0f172a">Distribución por ruta</h2>
+        <p style="margin:0 0 12px;font-size:13px;color:#334155;line-height:1.4">Resumen gráfico por ruta: cargadas y vacías.</p>
         <button type="button" id="report-bars" ${state.habilitado ? "" : "disabled"}
           style="width:100%;padding:10px;border-radius:6px;border:1px solid #1d4ed8;background:#eff6ff;color:#1e3a8a;font-weight:800;cursor:pointer">DESCARGAR IMAGEN</button>
       </article>
     </section>
-    <p id="report-status" class="muted" style="margin-top:12px"></p>`;
+    <p id="report-status" style="margin-top:12px;color:#475569;font-size:13px"></p></div>`;
 
   if (!state.habilitado) return;
 
