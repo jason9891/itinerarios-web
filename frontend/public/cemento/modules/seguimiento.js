@@ -30,6 +30,96 @@ const STATES = [
   "TRANSITO VACÍO",
 ];
 
+
+/** Avisos internos (sin alert/confirm nativos del navegador). */
+function ensureUiHost() {
+  let host = document.getElementById("cem-ui-host");
+  if (host) return host;
+  host = document.createElement("div");
+  host.id = "cem-ui-host";
+  host.innerHTML = `
+    <style>
+      #cem-ui-host .cem-toast-wrap{position:fixed;right:16px;bottom:16px;z-index:99999;display:flex;flex-direction:column;gap:8px;max-width:min(420px,92vw);pointer-events:none}
+      #cem-ui-host .cem-toast{pointer-events:auto;background:#0f172a;color:#f8fafc;border:1px solid #334155;border-radius:10px;padding:12px 14px;box-shadow:0 12px 40px rgba(0,0,0,.35);font:13px/1.4 system-ui,sans-serif;animation:cemIn .18s ease}
+      #cem-ui-host .cem-toast.ok{border-color:#16a34a;background:#052e16}
+      #cem-ui-host .cem-toast.warn{border-color:#f59e0b;background:#422006}
+      #cem-ui-host .cem-toast.err{border-color:#ef4444;background:#450a0a}
+      #cem-ui-host .cem-toast b{display:block;font-size:13px;font-weight:900;margin:0 0 4px}
+      #cem-ui-host .cem-toast p{margin:0;white-space:pre-wrap;color:#e2e8f0}
+      #cem-ui-host .cem-modal-bg{position:fixed;inset:0;z-index:99998;background:rgba(15,23,42,.55);display:flex;align-items:center;justify-content:center;padding:16px;animation:cemIn .15s ease}
+      #cem-ui-host .cem-modal{background:#fff;color:#0f172a;border-radius:12px;max-width:min(480px,96vw);width:100%;padding:18px 18px 14px;box-shadow:0 20px 60px rgba(0,0,0,.35);border:1px solid #e2e8f0}
+      #cem-ui-host .cem-modal h3{margin:0 0 8px;font-size:16px;font-weight:950;color:#0b2f68}
+      #cem-ui-host .cem-modal p{margin:0 0 14px;font-size:13px;line-height:1.45;white-space:pre-wrap;color:#334155}
+      #cem-ui-host .cem-modal .row{display:flex;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+      #cem-ui-host .cem-modal button{border-radius:8px;padding:8px 14px;font-size:13px;font-weight:800;cursor:pointer;border:1px solid #cbd5e1;background:#f8fafc;color:#0f172a}
+      #cem-ui-host .cem-modal button.primary{background:#1d4ed8;border-color:#1e40af;color:#fff}
+      #cem-ui-host .cem-modal button.danger{background:#fff1f2;border-color:#fda4af;color:#9f1239}
+      @keyframes cemIn{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+    </style>
+    <div class="cem-toast-wrap" id="cem-toast-wrap"></div>
+    <div id="cem-modal-root"></div>`;
+  document.body.appendChild(host);
+  return host;
+}
+
+function uiToast(message, kind = "info", ms = 4200) {
+  ensureUiHost();
+  const wrap = document.getElementById("cem-toast-wrap");
+  const el = document.createElement("div");
+  el.className = "cem-toast" + (kind === "ok" ? " ok" : kind === "err" ? " err" : kind === "warn" ? " warn" : "");
+  const text = String(message || "");
+  const lines = text.split("\n");
+  const title = lines.length > 1 ? lines[0] : "";
+  const body = lines.length > 1 ? lines.slice(1).join("\n") : text;
+  el.innerHTML = (title ? "<b>" + esc(title) + "</b>" : "") + "<p>" + esc(body) + "</p>";
+  wrap.appendChild(el);
+  setTimeout(() => {
+    el.style.opacity = "0";
+    el.style.transition = "opacity .25s";
+    setTimeout(() => el.remove(), 280);
+  }, ms);
+}
+
+function uiAlert(message) {
+  return new Promise((resolve) => {
+    ensureUiHost();
+    const root = document.getElementById("cem-modal-root");
+    const text = String(message || "");
+    const lines = text.split("\n");
+    const title = lines[0] || "Aviso";
+    const body = lines.length > 1 ? lines.slice(1).join("\n").trim() : text;
+    const bg = document.createElement("div");
+    bg.className = "cem-modal-bg";
+    bg.innerHTML = "<div class=\"cem-modal\" role=\"dialog\"><h3>" + esc(title) + "</h3><p>" + esc(body) + "</p><div class=\"row\"><button type=\"button\" class=\"primary\" data-ok>Aceptar</button></div></div>";
+    const close = () => { bg.remove(); resolve(); };
+    bg.querySelector("[data-ok]").onclick = close;
+    bg.addEventListener("click", (e) => { if (e.target === bg) close(); });
+    root.appendChild(bg);
+  });
+}
+
+function uiConfirm(message, opts = {}) {
+  const okLabel = opts.okLabel || "Continuar";
+  const cancelLabel = opts.cancelLabel || "Cancelar";
+  const danger = !!opts.danger;
+  return new Promise((resolve) => {
+    ensureUiHost();
+    const root = document.getElementById("cem-modal-root");
+    const text = String(message || "");
+    const lines = text.split("\n");
+    const title = lines[0] || "Confirmar";
+    const body = lines.length > 1 ? lines.slice(1).join("\n").trim() : text;
+    const bg = document.createElement("div");
+    bg.className = "cem-modal-bg";
+    bg.innerHTML = "<div class=\"cem-modal\" role=\"dialog\"><h3>" + esc(title) + "</h3><p>" + esc(body) + "</p><div class=\"row\"><button type=\"button\" data-cancel>" + esc(cancelLabel) + "</button><button type=\"button\" class=\"" + (danger ? "danger" : "primary") + "\" data-ok>" + esc(okLabel) + "</button></div></div>";
+    const done = (v) => { bg.remove(); resolve(v); };
+    bg.querySelector("[data-ok]").onclick = () => done(true);
+    bg.querySelector("[data-cancel]").onclick = () => done(false);
+    bg.addEventListener("click", (e) => { if (e.target === bg) done(false); });
+    root.appendChild(bg);
+  });
+}
+
 function field(p, k) {
   const s = String(p?.[k] ?? "").trim();
   if (!s) return "";
@@ -569,7 +659,7 @@ async function showNextClosed(container) {
     state.selectedKey = nplate(unit.placa);
   }
   if (!unit) {
-    alert("Seleccione una unidad (pestaña R-…)");
+    uiAlert("Seleccione una unidad (pestaña R-…)");
     return;
   }
   const tracto = unit.tracto || unit.placa;
@@ -589,7 +679,7 @@ async function showNextClosed(container) {
       state.closedOpen = true;
     } catch (e) {
       state.closedAll = [];
-      alert(e.message || "No se pudo cargar OCs cerradas");
+      uiToast(e.message || "No se pudo cargar OCs cerradas", "err");
     } finally {
       state.closedLoading = false;
     }
@@ -1174,23 +1264,24 @@ function wire(container, runtime) {
           ? `Placas aún ACTIVAS (pendientes): ${nPend}\n${list}\n\n`
           : `No quedan placas activas.\n\n`) +
         `Puede GENERAR REPORTE ahora (estado PARCIAL) o seguir revisando y luego TERMINAR SEGUIMIENTO.`;
-      alert(x.mensaje || msg);
+      await uiAlert(x.mensaje || msg);
       const gr = $("gen-report");
       if (gr) {
         gr.disabled = false;
         gr.classList.add("ready");
       }
+      uiToast(nPend ? ("Parcial · " + nPend + " activas") : "Parcial guardado", nPend ? "warn" : "ok");
     } catch (e) {
-      alert(e.message);
+      uiToast(e.message, "err");
     } finally {
       b.disabled = false;
       b.textContent = old;
     }
   };
 
-  $("gen-report").onclick = () => {
+  $("gen-report").onclick = async () => {
     if (!state.partialSaved && state.reviewed.size !== state.units.length) {
-      const ok = confirm(
+      const ok = await uiConfirm(
         "Aún no hay un guardado parcial en esta sesión.\n" +
           "¿Desea GUARDAR PARCIAL ahora y luego abrir el reporte?",
       );
@@ -1200,7 +1291,7 @@ function wire(container, runtime) {
     }
     const pend = pendingPlates();
     if (pend.length) {
-      const go = confirm(
+      const go = await uiConfirm(
         `Hay ${pend.length} placa(s) aún ACTIVAS.\n` +
           `El reporte se generará en estado PARCIAL.\n\n¿Continuar al módulo Reporte?`,
       );
@@ -1214,7 +1305,7 @@ function wire(container, runtime) {
     const rev = state.reviewed.size;
     const pend = pendingPlates();
     if (pend.length) {
-      alert(
+      uiAlert(
         `No se puede TERMINAR: quedan ${pend.length} placa(s) ACTIVAS sin revisar.\n\n` +
           `Revisadas: ${rev}/${total}\n` +
           `Pendientes: ${pend.length <= 15 ? pend.join(", ") : pend.slice(0, 15).join(", ") + " …"}\n\n` +
@@ -1223,17 +1314,17 @@ function wire(container, runtime) {
       );
       return;
     }
-    if (!confirm("¿Terminar seguimiento completo y consolidar en Supabase?")) return;
+    if (!await uiConfirm("¿Terminar seguimiento completo y consolidar en Supabase?")) return;
     const b = $("save-all");
     b.disabled = true;
     b.textContent = "TERMINANDO…";
     try {
       await trackApi({ action: "consolidar", revisadas: [...state.reviewed] });
       state.partialSaved = true;
-      alert("Seguimiento COMPLETO consolidado en Supabase.\nAbriendo módulo de reporte.");
+      uiAlert("Seguimiento COMPLETO consolidado en Supabase.\nAbriendo módulo de reporte.");
       goReporte();
     } catch (e) {
-      alert(e.message);
+      uiToast(e.message, "err");
       b.disabled = false;
       b.textContent = "TERMINAR SEGUIMIENTO";
     }
@@ -1290,7 +1381,7 @@ function wire(container, runtime) {
           }
           setTimeout(() => paintClosedSection(container), 600);
         } catch (e) {
-          alert(e.message);
+          uiToast(e.message, "err");
           saveBtn.textContent = old;
         } finally {
           saveBtn.disabled = false;
@@ -1301,10 +1392,10 @@ function wire(container, runtime) {
 
   $("refresh-route").onclick = async () => {
     const unit = state.units.find((u) => nplate(u.placa) === state.selectedKey);
-    if (!unit) return alert("Seleccione una unidad (clic en el mapa o en VALIDAR de una fila).");
+    if (!unit) return uiAlert("Seleccione una unidad (clic en el mapa o en VALIDAR de una fila).");
     const desde = inputToPE($("route-from").value);
     const hasta = inputToPE($("route-to").value) || formatPE(new Date());
-    if (!desde) return alert("Indique DESDE válido.");
+    if (!desde) return uiAlert("Indique DESDE válido.");
     $("route-update-status").textContent = "CONSULTANDO CLocator…";
     try {
       const token = await runtime.auth.currentUser.getIdToken(false);
@@ -1337,7 +1428,7 @@ function wire(container, runtime) {
       await focusUnit(container, state.selectedKey, runtime);
     } catch (e) {
       $("route-update-status").textContent = "ERROR";
-      alert(e.message);
+      uiToast(e.message, "err");
     }
   };
 
@@ -1391,7 +1482,7 @@ function wire(container, runtime) {
         });
         paintUnitList(container);
       } catch (e) {
-        alert(e.message);
+        uiToast(e.message, "err");
       }
       return;
     }
@@ -1439,7 +1530,7 @@ function wire(container, runtime) {
           btn.textContent = "GUARDAR";
         }, 1800);
       } catch (e) {
-        alert(e.message);
+        uiToast(e.message, "err");
         btn.textContent = old;
       } finally {
         btn.disabled = false;
@@ -1448,7 +1539,7 @@ function wire(container, runtime) {
     }
 
     if (btn.dataset.close) {
-      if (!confirm("¿Preparar FIN DE CICLO?")) return;
+      if (!await uiConfirm("¿Preparar FIN DE CICLO?")) return;
       const row = btn.closest("article[data-oc-id]");
       const datos = collectOcData(row);
       btn.disabled = true;
@@ -1456,7 +1547,7 @@ function wire(container, runtime) {
         await trackApi({ action: "cerrar", id: +btn.dataset.close, datos });
         btn.textContent = "CIERRE PREPARADO";
       } catch (e) {
-        alert(e.message);
+        uiToast(e.message, "err");
       } finally {
         btn.disabled = false;
       }
