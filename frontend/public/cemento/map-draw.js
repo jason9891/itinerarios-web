@@ -14,6 +14,7 @@ let inspectionMarkers = [];
 let inspectionEnabled = false;
 let infoWindow = null;
 let currentPoints = [];
+let currentUnitLabel = "";
 
 function inPeruBBox(lat, lng) {
   return lat >= -19.5 && lat <= 0.5 && lng >= -82 && lng <= -68;
@@ -139,33 +140,57 @@ async function copyToClipboard(text) {
 }
 
 function showTimePopup(marker, title, fecha, copied) {
-  infoWindow ??= new google.maps.InfoWindow();
+  infoWindow ??= new google.maps.InfoWindow({
+    maxWidth: 220,
+    pixelOffset: new google.maps.Size(0, -4),
+  });
   const t = fecha || "Sin hora";
+  const safeTitle = String(title || "").replace(/</g, "&lt;");
+  const safeT = String(t).replace(/</g, "&lt;");
   const copyMsg = copied
-    ? `<div style="margin-top:4px;color:#15803d;font-size:12px;font-weight:800">✓ Copiado al portapapeles</div>`
-    : "";
+    ? `<div style="margin-top:3px;color:#15803d;font-size:11px;font-weight:800">✓ Copiado</div>`
+    : `<div style="margin-top:3px;color:#64748b;font-size:10px">Clic en la hora para copiar</div>`;
+  // Hora clickeable; título = código unidad (no "Punto GPS")
   infoWindow.setContent(
-    `<div style="font:13px/1.35 system-ui,sans-serif;padding:2px 4px">
-      <b style="font-size:14px">${title}</b><br>
-      <span style="font-size:15px;font-weight:800">${t}</span>
-      ${copyMsg}
+    `<div style="font:12px/1.3 system-ui,sans-serif;padding:0;margin:0;min-width:120px">
+      <div style="font-size:12px;font-weight:800;color:#0f172a;margin:0 0 2px">${safeTitle}</div>
+      <button type="button" id="gm-copy-hora" data-hora="${safeT}"
+        style="display:block;width:100%;text-align:left;border:0;background:#f1f5f9;border-radius:6px;padding:6px 8px;cursor:pointer;font-size:14px;font-weight:900;color:#0f172a">
+        ${safeT}
+      </button>
+      <div id="gm-copy-msg">${copyMsg}</div>
     </div>`,
   );
   infoWindow.open({ map: mapInstance, anchor: marker });
+  // Enlazar clic en hora → copiar (tras pintar el DOM del InfoWindow)
+  google.maps.event.addListenerOnce(infoWindow, "domready", () => {
+    const btn = document.getElementById("gm-copy-hora");
+    const msg = document.getElementById("gm-copy-msg");
+    if (!btn) return;
+    btn.onclick = async (ev) => {
+      ev.preventDefault();
+      ev.stopPropagation();
+      const hora = btn.getAttribute("data-hora") || btn.textContent || "";
+      const ok = await copyToClipboard(hora);
+      if (msg) {
+        msg.innerHTML = ok
+          ? `<div style="margin-top:3px;color:#15803d;font-size:11px;font-weight:800">✓ Copiado</div>`
+          : `<div style="margin-top:3px;color:#b91c1c;font-size:11px">No se pudo copiar</div>`;
+      }
+    };
+  });
 }
 
-async function onPointClick(marker, title, fecha) {
-  const t = String(fecha || "").trim();
-  let copied = false;
-  if (t) copied = await copyToClipboard(t);
-  showTimePopup(marker, title, fecha || "Sin hora", copied);
+function onPointClick(marker, title, fecha) {
+  // Solo mostrar; la copia es al hacer clic en la hora
+  showTimePopup(marker, title, fecha || "Sin hora", false);
 }
 
 function addLetterMarker(pos, letter, color, title, fecha) {
   const m = new google.maps.Marker({
     map: mapInstance,
     position: pos,
-    title: `${title}${fecha ? " · " + fecha : ""} · clic = copiar hora`,
+    title: `${title}${fecha ? " · " + fecha : ""} · clic = ver hora`,
     label: { text: letter, color: "white", fontWeight: "700", fontSize: "12px" },
     icon: {
       path: google.maps.SymbolPath.CIRCLE,
@@ -189,6 +214,7 @@ function addLetterMarker(pos, letter, color, title, fecha) {
 export function drawTrackingRoute(gps, mapEl, captionEl, unitLabel = "") {
   clearOverlays();
   inspectionEnabled = false;
+  currentUnitLabel = unitLabel || "";
 
   const raw = gps?.puntos_gps || gps?.puntos_lista || gps?.puntos || [];
   let data = (Array.isArray(raw) ? raw : []).map(normalizeGpsPoint).filter(Boolean);
@@ -229,7 +255,7 @@ export function drawTrackingRoute(gps, mapEl, captionEl, unitLabel = "") {
           { lat: ultimo.lat, lng: ultimo.lng },
           "U",
           "#7c3aed",
-          "Último reporte GPS",
+          unitLabel ? `${unitLabel} · Último` : "Último",
           ultimo.fecha,
         );
         mapInstance.setCenter({ lat: ultimo.lat, lng: ultimo.lng });
@@ -283,12 +309,12 @@ export function drawTrackingRoute(gps, mapEl, captionEl, unitLabel = "") {
   path.forEach((p) => bounds.extend(p));
 
   // I y F: hora solo al clic
-  addLetterMarker(path[0], "I", "#2563eb", "Inicio de tramo", data[0]?.fecha);
+  addLetterMarker(path[0], "I", "#2563eb", unitLabel ? `${unitLabel} · Inicio` : "Inicio", data[0]?.fecha);
   addLetterMarker(
     path[path.length - 1],
     "F",
     "#dc2626",
-    "Fin de tramo",
+    unitLabel ? `${unitLabel} · Fin` : "Fin",
     data[data.length - 1]?.fecha,
   );
 
@@ -355,7 +381,7 @@ export function toggleInspection(button) {
       },
       zIndex: 70,
     });
-    m.addListener("click", () => onPointClick(m, "Punto GPS", p.fecha));
+    m.addListener("click", () => onPointClick(m, currentUnitLabel || "GPS", p.fecha));
     inspectionMarkers.push(m);
   }
 }

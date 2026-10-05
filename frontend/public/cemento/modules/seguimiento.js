@@ -871,10 +871,24 @@ async function loadData(onProgress) {
     }
   }
 
+  // Orden tipo precarga: primero las que YA tienen recorrido (puntos > 0),
+  // luego pendientes de precarga; al final las revisadas / sin movimiento.
+  const score = (u) => {
+    const k = nplate(u.placa);
+    const r = results[k];
+    const st = String(r?.estado || "").toUpperCase();
+    const pts = Number(r?.puntos ?? 0);
+    if (reviewed.has(k)) return 3000; // revisadas al final
+    if (pts > 0) return 0 + Math.max(0, 500 - Math.min(pts, 500)); // con ruta primero
+    if (st === "SIN MOVIMIENTO" || st === "SIN PUNTOS") return 2500;
+    if (st === "COMPLETO" && pts === 0) return 2500;
+    if (st === "PROCESANDO" || st === "PENDIENTE" || !r) return 1000; // aún cargando
+    if (st === "ERROR FINAL" || st === "REINTENTO") return 1500;
+    return 2000;
+  };
   units.sort((a, b) => {
-    const ra = reviewed.has(nplate(a.placa)) ? 1 : 0;
-    const rb = reviewed.has(nplate(b.placa)) ? 1 : 0;
-    if (ra !== rb) return ra - rb;
+    const d = score(a) - score(b);
+    if (d !== 0) return d;
     return String(a.tracto || "").localeCompare(String(b.tracto || ""));
   });
 
@@ -916,8 +930,17 @@ async function bootstrap(container, runtime) {
 
   const meta = loadMeta();
   const c = counts(meta, state.units.length);
+  const metaSel = loadMeta();
+  const resSel = metaSel?.resultados || {};
+  const firstWithRoute = state.units.find((u) => {
+    const k = nplate(u.placa);
+    if (state.reviewed.has(k)) return false;
+    return Number(resSel[k]?.puntos ?? 0) > 0;
+  });
   const first =
-    state.units.find((u) => !state.reviewed.has(nplate(u.placa))) || state.units[0];
+    firstWithRoute ||
+    state.units.find((u) => !state.reviewed.has(nplate(u.placa))) ||
+    state.units[0];
   state.selectedKey = first ? nplate(first.placa) : "";
 
   const desdeDef = meta?.desde || localStorage.getItem("cemento_rango_desde") || "";
