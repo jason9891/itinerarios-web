@@ -109,24 +109,38 @@ function peDateKey(s) {
   return "";
 }
 
-/** Rango de fechas del seguimiento actual (solo día). */
+/** Variantes de clave para emparejar R-231 / 20-R-231 / R231 */
+function plateKeyVariants(v) {
+  const raw = String(v || "").trim();
+  if (!raw) return [];
+  const u = raw.toUpperCase();
+  const noSpace = u.replace(/\s+/g, "");
+  const short = noSpace.replace(/^20-/, "");
+  const compact = noSpace.replace(/-/g, "");
+  const shortCompact = short.replace(/-/g, "");
+  return [...new Set([raw, u, noSpace, short, compact, shortCompact])];
+}
+
+/** Rango de fechas del seguimiento (meta o inputs DESDE/HASTA del mapa). */
 function seguimientoRangeKeys() {
   const meta = loadMeta() || {};
-  let d0 = peDateKey(meta.desde || localStorage.getItem("cemento_rango_desde") || "");
-  let d1 = peDateKey(meta.hasta || formatPE(new Date()));
+  const fromInput = document.querySelector("#route-from")?.value || "";
+  const toInput = document.querySelector("#route-to")?.value || "";
+  let d0 = peDateKey(meta.desde || localStorage.getItem("cemento_rango_desde") || "") || peDateKey(inputToPE(fromInput));
+  let d1 = peDateKey(meta.hasta || "") || peDateKey(inputToPE(toInput)) || peDateKey(formatPE(new Date()));
   if (!d1) d1 = peDateKey(formatPE(new Date()));
   if (!d0) d0 = d1;
   if (d0 > d1) {
-    const t = d0;
+    const tmp = d0;
     d0 = d1;
-    d1 = t;
+    d1 = tmp;
   }
   return { d0, d1 };
 }
 
 function montadosFor(unit) {
-  if (!state) return [];
-  const keys = [unit.tracto, unit.placa, nplate(unit.placa)].map((x) => String(x || "").trim());
+  if (!state?.montadosMap) return [];
+  const keys = plateKeyVariants(unit?.tracto).concat(plateKeyVariants(unit?.placa));
   const seen = new Set();
   const out = [];
   const { d0, d1 } = seguimientoRangeKeys();
@@ -136,9 +150,7 @@ function montadosFor(unit) {
       if (seen.has(id)) continue;
       seen.add(id);
       const fk = peDateKey(r.fecha);
-      // Solo montados del rango de fechas del seguimiento
-      if (fk && (fk < d0 || fk > d1)) continue;
-      if (!fk) continue;
+      if (!fk || fk < d0 || fk > d1) continue;
       out.push(r);
     }
   }
@@ -425,15 +437,15 @@ function paintClosedSection(container) {
   const panel = container.querySelector("#closed-panel");
   const countEl = container.querySelector("#closed-count");
   const labelEl = container.querySelector("#closed-unit-label");
-  if (!btn || !panel) return;
+  if (!btn || !panel || !state) return;
 
   const unit = state.units.find((u) => nplate(u.placa) === state.selectedKey);
   const tractoLabel = shortTracto(unit?.tracto || unit?.placa || state.closedTracto || "—");
   if (labelEl) labelEl.textContent = tractoLabel;
 
-  const total = state.closedAll.length;
-  const shown = state.closedShown;
-  const visible = state.closedAll.slice(0, shown);
+  const total = (state.closedAll || []).length;
+  const shown = Number(state.closedShown) || 0;
+  const visible = (state.closedAll || []).slice(0, shown);
 
   if (countEl) {
     countEl.textContent = total
@@ -483,7 +495,13 @@ function paintClosedSection(container) {
 
 /** Carga el histórico del tracto seleccionado (una sola vez) y muestra +1 OC. */
 async function showNextClosed(container) {
-  const unit = state.units.find((u) => nplate(u.placa) === state.selectedKey);
+  if (!state) return;
+  let unit = state.units.find((u) => nplate(u.placa) === state.selectedKey);
+  if (!unit && state.units.length) {
+    // Si no hay selección explícita, usar la primera visible
+    unit = filteredUnits()[0] || state.units[0];
+    state.selectedKey = nplate(unit.placa);
+  }
   if (!unit) {
     alert("Seleccione una unidad (pestaña R-…)");
     return;
@@ -499,9 +517,9 @@ async function showNextClosed(container) {
     state.closedExpanded = new Set();
     paintClosedSection(container);
     try {
+      // Backend normaliza R-231 / 20-R-231
       const data = await trackApi({ action: "cerradas_por_tracto", tracto });
-      // Backend ya ordena por fecha desc (más reciente primero)
-      state.closedAll = data.ocs || [];
+      state.closedAll = Array.isArray(data?.ocs) ? data.ocs : [];
       state.closedOpen = true;
     } catch (e) {
       state.closedAll = [];
@@ -797,12 +815,16 @@ async function loadData(onProgress) {
       const ruta = r.ruta || "";
       const push = (key, tipo, rel) => {
         if (!key) return;
-        const list = montadosMap.get(key) || [];
-        list.push({ tipo, relacionado: rel, ruta, fecha });
-        montadosMap.set(key, list);
+        const row = { tipo, relacionado: rel, ruta, fecha };
+        for (const vk of plateKeyVariants(key)) {
+          const list = montadosMap.get(vk) || [];
+          list.push(row);
+          montadosMap.set(vk, list);
+        }
       };
       push(r.tracto_corto, "MONTADO EN", r.tracto_largo);
       push(r.tracto_largo, "MONTANDO", r.tracto_corto);
+      push(r.tracto, "MONTADO EN", r.tracto_largo || r.relacionado);
     }
   } catch (_) {}
 
