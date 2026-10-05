@@ -160,7 +160,7 @@ Deno.serve(async(req)=>{
 
     if(action==="detalle"){
       const key=norm(b.placa),[{data:daily,error},{data:hist,error:he},{data:drafts,error:de}]=await Promise.all([
-        db.from("seguimiento_staging").select("id,orden_carga,payload").eq("itinerario","CEMENTO").eq("origen","DIARIO").order("id"),
+        db.from("seguimiento_staging").select("id,orden_carga,payload,observacion_migracion").eq("itinerario","CEMENTO").eq("origen","DIARIO").order("id"),
         db.from("seguimiento_staging").select("id,orden_carga,payload").eq("itinerario","CEMENTO").eq("origen","HISTORICO").order("id",{ascending:false}).limit(1000),
         db.from("seguimiento_sesion_web").select("seguimiento_id,cambios,accion,revisada").eq("itinerario","CEMENTO").eq("usuario",email)
       ]);
@@ -168,7 +168,9 @@ Deno.serve(async(req)=>{
       const dm:Map<number,any>=new Map((drafts||[]).map((x:any)=>[x.seguimiento_id,x]));
       const ocs=(daily||[]).filter((x:any)=>norm(plate(x.payload))===key).map((x:any)=>{
         const d=dm.get(x.id),original={...(x.payload||{})},p={...original,...(d?.cambios||{})};
-        return{id:x.id,orden_carga:x.orden_carga,payload:p,original_payload:original,borrador:d||null};
+        const obs=String(x.observacion_migracion||"");
+        const reabierta=/REASIGNAD|REABIERT|VALIDAR/i.test(obs);
+        return{id:x.id,orden_carga:x.orden_carga,payload:p,original_payload:original,borrador:d||null,observacion_migracion:obs,reabierta};
       });
       if(!ocs.length)return reply(req,{error:"Unidad sin OCs abiertas"},404);
       const last=(hist||[]).find((x:any)=>norm(plate(x.payload))===key);

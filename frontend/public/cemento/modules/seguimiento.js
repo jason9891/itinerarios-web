@@ -45,6 +45,14 @@ function isParihuelas(payload) {
   return carga.includes("PARIHUELA");
 }
 
+/** OC reabierta / reasignada desde SAP → validar geocercas y datos. */
+function isReabierta(oc) {
+  if (!oc) return false;
+  if (oc.reabierta === true) return true;
+  const obs = String(oc.observacion_migracion || oc.payload?.observacion_migracion || "").toUpperCase();
+  return /REASIGNAD|REABIERT|VALIDAR/.test(obs);
+}
+
 function ocCreationDate(payload) {
   for (const key of ["Fecha de Orden", "Fecha Carga Real", "FecIniReal", "Creado el"]) {
     const v = field(payload, key);
@@ -250,11 +258,13 @@ function ocRowHtml(oc, unitIndex, ocIndex, totalOcs, unit) {
   const o = oc.original_payload || p;
   const id = oc.id;
   const parihuelas = isParihuelas(p);
+  const reabierta = isReabierta(oc);
   const draft = oc.borrador?.accion ? String(oc.borrador.accion) : "";
   const reviewed = state.reviewed.has(nplate(unit.placa));
   const estado = field(p, "ESTADO") || p.ESTADO || "";
-  const bg = parihuelas ? "#fffbeb" : "#fff";
-  const borderCol = parihuelas ? "#d97706" : "#829bb6";
+  // Prioridad: reabierta (rojo sutil) > parihuelas (ámbar) > normal
+  const bg = reabierta ? "#fef2f2" : parihuelas ? "#fffbeb" : "#fff";
+  const borderCol = reabierta ? "#f87171" : parihuelas ? "#d97706" : "#829bb6";
   const isFirst = ocIndex === 0;
   const isLast = ocIndex === totalOcs - 1;
   const radius = totalOcs === 1
@@ -294,6 +304,7 @@ function ocRowHtml(oc, unitIndex, ocIndex, totalOcs, unit) {
           <span style="font-size:11px;font-weight:900;color:#314a65">OC</span>
           <strong style="font-size:16px;font-weight:950;color:#101f33">${esc(oc.orden_carga || "—")}</strong>
           <b style="font-size:13px;font-weight:700;color:#103f73;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:280px">${esc(p.Ruta || "—")}</b>
+          ${reabierta ? `<span style="background:#fecaca;border:1px solid #ef4444;color:#7f1d1d;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:900">REABIERTA</span>` : ""}
           ${parihuelas ? `<span style="background:#fde68a;border:1px solid #d97706;color:#78350f;padding:1px 7px;border-radius:999px;font-size:10px;font-weight:900">PARIHUELAS</span>` : ""}
           ${draft ? `<em style="color:#b45309;font-size:11px;font-weight:800">${esc(draft)}</em>` : ""}
         </div>
@@ -649,11 +660,11 @@ function renderEventsHtml(gps) {
   const chips = names.length
     ? `<div style="margin:0 0 10px 0">
         <div style="font-size:11px;font-weight:800;color:#334155;margin-bottom:6px">GEOCERCAS · CLIC PARA COPIAR</div>
-        <div style="display:flex;flex-wrap:wrap;gap:6px">
+        <div style="display:flex;flex-direction:column;gap:4px;align-items:stretch">
           ${names
             .map(
               (n) =>
-                `<button type="button" data-copy="${esc(n)}" style="border:1px solid #94a3b8;background:#f8fafc;color:#0f172a;border-radius:999px;padding:5px 10px;font-size:12px;font-weight:700;cursor:pointer">${esc(n)}</button>`,
+                `<button type="button" data-copy="${esc(n)}" title="Copiar geocerca" style="display:block;width:100%;text-align:left;border:1px solid #94a3b8;background:#f8fafc;color:#0f172a;border-radius:6px;padding:7px 10px;font-size:12px;font-weight:700;cursor:pointer;box-sizing:border-box;white-space:normal;word-break:break-word">${esc(n)}</button>`,
             )
             .join("")}
         </div>
@@ -882,7 +893,11 @@ async function loadData(onProgress) {
             placa: d.placa || u.placa,
             tracto: d.tracto || u.tracto,
             conductor: d.conductor || u.conductor || "",
-            ocs: d.ocs || [],
+            ocs: (d.ocs || []).map((oc) => ({
+              ...oc,
+              reabierta: oc.reabierta === true || /REASIGNAD|REABIERT|VALIDAR/i.test(String(oc.observacion_migracion || "")),
+              observacion_migracion: oc.observacion_migracion || "",
+            })),
             ultima_oc_cerrada: d.ultima_oc_cerrada || null,
           };
         } catch (e) {
