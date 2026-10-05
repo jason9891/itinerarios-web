@@ -14,7 +14,6 @@ export const modules = {
   sap:         () => import("./modules/sap.js"),
   precarga:    () => import("./modules/precarga.js"),
   seguimiento: () => import("./modules/seguimiento.js"),
-  manual:      () => import("./modules/manual.js"),
   archivos:    () => import("./modules/archivos.js"),
   reporte:     () => import("./modules/reporte.js"),
   admin:       () => import("./modules/admin.js"),
@@ -28,6 +27,5 @@ export const API = {
   report:    "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1/cemento-reporte",
   sap:       "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1/cemento-sap",
   admin:     "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1/cemento-admin",
-  manual:    "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1/cemento-manual",
   montados:  "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1/cemento-montados",
 };
