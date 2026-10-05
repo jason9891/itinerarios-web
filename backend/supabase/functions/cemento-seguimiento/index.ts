@@ -136,7 +136,7 @@ Deno.serve(async(req)=>{
   try{
     const{db,email}=await secure(req),b=await req.json(),action=String(b.action||"");
     const isPreview=req.headers.get("origin")==="https://5000-cs-a2a47bf9-3b6a-4a54-b115-36fc3cb753b5.cs-us-east1-vpcf.cloudshell.dev";
-    if(isPreview&&!["lista","detalle","cerradas_por_tracto","guardar","marcar_revisada","guardar_cerrada"].includes(action)){
+    if(isPreview&&!["lista","detalle","cerradas_por_tracto","guardar","marcar_revisada","desmarcar_revisada","guardar_cerrada"].includes(action)){
       return reply(req,{error:"MODO REVISION · SOLO LECTURA. Los guardados y cierres están deshabilitados en la vista previa."},403);
     }
 
@@ -306,6 +306,19 @@ Deno.serve(async(req)=>{
       const payload=rows.map((r:any)=>{const e=em.get(r.id);return{itinerario:"CEMENTO",usuario:email,seguimiento_id:r.id,orden_carga:r.orden_carga,cambios:e?.cambios||{},accion:e?.accion||"GUARDAR",revisada:true,actualizado_en:new Date().toISOString()}});
       const{error}=await db.from("seguimiento_sesion_web").upsert(payload,{onConflict:"itinerario,usuario,seguimiento_id"});if(error)throw error;
       return reply(req,{ok:true,revisada:true,placa:b.placa,ocs:rows.length});
+    }
+
+    if(action==="desmarcar_revisada"){
+      const key=norm(b.placa);if(!key)throw Error("Placa inválida");
+      const{data:daily,error:re}=await db.from("seguimiento_staging").select("id,orden_carga,payload").eq("itinerario","CEMENTO").eq("origen","DIARIO");if(re)throw re;
+      const rows=(daily||[]).filter((x:any)=>norm(plate(x.payload))===key);
+      if(!rows.length)return reply(req,{ok:true,revisada:false,placa:b.placa,ocs:0});
+      const ids=rows.map((x:any)=>x.id);
+      const{data:existing,error:ee}=await db.from("seguimiento_sesion_web").select("seguimiento_id,cambios,accion").eq("itinerario","CEMENTO").eq("usuario",email).in("seguimiento_id",ids);if(ee)throw ee;
+      const em:Map<number,any>=new Map((existing||[]).map((x:any)=>[x.seguimiento_id,x]));
+      const payload=rows.map((r:any)=>{const e=em.get(r.id);return{itinerario:"CEMENTO",usuario:email,seguimiento_id:r.id,orden_carga:r.orden_carga,cambios:e?.cambios||{},accion:e?.accion||"GUARDAR",revisada:false,actualizado_en:new Date().toISOString()}});
+      const{error}=await db.from("seguimiento_sesion_web").upsert(payload,{onConflict:"itinerario,usuario,seguimiento_id"});if(error)throw error;
+      return reply(req,{ok:true,revisada:false,placa:b.placa,ocs:rows.length});
     }
 
     if(action==="guardar"||action==="cerrar"){

@@ -784,10 +784,29 @@ export function unmount() {
 async function loadData(onProgress) {
   const lista = await trackApi({ action: "lista" });
   const plates = lista.placas || [];
-  const reviewed = new Set(plates.filter((p) => p.revisada).map((p) => nplate(p.placa)));
+  const metaPre = loadMeta();
+  const reviewed = new Set();
+  const autoRevClear = [];
+  for (const p of plates) {
+    if (!p.revisada) continue;
+    const k = nplate(p.placa);
+    const st = String(metaPre?.resultados?.[k]?.estado || "").toUpperCase();
+    // Solo las marcas por precarga sin movimiento/sin puntos se descartan
+    if (st === "SIN MOVIMIENTO" || st === "SIN PUNTOS") {
+      autoRevClear.push(p.placa);
+      continue;
+    }
+    reviewed.add(k);
+  }
+  if (autoRevClear.length) {
+    Promise.all(
+      autoRevClear.map((placa) =>
+        trackApi({ action: "desmarcar_revisada", placa }).catch(() => null),
+      ),
+    ).catch(() => null);
+  }
 
-  // NO auto-marcar SIN MOVIMIENTO como revisada:
-  // esas unidades necesitan ver el punto U y seguir en ACTIVAS si tienen OC pendiente.
+  // NO auto-marcar SIN MOVIMIENTO como revisada.
 
   const units = [];
   const batch = 8;
@@ -1191,8 +1210,14 @@ function wire(container, runtime) {
     if (btn.dataset.review) {
       try {
         const placa = btn.dataset.review;
-        await trackApi({ action: "marcar_revisada", placa });
-        state.reviewed.add(nplate(placa));
+        const key = nplate(placa);
+        if (state.reviewed.has(key)) {
+          await trackApi({ action: "desmarcar_revisada", placa });
+          state.reviewed.delete(key);
+        } else {
+          await trackApi({ action: "marcar_revisada", placa });
+          state.reviewed.add(key);
+        }
         const nAct = state.units.filter((u) => !isRevisadaEfectiva(u)).length;
         const nRev = state.units.filter((u) => isRevisadaEfectiva(u)).length;
         container.querySelector("#review-count").textContent = `REVISADAS ${nRev}/${state.units.length}`;
