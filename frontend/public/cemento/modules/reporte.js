@@ -279,21 +279,36 @@ async function render(container, runtime) {
     </div>
     <section class="panel" style="display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px">
       <article style="border:1px solid #e2e8f0;border-radius:10px;padding:14px;background:#fff">
-        <div style="font-size:22px;margin-bottom:6px">▣</div>
+        <div style="width:40px;height:40px;border-radius:10px;background:#dcfce7;display:grid;place-items:center;margin-bottom:10px">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6 2h8l4 4v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2z" stroke="#15803d" stroke-width="1.8"/>
+            <path d="M14 2v4h4" stroke="#15803d" stroke-width="1.8"/>
+            <path d="M8 12h8M8 16h5" stroke="#15803d" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+        </div>
         <h2 style="margin:0 0 6px;font-size:15px">Excel operativo</h2>
         <p style="margin:0 0 12px;font-size:12px;color:#64748b">31 columnas y formato autorizado de Cemento.</p>
         <button type="button" id="report-xlsx" ${state.habilitado ? "" : "disabled"}
           style="width:100%;padding:10px;border-radius:6px;border:1px solid #1d4ed8;background:#eff6ff;color:#1e3a8a;font-weight:800;cursor:pointer">DESCARGAR EXCEL</button>
       </article>
       <article style="border:1px solid #e2e8f0;border-radius:10px;padding:14px;background:#fff">
-        <div style="font-size:22px;margin-bottom:6px">▧</div>
+        <div style="width:40px;height:40px;border-radius:10px;background:#e0f2fe;display:grid;place-items:center;margin-bottom:10px">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <rect x="3" y="4" width="18" height="14" rx="2" stroke="#0369a1" stroke-width="1.8"/>
+            <path d="M7 14l3-3 3 2 4-5" stroke="#0369a1" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
         <h2 style="margin:0 0 6px;font-size:15px">Resumen de datos</h2>
         <p style="margin:0 0 12px;font-size:12px;color:#64748b">Rutas, unidades en base y total operativo validado.</p>
         <button type="button" id="report-data" ${state.habilitado ? "" : "disabled"}
           style="width:100%;padding:10px;border-radius:6px;border:1px solid #1d4ed8;background:#eff6ff;color:#1e3a8a;font-weight:800;cursor:pointer">DESCARGAR IMAGEN</button>
       </article>
       <article style="border:1px solid #e2e8f0;border-radius:10px;padding:14px;background:#fff">
-        <div style="font-size:22px;margin-bottom:6px">▥</div>
+        <div style="width:40px;height:40px;border-radius:10px;background:#fef3c7;display:grid;place-items:center;margin-bottom:10px">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+            <path d="M6 18V10M12 18V6M18 18v-7" stroke="#b45309" stroke-width="2" stroke-linecap="round"/>
+          </svg>
+        </div>
         <h2 style="margin:0 0 6px;font-size:15px">Distribución por ruta</h2>
         <p style="margin:0 0 12px;font-size:12px;color:#64748b">Resumen gráfico por ruta: cargadas y vacías.</p>
         <button type="button" id="report-bars" ${state.habilitado ? "" : "disabled"}

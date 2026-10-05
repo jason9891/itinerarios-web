@@ -894,7 +894,11 @@ export async function mount(container, runtime) {
   };
   bindRuntime(runtime);
   document.body.classList.add("tracking-active");
-  container.innerHTML = `<section class="panel" style="padding:16px"><p class="muted">Cargando seguimiento…</p><p class="muted" id="sg-load-progress">0%</p></section>`;
+  container.innerHTML = `<section class="panel" style="padding:16px">
+    <p class="muted" style="margin:0 0 6px">Cargando seguimiento…</p>
+    <p class="muted" style="margin:0;font-size:13px" id="sg-load-progress">Listando placas…</p>
+    <p class="muted" style="margin:8px 0 0;font-size:12px">Se pide el detalle de cada unidad (OCs abiertas) en lotes. No descarga GPS aquí.</p>
+  </section>`;
   try {
     await bootstrap(container, runtime);
   } catch (e) {
@@ -1057,7 +1061,7 @@ async function bootstrap(container, runtime) {
   ensureStyles();
   const data = await loadData((pct) => {
     const el = container.querySelector("#sg-load-progress");
-    if (el) el.textContent = `${pct}%`;
+    if (el) el.textContent = `Detalle de unidades ${pct}%`;
   });
   state.units = data.units;
   state.reviewed = data.reviewed;
