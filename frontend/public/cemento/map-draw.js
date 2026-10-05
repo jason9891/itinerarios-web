@@ -115,23 +115,57 @@ function clearOverlays() {
   infoWindow?.close();
 }
 
-function showTimePopup(marker, title, fecha) {
+async function copyToClipboard(text) {
+  const t = String(text || "").trim();
+  if (!t) return false;
+  try {
+    if (navigator.clipboard?.writeText) {
+      await navigator.clipboard.writeText(t);
+      return true;
+    }
+  } catch (_) {}
+  try {
+    const ta = document.createElement("textarea");
+    ta.value = t;
+    ta.style.cssText = "position:fixed;left:-9999px;top:0";
+    document.body.appendChild(ta);
+    ta.select();
+    const ok = document.execCommand("copy");
+    ta.remove();
+    return ok;
+  } catch (_) {
+    return false;
+  }
+}
+
+function showTimePopup(marker, title, fecha, copied) {
   infoWindow ??= new google.maps.InfoWindow();
   const t = fecha || "Sin hora";
+  const copyMsg = copied
+    ? `<div style="margin-top:4px;color:#15803d;font-size:12px;font-weight:800">✓ Copiado al portapapeles</div>`
+    : "";
   infoWindow.setContent(
     `<div style="font:13px/1.35 system-ui,sans-serif;padding:2px 4px">
       <b style="font-size:14px">${title}</b><br>
       <span style="font-size:15px;font-weight:800">${t}</span>
+      ${copyMsg}
     </div>`,
   );
   infoWindow.open({ map: mapInstance, anchor: marker });
+}
+
+async function onPointClick(marker, title, fecha) {
+  const t = String(fecha || "").trim();
+  let copied = false;
+  if (t) copied = await copyToClipboard(t);
+  showTimePopup(marker, title, fecha || "Sin hora", copied);
 }
 
 function addLetterMarker(pos, letter, color, title, fecha) {
   const m = new google.maps.Marker({
     map: mapInstance,
     position: pos,
-    title: `${title}${fecha ? " · " + fecha : ""}`,
+    title: `${title}${fecha ? " · " + fecha : ""} · clic = copiar hora`,
     label: { text: letter, color: "white", fontWeight: "700", fontSize: "12px" },
     icon: {
       path: google.maps.SymbolPath.CIRCLE,
@@ -143,7 +177,7 @@ function addLetterMarker(pos, letter, color, title, fecha) {
     },
     zIndex: 300,
   });
-  m.addListener("click", () => showTimePopup(m, title, fecha));
+  m.addListener("click", () => onPointClick(m, title, fecha));
   overlays.push(m);
   return m;
 }
@@ -220,7 +254,7 @@ export function drawTrackingRoute(gps, mapEl, captionEl, unitLabel = "") {
   }
 
   if (captionEl) {
-    captionEl.textContent = `${unitLabel ? unitLabel + " · " : ""}${data.length} puntos · ${gps?.desde || ""} → ${gps?.hasta || ""} · clic en I/F para hora`;
+    captionEl.textContent = `${unitLabel ? unitLabel + " · " : ""}${data.length} puntos · ${gps?.desde || ""} → ${gps?.hasta || ""} · clic en punto = copiar hora`;
   }
 
   const path = data.map((p) => ({ lat: p.lat, lng: p.lng }));
@@ -321,7 +355,7 @@ export function toggleInspection(button) {
       },
       zIndex: 70,
     });
-    m.addListener("click", () => showTimePopup(m, "Punto GPS", p.fecha));
+    m.addListener("click", () => onPointClick(m, "Punto GPS", p.fecha));
     inspectionMarkers.push(m);
   }
 }

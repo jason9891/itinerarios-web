@@ -105,8 +105,11 @@ function collectOcData(row) {
   for (const [apiKey, suffix] of Object.entries(map)) {
     const el = row.querySelector(`[data-f="${id}-${suffix}"]`);
     if (!el) continue;
+    const before = String(el.dataset.original ?? "").trim();
     const now = String(el.value ?? "").trim();
-    // Enviar siempre el valor actual para que el backend registre el cambio real
+    // Solo campos con data nueva (no enviar vacíos sin cambio)
+    if (now === before) continue;
+    if (!now && !before) continue;
     out[apiKey] = now || null;
   }
   return out;
@@ -1268,11 +1271,15 @@ function wire(container, runtime) {
           el.dataset.original = el.value;
         });
         const n = Number(r?.cambios || 0);
-        btn.textContent = n ? `GUARDADO (${n})` : "GUARDADO";
+        const localN = Object.keys(datos).length;
+        btn.textContent = localN || n ? `GUARDADO (${localN || n})` : "SIN CAMBIOS";
         const hint = row.querySelector(`[data-save-hint="${btn.dataset.save}"]`);
         if (hint) {
           hint.hidden = false;
-          hint.textContent = n ? `✓ Guardado (${n} campo(s))` : "✓ Guardado";
+          hint.textContent =
+            localN || n
+              ? `✓ Guardado (${localN || n} campo(s))`
+              : "Sin cambios nuevos";
         }
         setTimeout(() => {
           if (hint) hint.hidden = true;
