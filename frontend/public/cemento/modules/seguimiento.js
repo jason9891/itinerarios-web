@@ -786,27 +786,35 @@ async function loadData(onProgress) {
   const plates = lista.placas || [];
   const metaPre = loadMeta();
   const reviewed = new Set();
-  const autoRevClear = [];
+  // 1) Marcas manuales / ya guardadas en sesión
   for (const p of plates) {
-    if (!p.revisada) continue;
-    const k = nplate(p.placa);
-    const st = String(metaPre?.resultados?.[k]?.estado || "").toUpperCase();
-    // Solo las marcas por precarga sin movimiento/sin puntos se descartan
-    if (st === "SIN MOVIMIENTO" || st === "SIN PUNTOS") {
-      autoRevClear.push(p.placa);
-      continue;
-    }
-    reviewed.add(k);
+    if (p.revisada) reviewed.add(nplate(p.placa));
   }
-  if (autoRevClear.length) {
+  // 2) Auto-revisadas por precarga: sin movimiento / 0 puntos → no requieren seguimiento
+  const autoMark = [];
+  for (const p of plates) {
+    const k = nplate(p.placa);
+    if (reviewed.has(k)) continue;
+    const r = metaPre?.resultados?.[k];
+    if (!r) continue;
+    const st = String(r.estado || "").toUpperCase();
+    const pts = Number(r.puntos ?? 0);
+    const sinMov =
+      st === "SIN MOVIMIENTO" ||
+      st === "SIN PUNTOS" ||
+      (st === "COMPLETO" && pts === 0);
+    if (!sinMov) continue;
+    reviewed.add(k);
+    autoMark.push(p.placa);
+  }
+  // Persistir auto-marcas en servidor (en segundo plano)
+  if (autoMark.length) {
     Promise.all(
-      autoRevClear.map((placa) =>
-        trackApi({ action: "desmarcar_revisada", placa }).catch(() => null),
+      autoMark.map((placa) =>
+        trackApi({ action: "marcar_revisada", placa }).catch(() => null),
       ),
     ).catch(() => null);
   }
-
-  // NO auto-marcar SIN MOVIMIENTO como revisada.
 
   const units = [];
   const batch = 8;
@@ -1297,7 +1305,7 @@ function wire(container, runtime) {
   center.addEventListener("click", onCenter);
   cleanup.push(() => center.removeEventListener("click", onCenter));
 
-  const off = runtime.bus.on("cemento:precarga-unit", () => {
+  const off = runtime.bus.on("cemento:precarga-unit", (ev) => {
     const m = loadMeta();
     const c = counts(m, state.units.length);
     const el = $("preload-global");
@@ -1306,6 +1314,34 @@ function wire(container, runtime) {
         ? `PRECARGA ${c.done}/${m?.total || state.units.length}`
         : `GPS ${c.ready}/${state.units.length}`;
     }
+    // Auto-revisada: unidad sin movimiento (0 puntos) → pasa a REVISADAS
+    try {
+      const placa = ev?.placa;
+      if (!placa || !state) return;
+      const key = nplate(placa);
+      if (state.reviewed.has(key)) return;
+      const st = String(ev?.estado || m?.resultados?.[key]?.estado || "").toUpperCase();
+      const pts = Number(ev?.puntos ?? m?.resultados?.[key]?.puntos ?? 0);
+      const sinMov =
+        st === "SIN MOVIMIENTO" ||
+        st === "SIN PUNTOS" ||
+        (st === "COMPLETO" && pts === 0);
+      if (!sinMov) return;
+      state.reviewed.add(key);
+      trackApi({ action: "marcar_revisada", placa }).catch(() => null);
+      const nAct = state.units.filter((u) => !isRevisadaEfectiva(u)).length;
+      const nRev = state.units.filter((u) => isRevisadaEfectiva(u)).length;
+      const rc = container.querySelector("#review-count");
+      if (rc) rc.textContent = `REVISADAS ${nRev}/${state.units.length}`;
+      container.querySelectorAll(".pg-filter[data-filter]").forEach((b) => {
+        if (b.dataset.filter === "activas") b.textContent = `ACTIVAS · ${nAct}`;
+        if (b.dataset.filter === "revisadas") b.textContent = `REVISADAS · ${nRev}`;
+      });
+      // Si está viendo ACTIVAS, refrescar lista para que salga de ahí
+      if (state.filter === "activas" || state.filter === "revisadas") {
+        paintUnitList(container);
+      }
+    } catch (_) {}
   });
   cleanup.push(off);
 }
