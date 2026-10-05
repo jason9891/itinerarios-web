@@ -318,44 +318,41 @@ function ocRowHtml(oc, unitIndex, ocIndex, totalOcs, unit) {
         </div>
       </div>
 
-      <!-- Grilla compacta 5 columnas × 2 filas de campos -->
-      <div style="display:grid;grid-template-columns:minmax(150px,1fr) minmax(168px,1.15fr) minmax(168px,1.15fr) minmax(150px,1.05fr) minmax(160px,1.15fr);grid-template-rows:auto auto;width:100%;box-sizing:border-box">
-        
-        <!-- ESTADO (columna 1, ambas filas) -->
-        <div style="grid-column:1;grid-row:1/3;padding:8px;border-right:1px solid #d5e0eb;box-sizing:border-box">
-          <div style="font-size:10px;font-weight:900;color:#142f4b;margin:0 0 4px 0">ESTADO</div>
+      <!-- Grilla 3 columnas × 3 filas (como mockup) -->
+      <div style="display:grid;grid-template-columns:minmax(170px,1.2fr) minmax(170px,1.2fr) minmax(160px,1fr);grid-template-rows:auto auto auto;width:100%;box-sizing:border-box">
+        <!-- Fila 1 -->
+        <div style="grid-column:1;grid-row:1;border-right:1px solid #d5e0eb;border-bottom:1px solid #d5e0eb">
+          ${fieldCell(id, "salida", "SALIDA DE PLANTA", field(p, "FECHA DE SALIDA PLANTA YURA/CARACOTO"), field(o, "FECHA DE SALIDA PLANTA YURA/CARACOTO"), true)}
+        </div>
+        <div style="grid-column:2;grid-row:1;border-right:1px solid #d5e0eb;border-bottom:1px solid #d5e0eb">
+          ${fieldCell(id, "llegada", "LLEGADA A DESTINO", field(p, "FECHA LLEGADA A DESTINO"), field(o, "FECHA LLEGADA A DESTINO"), true)}
+        </div>
+        <div style="grid-column:3;grid-row:1;border-bottom:1px solid #d5e0eb;padding:6px 8px;box-sizing:border-box">
+          <div style="font-size:10px;font-weight:900;color:#314a65;margin:0 0 3px 0;letter-spacing:.03em">ESTADO</div>
           <select data-f="${id}-estado" data-original="${esc(field(o, "ESTADO") || "")}"
-            style="display:block;width:100%;min-height:72px;height:calc(100% - 18px);box-sizing:border-box;padding:8px 6px;border:1px solid #b9c9de;border-radius:4px;background:#fff;color:#0b2f68;-webkit-text-fill-color:#0b2f68;font-size:13px;font-weight:700;color-scheme:light">
+            style="display:block;width:100%;height:36px;box-sizing:border-box;padding:4px 6px;border:1px solid #b9c9de;border-radius:4px;background:#fff;color:#0b2f68;-webkit-text-fill-color:#0b2f68;font-size:13px;font-weight:700;color-scheme:light">
             ${stateOptions(estado)}
           </select>
         </div>
 
-        <!-- Fila superior de fechas -->
-        <div style="grid-column:2;grid-row:1;border-right:1px solid #d5e0eb;border-bottom:1px solid #d5e0eb">
-          ${fieldCell(id, "salida", "SALIDA DE PLANTA", field(p, "FECHA DE SALIDA PLANTA YURA/CARACOTO"), field(o, "FECHA DE SALIDA PLANTA YURA/CARACOTO"), true)}
-        </div>
-        <div style="grid-column:3;grid-row:1;border-right:1px solid #d5e0eb;border-bottom:1px solid #d5e0eb">
-          ${fieldCell(id, "llegada", "LLEGADA A DESTINO", field(p, "FECHA LLEGADA A DESTINO"), field(o, "FECHA LLEGADA A DESTINO"), true)}
-        </div>
-        <div style="grid-column:4;grid-row:1;border-right:1px solid #d5e0eb;border-bottom:1px solid #d5e0eb">
-          ${fieldCell(id, "carga", "CARGA DE RETORNO", field(p, "CARGA DE RETORNO"), field(o, "CARGA DE RETORNO"), false)}
-        </div>
-
-        <!-- OBSERVACIONES (columna 5, ambas filas) -->
-        <div style="grid-column:5;grid-row:1/3;padding:6px 8px;box-sizing:border-box">
-          <div style="font-size:10px;font-weight:900;color:#142f4b;margin:0 0 3px 0">OBSERVACIONES</div>
-          <textarea data-f="${id}-obs" data-original="${esc(field(o, "OBSERVACIONES"))}"
-            style="display:block;width:100%;height:calc(100% - 18px);min-height:72px;box-sizing:border-box;padding:6px 8px;border:1px solid #7a93ad;border-radius:4px;background:#fff;color:#132f4c;font-size:13px;font-weight:600;resize:none">${esc(field(p, "OBSERVACIONES"))}</textarea>
-        </div>
-
-        <!-- Fila inferior -->
-        <div style="grid-column:2;grid-row:2;border-right:1px solid #d5e0eb">
+        <!-- Fila 2 -->
+        <div style="grid-column:1;grid-row:2;border-right:1px solid #d5e0eb;border-bottom:1px solid #d5e0eb">
           ${fieldCell(id, "retorno", "INICIO DE RETORNO", field(p, "FECHA INICIO DE RETORNO"), field(o, "FECHA INICIO DE RETORNO"), true)}
         </div>
-        <div style="grid-column:3;grid-row:2;border-right:1px solid #d5e0eb">
+        <div style="grid-column:2;grid-row:2;border-right:1px solid #d5e0eb;border-bottom:1px solid #d5e0eb">
           ${fieldCell(id, "fin", "FIN DE RETORNO", field(p, "FECHA FIN DE RETORNO AQP/YURA/CRCT"), field(o, "FECHA FIN DE RETORNO AQP/YURA/CRCT"), true)}
         </div>
-        <div style="grid-column:4;grid-row:2;border-right:1px solid #d5e0eb">
+        <div style="grid-column:3;grid-row:2/4;padding:6px 8px;box-sizing:border-box">
+          <div style="font-size:10px;font-weight:900;color:#314a65;margin:0 0 3px 0;letter-spacing:.03em">OBSERVACIONES</div>
+          <textarea data-f="${id}-obs" data-original="${esc(field(o, "OBSERVACIONES"))}"
+            style="display:block;width:100%;height:calc(100% - 18px);min-height:88px;box-sizing:border-box;padding:6px 8px;border:1px solid #b9c9de;border-radius:4px;background:#fff;color:#0b2f68;font-size:13px;font-weight:600;resize:none">${esc(field(p, "OBSERVACIONES"))}</textarea>
+        </div>
+
+        <!-- Fila 3 -->
+        <div style="grid-column:1;grid-row:3;border-right:1px solid #d5e0eb">
+          ${fieldCell(id, "carga", "CARGA DE RETORNO", field(p, "CARGA DE RETORNO"), field(o, "CARGA DE RETORNO"), false)}
+        </div>
+        <div style="grid-column:2;grid-row:3;border-right:1px solid #d5e0eb">
           ${fieldCell(id, "ubi", "UBICACIÓN", field(p, "UBICACIÓN"), field(o, "UBICACIÓN"), true)}
         </div>
       </div>
@@ -1486,7 +1483,7 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-22";
+  st.id = "cem-sg-v3-style-23";
   st.textContent = `
     body.tracking-active { overflow: hidden !important; }
     body.tracking-active .desktop-tracking.grid-03 {
@@ -1551,7 +1548,8 @@ function ensureStyles() {
       font-variant-numeric: tabular-nums !important;
     }
     body.tracking-active #unit-list article select {
-      min-height: 64px !important;
+      min-height: 36px !important;
+      height: 36px !important;
       font-size: 13px !important;
       color: #0b2f68 !important;
       -webkit-text-fill-color: #0b2f68 !important;
