@@ -101,29 +101,64 @@ function collectOcData(row) {
   return out;
 }
 
+function peDateKey(s) {
+  const m = String(s || "").match(/(\d{2})\/(\d{2})\/(\d{4})/);
+  if (m) return `${m[3]}${m[2]}${m[1]}`;
+  const m2 = String(s || "").match(/(\d{4})-(\d{2})-(\d{2})/);
+  if (m2) return `${m2[1]}${m2[2]}${m2[3]}`;
+  return "";
+}
+
+/** Rango de fechas del seguimiento actual (solo día). */
+function seguimientoRangeKeys() {
+  const meta = loadMeta() || {};
+  let d0 = peDateKey(meta.desde || localStorage.getItem("cemento_rango_desde") || "");
+  let d1 = peDateKey(meta.hasta || formatPE(new Date()));
+  if (!d1) d1 = peDateKey(formatPE(new Date()));
+  if (!d0) d0 = d1;
+  if (d0 > d1) {
+    const t = d0;
+    d0 = d1;
+    d1 = t;
+  }
+  return { d0, d1 };
+}
+
 function montadosFor(unit) {
   if (!state) return [];
   const keys = [unit.tracto, unit.placa, nplate(unit.placa)].map((x) => String(x || "").trim());
   const seen = new Set();
   const out = [];
+  const { d0, d1 } = seguimientoRangeKeys();
   for (const k of keys) {
     for (const r of state.montadosMap.get(k) || []) {
       const id = `${r.tipo}|${r.relacionado}|${r.fecha}`;
       if (seen.has(id)) continue;
       seen.add(id);
+      const fk = peDateKey(r.fecha);
+      // Solo montados del rango de fechas del seguimiento
+      if (fk && (fk < d0 || fk > d1)) continue;
+      if (!fk) continue;
       out.push(r);
     }
   }
   return out;
 }
 
-function montadosHtml(unit) {
-  const parts = montadosFor(unit).map((r) => {
-    const arrow = r.tipo === "MONTADO EN" ? "←" : "→";
-    return `<span style="display:inline-block;margin:2px 4px 2px 0;padding:3px 10px;border-radius:999px;border:1px solid #cbd5e1;font-size:12px;background:#f8fafc"><b>${esc(r.tipo)}</b> ${arrow} ${esc(shortTracto(r.relacionado))}</span>`;
-  });
-  return parts.length ? `<div style="margin:6px 0 0">${parts.join("")}</div>` : "";
+/** Chips de montados alineados a la pestaña R (lado derecho). */
+function montadosTabHtml(unit) {
+  const rows = montadosFor(unit);
+  if (!rows.length) return "";
+  const chips = rows
+    .map((r) => {
+      const arrow = r.tipo === "MONTADO EN" ? "←" : "→";
+      const label = r.tipo === "MONTADO EN" ? "EN" : "A";
+      return `<span title="${esc(r.tipo)} ${esc(r.fecha || "")}" style="display:inline-flex;align-items:center;gap:3px;height:26px;padding:0 8px;border-radius:999px;border:1px solid #94a3b8;background:#e2e8f0;font-size:11px;font-weight:800;color:#0f172a;white-space:nowrap">${esc(label)} ${arrow} ${esc(shortTracto(r.relacionado))}</span>`;
+    })
+    .join("");
+  return `<div style="display:flex;align-items:center;gap:4px;margin-left:8px;min-width:0;overflow:auto;max-width:min(420px,55vw)">${chips}</div>`;
 }
+
 
 function fieldCell(id, suffix, label, value, original, withPaste) {
   const pasteBtn = withPaste
@@ -160,15 +195,18 @@ function ocRowHtml(oc, unitIndex, ocIndex, totalOcs, unit) {
         : "0";
   const borderTop = isFirst ? `2px solid ${borderCol}` : "0";
 
-  // Pestaña tipo navegador (solo en la primera OC de la unidad)
+  // Pestaña tipo navegador + montados del rango a la derecha (solo 1ª OC)
   const tab = isFirst
     ? `<div style="position:relative;height:0;z-index:5">
-        <div style="position:absolute;left:8px;top:-30px;height:30px;display:flex;align-items:stretch;border:2px solid #385978;border-bottom:0;border-radius:9px 9px 0 0;overflow:hidden;background:#f5f9fd">
-          <span style="display:flex;align-items:center;justify-content:center;min-width:32px;padding:0 8px;font-size:13px;font-weight:900;color:#173e70;background:#e8f0fa;border-right:1px solid #9fb4cb">${unitIndex}</span>
-          <button type="button" data-map="${esc(nplate(unit.placa))}" title="Ver en mapa"
-            style="display:flex;align-items:center;padding:0 12px;font-size:15px;font-weight:900;color:#0f172a;white-space:nowrap;border:0;background:transparent;cursor:pointer">${esc(shortTracto(unit.tracto || unit.placa))}</button>
-          <button type="button" data-review="${esc(unit.placa)}" title="Marcar revisada"
-            style="display:flex;align-items:center;justify-content:center;min-width:34px;border:0;border-left:1px solid #9fb4cb;background:${reviewed ? "#16a34a" : "#fff"};color:${reviewed ? "#fff" : "#16a34a"};font-size:16px;font-weight:900;cursor:pointer;padding:0 10px">✓</button>
+        <div style="position:absolute;left:8px;right:4px;top:-30px;height:30px;display:flex;align-items:center;min-width:0">
+          <div style="display:flex;align-items:stretch;border:2px solid #385978;border-bottom:0;border-radius:9px 9px 0 0;overflow:hidden;background:#f5f9fd;flex:0 0 auto">
+            <span style="display:flex;align-items:center;justify-content:center;min-width:32px;padding:0 8px;font-size:13px;font-weight:900;color:#173e70;background:#e8f0fa;border-right:1px solid #9fb4cb">${unitIndex}</span>
+            <button type="button" data-map="${esc(nplate(unit.placa))}" title="Ver en mapa"
+              style="display:flex;align-items:center;padding:0 12px;font-size:15px;font-weight:900;color:#0f172a;white-space:nowrap;border:0;background:transparent;cursor:pointer">${esc(shortTracto(unit.tracto || unit.placa))}</button>
+            <button type="button" data-review="${esc(unit.placa)}" title="Marcar revisada"
+              style="display:flex;align-items:center;justify-content:center;min-width:34px;border:0;border-left:1px solid #9fb4cb;background:${reviewed ? "#16a34a" : "#fff"};color:${reviewed ? "#fff" : "#16a34a"};font-size:16px;font-weight:900;cursor:pointer;padding:0 10px">✓</button>
+          </div>
+          ${montadosTabHtml(unit)}
         </div>
       </div>`
     : "";
@@ -248,20 +286,21 @@ function unitGroupHtml(unit, ordinal) {
   if (!ocs.length) {
     const reviewed = state.reviewed.has(nplate(unit.placa));
     return `<div style="margin:34px 0 12px;position:relative">
-      <div style="position:absolute;left:8px;top:-30px;height:30px;display:flex;align-items:stretch;border:2px solid #385978;border-bottom:0;border-radius:9px 9px 0 0;overflow:hidden;background:#f5f9fd;z-index:5">
-        <span style="display:flex;align-items:center;justify-content:center;min-width:32px;padding:0 8px;font-size:13px;font-weight:900;color:#173e70;background:#e8f0fa;border-right:1px solid #9fb4cb">${ordinal}</span>
-        <span style="display:flex;align-items:center;padding:0 12px;font-size:15px;font-weight:900">${esc(shortTracto(unit.tracto || unit.placa))}</span>
-        <button type="button" data-review="${esc(unit.placa)}" style="display:flex;align-items:center;justify-content:center;min-width:34px;border:0;border-left:1px solid #9fb4cb;background:${reviewed ? "#16a34a" : "#fff"};color:${reviewed ? "#fff" : "#16a34a"};font-size:16px;font-weight:900;cursor:pointer;padding:0 10px">✓</button>
+      <div style="position:absolute;left:8px;right:4px;top:-30px;height:30px;display:flex;align-items:center;z-index:5;min-width:0">
+        <div style="display:flex;align-items:stretch;border:2px solid #385978;border-bottom:0;border-radius:9px 9px 0 0;overflow:hidden;background:#f5f9fd;flex:0 0 auto">
+          <span style="display:flex;align-items:center;justify-content:center;min-width:32px;padding:0 8px;font-size:13px;font-weight:900;color:#173e70;background:#e8f0fa;border-right:1px solid #9fb4cb">${ordinal}</span>
+          <button type="button" data-map="${esc(nplate(unit.placa))}" style="display:flex;align-items:center;padding:0 12px;font-size:15px;font-weight:900;border:0;background:transparent;cursor:pointer">${esc(shortTracto(unit.tracto || unit.placa))}</button>
+          <button type="button" data-review="${esc(unit.placa)}" style="display:flex;align-items:center;justify-content:center;min-width:34px;border:0;border-left:1px solid #9fb4cb;background:${reviewed ? "#16a34a" : "#fff"};color:${reviewed ? "#fff" : "#16a34a"};font-size:16px;font-weight:900;cursor:pointer;padding:0 10px">✓</button>
+        </div>
+        ${montadosTabHtml(unit)}
       </div>
       <div style="border:2px solid #cbd5e1;border-radius:0 10px 10px 10px;padding:14px;background:#fff">
         <p style="color:#64748b;margin:0">SIN OC ABIERTA</p>
-        ${montadosHtml(unit)}
       </div>
     </div>`;
   }
   return `<div style="margin:0 0 4px 0" data-placa="${esc(nplate(unit.placa))}">
     ${ocs.map((oc, i) => ocRowHtml(oc, ordinal, i, ocs.length, unit)).join("")}
-    ${montadosHtml(unit)}
   </div>`;
 }
 
@@ -385,65 +424,111 @@ function paintClosedSection(container) {
   const btn = container.querySelector("#toggle-closed");
   const panel = container.querySelector("#closed-panel");
   const countEl = container.querySelector("#closed-count");
+  const labelEl = container.querySelector("#closed-unit-label");
   if (!btn || !panel) return;
 
-  if (!state.closedOpen) {
-    btn.textContent = "VER CERRADAS";
+  const unit = state.units.find((u) => nplate(u.placa) === state.selectedKey);
+  const tractoLabel = shortTracto(unit?.tracto || unit?.placa || state.closedTracto || "—");
+  if (labelEl) labelEl.textContent = tractoLabel;
+
+  const total = state.closedAll.length;
+  const shown = state.closedShown;
+  const visible = state.closedAll.slice(0, shown);
+
+  if (countEl) {
+    countEl.textContent = total
+      ? `${shown}/${total}`
+      : state.closedOpen
+        ? "0"
+        : "—";
+  }
+
+  // Botón: MOSTRAR / MOSTRAR OTRA
+  if (state.closedLoading) {
+    btn.textContent = "…";
+    btn.disabled = true;
+  } else if (!total && state.closedOpen) {
+    btn.textContent = "MOSTRAR";
+    btn.disabled = false;
+  } else if (shown < total) {
+    btn.textContent = shown === 0 ? "MOSTRAR" : "MOSTRAR OTRA";
+    btn.disabled = false;
+  } else if (total) {
+    btn.textContent = "MOSTRAR OTRA";
+    btn.disabled = true;
+  } else {
+    btn.textContent = "MOSTRAR";
+    btn.disabled = false;
+  }
+
+  if (!shown) {
     panel.hidden = true;
     panel.innerHTML = "";
-    if (countEl) countEl.textContent = state.closedOcs.length ? String(state.closedOcs.length) : "—";
     return;
   }
 
-  btn.textContent = "OCULTAR CERRADAS";
   panel.hidden = false;
-
-  if (state.closedLoading) {
-    panel.innerHTML = `<p style="padding:8px;color:#64748b;font-size:13px">Cargando OCs cerradas…</p>`;
-    return;
-  }
-
-  const unit = state.units.find((u) => nplate(u.placa) === state.selectedKey);
-  const tractoLabel = shortTracto(state.closedTracto || unit?.tracto || unit?.placa || "");
-  if (countEl) countEl.textContent = String(state.closedOcs.length);
-
-  if (!state.closedOcs.length) {
-    panel.innerHTML = `<p style="padding:8px;color:#64748b;font-size:13px">No hay OCs cerradas (histórico) para <b>${esc(tractoLabel)}</b>.</p>`;
+  if (!visible.length) {
+    panel.innerHTML = `<p style="padding:8px;color:#64748b;font-size:13px">No hay OCs cerradas para <b>${esc(tractoLabel)}</b>.</p>`;
     return;
   }
 
   panel.innerHTML = `
     <div style="margin:0 0 8px;font-size:12px;color:#475569">
-      <b style="color:#0f172a">${esc(tractoLabel)}</b>
-      · ${state.closedOcs.length} OC(s) en histórico
+      Mostrando <b>${shown}</b> de <b>${total}</b> · más reciente primero
     </div>
-    ${state.closedOcs.map((oc) => closedOcCardHtml(oc)).join("")}
+    ${visible.map((oc) => closedOcCardHtml(oc)).join("")}
   `;
 }
 
-async function loadClosedForSelected(container) {
+/** Carga el histórico del tracto seleccionado (una sola vez) y muestra +1 OC. */
+async function showNextClosed(container) {
   const unit = state.units.find((u) => nplate(u.placa) === state.selectedKey);
   if (!unit) {
-    state.closedOcs = [];
-    state.closedTracto = "";
-    paintClosedSection(container);
+    alert("Seleccione una unidad (pestaña R-…)");
     return;
   }
   const tracto = unit.tracto || unit.placa;
-  state.closedLoading = true;
-  state.closedTracto = tracto;
-  paintClosedSection(container);
-  try {
-    const data = await trackApi({ action: "cerradas_por_tracto", tracto });
-    state.closedOcs = data.ocs || [];
+  const key = String(tracto);
+
+  // Si cambió de unidad o aún no hay caché, consultar API
+  if (state.closedTracto !== key || !state.closedAll.length) {
+    state.closedLoading = true;
+    state.closedTracto = key;
+    state.closedShown = 0;
     state.closedExpanded = new Set();
-  } catch (e) {
-    state.closedOcs = [];
-    alert(e.message || "No se pudo cargar OCs cerradas");
-  } finally {
-    state.closedLoading = false;
     paintClosedSection(container);
+    try {
+      const data = await trackApi({ action: "cerradas_por_tracto", tracto });
+      // Backend ya ordena por fecha desc (más reciente primero)
+      state.closedAll = data.ocs || [];
+      state.closedOpen = true;
+    } catch (e) {
+      state.closedAll = [];
+      alert(e.message || "No se pudo cargar OCs cerradas");
+    } finally {
+      state.closedLoading = false;
+    }
   }
+
+  if (state.closedShown < state.closedAll.length) {
+    state.closedShown += 1;
+    state.closedOpen = true;
+  }
+  paintClosedSection(container);
+}
+
+async function loadClosedForSelected(container) {
+  // Compat: al cambiar de unidad, reinicia progresión
+  const unit = state.units.find((u) => nplate(u.placa) === state.selectedKey);
+  const tracto = unit ? unit.tracto || unit.placa : "";
+  if (String(tracto) !== state.closedTracto) {
+    state.closedAll = [];
+    state.closedShown = 0;
+    state.closedTracto = String(tracto || "");
+    state.closedExpanded = new Set();
+  }
+  paintClosedSection(container);
 }
 
 function collectClosedData(article) {
@@ -628,7 +713,8 @@ export async function mount(container, runtime) {
     closedOpen: false,
     closedLoading: false,
     closedTracto: "",
-    closedOcs: [],
+    closedAll: [],
+    closedShown: 0,
     closedExpanded: new Set(),
   };
   bindRuntime(runtime);
@@ -786,13 +872,14 @@ async function bootstrap(container, runtime) {
           <div id="unit-list" class="plate-grid-scroll"></div>
           <div id="closed-section">
             <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 12px;flex:0 0 auto">
-              <div style="display:flex;align-items:center;gap:10px">
-                <b style="font-size:14px;font-weight:950;color:#0f172a;letter-spacing:.04em">CERRADAS</b>
+              <div style="display:flex;align-items:center;gap:8px;min-width:0">
+                <span id="closed-unit-label" style="display:inline-flex;align-items:center;padding:4px 10px;border-radius:8px;background:#0f172a;color:#fff;font-size:13px;font-weight:950;letter-spacing:.02em">—</span>
+                <b style="font-size:13px;font-weight:950;color:#0f172a;letter-spacing:.04em">CERRADAS</b>
                 <span id="closed-count" style="font-size:12px;font-weight:800;color:#64748b">—</span>
               </div>
               <button type="button" id="toggle-closed"
                 style="background:#1d4ed8;border:1px solid #1e40af;border-radius:6px;padding:8px 14px;font-size:12px;font-weight:900;color:#fff;cursor:pointer">
-                VER CERRADAS
+                MOSTRAR
               </button>
             </div>
             <div id="closed-panel" hidden style="padding:0 10px 12px"></div>
@@ -937,12 +1024,7 @@ function wire(container, runtime) {
   const toggleClosed = container.querySelector("#toggle-closed");
   if (toggleClosed) {
     toggleClosed.onclick = async () => {
-      state.closedOpen = !state.closedOpen;
-      if (state.closedOpen) {
-        await loadClosedForSelected(container);
-      } else {
-        paintClosedSection(container);
-      }
+      await showNextClosed(container);
     };
   }
 
@@ -974,7 +1056,10 @@ function wire(container, runtime) {
             action: "cerradas_por_tracto",
             tracto: state.closedTracto,
           });
-          state.closedOcs = data.ocs || [];
+          state.closedAll = data.ocs || [];
+          if (state.closedShown > state.closedAll.length) {
+            state.closedShown = state.closedAll.length;
+          }
           setTimeout(() => paintClosedSection(container), 600);
         } catch (e) {
           alert(e.message);
@@ -1039,7 +1124,7 @@ function wire(container, runtime) {
 
     if (btn.dataset.map) {
       await focusUnit(container, btn.dataset.map, runtime);
-      if (state.closedOpen) await loadClosedForSelected(container);
+      await loadClosedForSelected(container);
       return;
     }
 
