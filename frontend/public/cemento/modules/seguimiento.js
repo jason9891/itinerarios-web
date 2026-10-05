@@ -77,6 +77,18 @@ function inputToPE(v) {
   return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}:${m[6] || "00"}`;
 }
 
+/** Mapa API key → columna payload (igual que backend MAP). */
+const OC_FIELD_COLS = {
+  estado_fisico: "ESTADO",
+  salida_planta: "FECHA DE SALIDA PLANTA YURA/CARACOTO",
+  llegada_destino: "FECHA LLEGADA A DESTINO",
+  carga_retorno: "CARGA DE RETORNO",
+  observaciones: "OBSERVACIONES",
+  inicio_retorno: "FECHA INICIO DE RETORNO",
+  fin_de_ciclo: "FECHA FIN DE RETORNO AQP/YURA/CRCT",
+  ubicacion: "UBICACIÓN",
+};
+
 function collectOcData(row) {
   const id = row.dataset.ocId;
   const map = {
@@ -93,12 +105,21 @@ function collectOcData(row) {
   for (const [apiKey, suffix] of Object.entries(map)) {
     const el = row.querySelector(`[data-f="${id}-${suffix}"]`);
     if (!el) continue;
-    const before = String(el.dataset.original ?? "").trim();
     const now = String(el.value ?? "").trim();
-    if (now === before || (!now && !before)) continue;
+    // Enviar siempre el valor actual para que el backend registre el cambio real
     out[apiKey] = now || null;
   }
   return out;
+}
+
+function applyDatosToOcPayload(oc, datos) {
+  if (!oc || !datos) return;
+  if (!oc.payload) oc.payload = {};
+  for (const [apiKey, val] of Object.entries(datos)) {
+    const col = OC_FIELD_COLS[apiKey];
+    if (!col) continue;
+    oc.payload[col] = val;
+  }
 }
 
 function peDateKey(s) {
@@ -157,18 +178,22 @@ function montadosFor(unit) {
   return out;
 }
 
-/** Chips de montados alineados a la pestaña R (lado derecho). */
+/** Pestañas montados (navegador) ancladas a la derecha, misma línea que la R. */
 function montadosTabHtml(unit) {
   const rows = montadosFor(unit);
   if (!rows.length) return "";
-  const chips = rows
+  const tabs = rows
     .map((r) => {
-      const arrow = r.tipo === "MONTADO EN" ? "←" : "→";
-      const label = r.tipo === "MONTADO EN" ? "EN" : "A";
-      return `<span title="${esc(r.tipo)} ${esc(r.fecha || "")}" style="display:inline-flex;align-items:center;gap:3px;height:26px;padding:0 8px;border-radius:999px;border:1px solid #94a3b8;background:#e2e8f0;font-size:11px;font-weight:800;color:#0f172a;white-space:nowrap">${esc(label)} ${arrow} ${esc(shortTracto(r.relacionado))}</span>`;
+      const label = r.tipo === "MONTADO EN" ? "MONTADO EN" : "MONTANDO";
+      const rel = shortTracto(r.relacionado);
+      return `<div title="${esc(r.tipo)} ${esc(r.fecha || "")} ${esc(r.ruta || "")}"
+        style="display:flex;align-items:stretch;height:30px;border:2px solid #64748b;border-bottom:0;border-radius:9px 9px 0 0;overflow:hidden;background:#eef2ff;flex:0 0 auto">
+        <span style="display:flex;align-items:center;padding:0 8px;font-size:10px;font-weight:900;color:#3730a3;background:#e0e7ff;border-right:1px solid #a5b4fc;white-space:nowrap">${esc(label)}</span>
+        <span style="display:flex;align-items:center;padding:0 10px;font-size:13px;font-weight:900;color:#0f172a;white-space:nowrap">${esc(rel)}</span>
+      </div>`;
     })
     .join("");
-  return `<div style="display:flex;align-items:center;gap:4px;margin-left:8px;min-width:0;overflow:auto;max-width:min(420px,55vw)">${chips}</div>`;
+  return `<div style="margin-left:auto;display:flex;align-items:flex-end;gap:6px;min-width:0;overflow-x:auto;max-width:min(520px,60vw);padding-left:8px">${tabs}</div>`;
 }
 
 
@@ -210,7 +235,7 @@ function ocRowHtml(oc, unitIndex, ocIndex, totalOcs, unit) {
   // Pestaña tipo navegador + montados del rango a la derecha (solo 1ª OC)
   const tab = isFirst
     ? `<div style="position:relative;height:0;z-index:5">
-        <div style="position:absolute;left:8px;right:4px;top:-30px;height:30px;display:flex;align-items:center;min-width:0">
+        <div style="position:absolute;left:8px;right:4px;top:-30px;height:30px;display:flex;align-items:flex-end;justify-content:space-between;gap:8px;min-width:0">
           <div style="display:flex;align-items:stretch;border:2px solid #385978;border-bottom:0;border-radius:9px 9px 0 0;overflow:hidden;background:#f5f9fd;flex:0 0 auto">
             <span style="display:flex;align-items:center;justify-content:center;min-width:32px;padding:0 8px;font-size:13px;font-weight:900;color:#173e70;background:#e8f0fa;border-right:1px solid #9fb4cb">${unitIndex}</span>
             <button type="button" data-map="${esc(nplate(unit.placa))}" title="Ver en mapa"
@@ -298,7 +323,7 @@ function unitGroupHtml(unit, ordinal) {
   if (!ocs.length) {
     const reviewed = state.reviewed.has(nplate(unit.placa));
     return `<div style="margin:34px 0 12px;position:relative">
-      <div style="position:absolute;left:8px;right:4px;top:-30px;height:30px;display:flex;align-items:center;z-index:5;min-width:0">
+      <div style="position:absolute;left:8px;right:4px;top:-30px;height:30px;display:flex;align-items:flex-end;justify-content:space-between;gap:8px;z-index:5;min-width:0">
         <div style="display:flex;align-items:stretch;border:2px solid #385978;border-bottom:0;border-radius:9px 9px 0 0;overflow:hidden;background:#f5f9fd;flex:0 0 auto">
           <span style="display:flex;align-items:center;justify-content:center;min-width:32px;padding:0 8px;font-size:13px;font-weight:900;color:#173e70;background:#e8f0fa;border-right:1px solid #9fb4cb">${ordinal}</span>
           <button type="button" data-map="${esc(nplate(unit.placa))}" style="display:flex;align-items:center;padding:0 12px;font-size:15px;font-weight:900;border:0;background:transparent;cursor:pointer">${esc(shortTracto(unit.tracto || unit.placa))}</button>
@@ -330,16 +355,14 @@ function hasPendingSeguimiento(unit) {
 
 /** Revisada real: marcada ✓ y sin OC pendiente de seguimiento. */
 function isRevisadaEfectiva(unit) {
-  return state.reviewed.has(nplate(unit.placa)) && !hasPendingSeguimiento(unit);
+  return state.reviewed.has(nplate(unit.placa));
 }
 
 function filteredUnits() {
   if (state.filter === "revisadas") {
-    // Solo revisadas reales: NO pueden aparecer unidades con recorrido/OC pendiente
     return state.units.filter((u) => isRevisadaEfectiva(u));
   }
   if (state.filter === "todas") return state.units;
-  // ACTIVAS: no revisadas, o revisadas pero aún con OC pendiente
   return state.units.filter((u) => !isRevisadaEfectiva(u));
 }
 
@@ -1186,28 +1209,42 @@ function wire(container, runtime) {
 
     if (btn.dataset.save) {
       const row = btn.closest("article[data-oc-id]");
+      if (!row) return;
+      const ocId = +btn.dataset.save;
       const datos = collectOcData(row);
       btn.disabled = true;
       const old = btn.textContent;
       btn.textContent = "GUARDANDO…";
       try {
-        await trackApi({ action: "guardar", id: +btn.dataset.save, datos });
-        btn.textContent = "GUARDADO";
+        const r = await trackApi({ action: "guardar", id: ocId, datos });
+        // Actualizar payload local para que no se pierda al repintar
+        const placa = row.dataset.placa;
+        const unit = state.units.find((u) => nplate(u.placa) === nplate(placa));
+        const oc = unit?.ocs?.find((o) => Number(o.id) === ocId);
+        applyDatosToOcPayload(oc, datos);
+        if (oc) {
+          oc.borrador = {
+            ...(oc.borrador || {}),
+            accion: "GUARDAR",
+            cambios: { ...(oc.borrador?.cambios || {}), ...Object.fromEntries(
+              Object.entries(datos).map(([k, v]) => [OC_FIELD_COLS[k] || k, v]),
+            ) },
+          };
+        }
         row.querySelectorAll("[data-original]").forEach((el) => {
           el.dataset.original = el.value;
         });
+        const n = Number(r?.cambios || 0);
+        btn.textContent = n ? `GUARDADO (${n})` : "GUARDADO";
         const hint = row.querySelector(`[data-save-hint="${btn.dataset.save}"]`);
         if (hint) {
           hint.hidden = false;
-          setTimeout(() => {
-            hint.hidden = true;
-            btn.textContent = "GUARDAR";
-          }, 1500);
-        } else {
-          setTimeout(() => {
-            btn.textContent = "GUARDAR";
-          }, 1500);
+          hint.textContent = n ? `✓ Guardado (${n} campo(s))` : "✓ Guardado";
         }
+        setTimeout(() => {
+          if (hint) hint.hidden = true;
+          btn.textContent = "GUARDAR";
+        }, 1800);
       } catch (e) {
         alert(e.message);
         btn.textContent = old;
