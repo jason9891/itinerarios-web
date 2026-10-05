@@ -385,7 +385,13 @@ Deno.serve(async(req)=>{
       const{data,error}=await db.rpc("cemento_consolidar_seguimiento",{p_usuario:email});if(error)throw error;
       const estado=action==="consolidar"?"COMPLETO":"PARCIAL";
       const cut=await saveCut(db,email,estado,before||[],reviewed,data||{},action==="guardar_parcial");
-      return reply(req,{ok:true,...cut,seguimiento_completo:estado==="COMPLETO"});
+      const total=serverPlates.size;
+      const nRev=reviewed.size;
+      const nPend=Math.max(0,total-nRev);
+      const mensaje=estado==="COMPLETO"
+        ? `Seguimiento COMPLETO: ${nRev}/${total} placas revisadas.`
+        : `Guardado PARCIAL en Supabase: ${nRev}/${total} revisadas · ${nPend} placa(s) aún ACTIVAS. Puede generar reporte parcial.`;
+      return reply(req,{ok:true,...cut,seguimiento_completo:estado==="COMPLETO",pendientes:nPend,mensaje});
     }
 
     return reply(req,{error:"Acción no encontrada"},404);

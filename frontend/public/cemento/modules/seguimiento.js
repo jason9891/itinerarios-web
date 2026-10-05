@@ -800,6 +800,7 @@ export async function mount(container, runtime) {
     closedAll: [],
     closedShown: 0,
     closedExpanded: new Set(),
+    partialSaved: false,
   };
   bindRuntime(runtime);
   document.body.classList.add("tracking-active");
@@ -1140,6 +1141,16 @@ function wire(container, runtime) {
     document.querySelector('nav button[data-route="home"]')?.click();
   };
 
+  const goReporte = () => {
+    document.body.classList.remove("tracking-active");
+    document.querySelector('nav button[data-route="reporte"]')?.click();
+  };
+
+  const pendingPlates = () =>
+    state.units
+      .filter((u) => !state.reviewed.has(nplate(u.placa)))
+      .map((u) => shortTracto(u.tracto || u.placa));
+
   $("save-partial").onclick = async () => {
     const b = $("save-partial");
     b.disabled = true;
@@ -1147,7 +1158,28 @@ function wire(container, runtime) {
     b.textContent = "GUARDANDO…";
     try {
       const x = await trackApi({ action: "guardar_parcial", revisadas: [...state.reviewed] });
-      alert(x.mensaje || `Parcial: ${state.reviewed.size}/${state.units.length} revisadas.`);
+      state.partialSaved = true;
+      const total = state.units.length;
+      const rev = state.reviewed.size;
+      const pend = pendingPlates();
+      const nPend = pend.length;
+      const list =
+        nPend <= 12
+          ? pend.join(", ")
+          : `${pend.slice(0, 12).join(", ")} … (+${nPend - 12})`;
+      const msg =
+        `Guardado parcial en Supabase.\n\n` +
+        `Revisadas: ${rev}/${total}\n` +
+        (nPend
+          ? `Placas aún ACTIVAS (pendientes): ${nPend}\n${list}\n\n`
+          : `No quedan placas activas.\n\n`) +
+        `Puede GENERAR REPORTE ahora (estado PARCIAL) o seguir revisando y luego TERMINAR SEGUIMIENTO.`;
+      alert(x.mensaje || msg);
+      const gr = $("gen-report");
+      if (gr) {
+        gr.disabled = false;
+        gr.classList.add("ready");
+      }
     } catch (e) {
       alert(e.message);
     } finally {
@@ -1156,20 +1188,50 @@ function wire(container, runtime) {
     }
   };
 
-  $("save-all").onclick = async () => {
-    if (state.reviewed.size !== state.units.length) {
-      alert(`Incompleto: ${state.reviewed.size}/${state.units.length} revisadas.`);
+  $("gen-report").onclick = () => {
+    if (!state.partialSaved && state.reviewed.size !== state.units.length) {
+      const ok = confirm(
+        "Aún no hay un guardado parcial en esta sesión.\n" +
+          "¿Desea GUARDAR PARCIAL ahora y luego abrir el reporte?",
+      );
+      if (!ok) return;
+      $("save-partial").click();
       return;
     }
-    if (!confirm("¿Terminar seguimiento y consolidar?")) return;
+    const pend = pendingPlates();
+    if (pend.length) {
+      const go = confirm(
+        `Hay ${pend.length} placa(s) aún ACTIVAS.\n` +
+          `El reporte se generará en estado PARCIAL.\n\n¿Continuar al módulo Reporte?`,
+      );
+      if (!go) return;
+    }
+    goReporte();
+  };
+
+  $("save-all").onclick = async () => {
+    const total = state.units.length;
+    const rev = state.reviewed.size;
+    const pend = pendingPlates();
+    if (pend.length) {
+      alert(
+        `No se puede TERMINAR: quedan ${pend.length} placa(s) ACTIVAS sin revisar.\n\n` +
+          `Revisadas: ${rev}/${total}\n` +
+          `Pendientes: ${pend.length <= 15 ? pend.join(", ") : pend.slice(0, 15).join(", ") + " …"}\n\n` +
+          `Use GUARDAR PARCIAL + GENERAR REPORTE si necesita un corte parcial, ` +
+          `o marque ✓ en las activas restantes.`,
+      );
+      return;
+    }
+    if (!confirm("¿Terminar seguimiento completo y consolidar en Supabase?")) return;
     const b = $("save-all");
     b.disabled = true;
     b.textContent = "TERMINANDO…";
     try {
       await trackApi({ action: "consolidar", revisadas: [...state.reviewed] });
-      alert("Seguimiento terminado.");
-      document.body.classList.remove("tracking-active");
-      document.querySelector('nav button[data-route="reporte"]')?.click();
+      state.partialSaved = true;
+      alert("Seguimiento COMPLETO consolidado en Supabase.\nAbriendo módulo de reporte.");
+      goReporte();
     } catch (e) {
       alert(e.message);
       b.disabled = false;
@@ -1483,7 +1545,7 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-23";
+  st.id = "cem-sg-v3-style-24";
   st.textContent = `
     body.tracking-active { overflow: hidden !important; }
     body.tracking-active .desktop-tracking.grid-03 {
