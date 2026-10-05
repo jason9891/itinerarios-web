@@ -1,3 +1,7 @@
+# VERSIÓN DEFINITIVA CEMENTO
+
+A partir de 2026-10-05 el código bajo `frontend/public/cemento/` es la única referencia de Cemento. Se eliminaron monolitos de prueba (`app.js`, `prueba*.css`, `seguimiento19.css`) y el módulo manual.
+
 # Arquitectura modular — Independencia garantizada
 
 ## Principio

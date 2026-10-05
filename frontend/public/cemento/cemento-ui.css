@@ -26,3 +26,14 @@
 
 /* PRUEBA 17.1 · seguimiento manual separado de administración */
 .manual-panel{max-width:980px}.manual-panel .panel-title{align-items:center}.manual-panel .admin-import-result{min-height:70px;padding-top:6px}
+
+/* —— CEMENTO · layout seguimiento (definitivo) —— */
+.desktop-tracking.grid-03{display:flex;flex-direction:column;height:calc(100vh - var(--shell-header-h,64px));background:#f4f7fb;color:#0f172a}
+.desktop-tracking.grid-03>header{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding:8px 12px;background:#fff;border-bottom:1px solid #cbd5e1}
+.desktop-tracking.grid-03>main{flex:1;min-height:0;display:grid;grid-template-columns:minmax(160px,28fr) 7px minmax(280px,57fr) 7px minmax(120px,15fr);gap:0}
+.desktop-tracking .track-left,.desktop-tracking .track-center,.desktop-tracking .track-right{background:#fff;border:1px solid #cbd5e1;min-width:0;min-height:0;overflow:hidden;display:flex;flex-direction:column}
+.desktop-tracking .error-box{padding:16px;color:#991b1b}
+.module-head{display:flex;justify-content:space-between;align-items:flex-start;gap:16px;margin:0 0 16px}
+.module-head h1{margin:4px 0;font-size:1.6rem}
+.panel{background:#0b2135;border:1px solid #27445e;border-radius:10px;padding:16px;margin-bottom:12px}
+.error-box{background:#450a0a;border:1px solid #f87171;border-radius:10px;padding:16px;color:#fecaca}

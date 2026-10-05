@@ -1092,7 +1092,7 @@ async function bootstrap(container, runtime) {
   const nRev = state.units.filter((u) => isRevisadaEfectiva(u)).length;
 
   container.innerHTML = `
-    <section class="desktop-tracking v2 v3 grid-test grid-03">
+    <section class="desktop-tracking grid-03">
       <header>
         <div>
           <b>CEMENTO · SEGUIMIENTO</b>
@@ -1653,7 +1653,7 @@ function wire(container, runtime) {
 function ensureStyles() {
   document.querySelectorAll("style[id^='cem-sg-v3-style']").forEach((n) => n.remove());
   const st = document.createElement("style");
-  st.id = "cem-sg-v3-style-24";
+  st.id = "cem-sg-style-final";
   st.textContent = `
     body.tracking-active { overflow: hidden !important; }
     body.tracking-active .desktop-tracking.grid-03 {

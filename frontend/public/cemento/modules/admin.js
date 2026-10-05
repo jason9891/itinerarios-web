@@ -41,6 +41,6 @@ async function render(container, runtime) {
       <p>Módulo <b>admin</b> de <b>Cemento</b>. Archivo propio: <code>cemento/modules/admin.js</code>.</p>
       <p class="muted">Modificar este archivo no afecta a Cerro Verde ni a otros módulos de Cemento, salvo que ellos escuchen eventos del bus.</p>
       <p id="mod-sap-note" class="muted">Esperando eventos cemento:sap-updated…</p>
-      <p class="muted">La lógica de negocio completa se migrará aquí desde app.js sin tocar otros itinerarios.</p>
+      <p class="muted">Módulo operativo de Cemento (versión definitiva).</p>
     </section>`;
 }

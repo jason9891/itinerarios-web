@@ -8,7 +8,7 @@ import { API } from "./registry.js";
 async function token() {
   const u = auth.currentUser;
   if (!u) throw new Error("No hay sesión activa");
-  return u.getIdToken();
+  return u.getIdToken(true);
 }
 
 export async function apiGet(path) {
@@ -45,6 +45,16 @@ export async function apiPost(url, body, { signal, binary = false } = {}) {
   return d;
 }
 
+/** SAP Edge Function (filtro negocio CV en servidor). */
+export function sapApi(body, opts) {
+  return apiPost(API.sap, body, opts);
+}
+
+/** Seguimiento / grupo / lista Edge Function. */
+export function trackApi(body, opts) {
+  return apiPost(API.track, body, opts);
+}
+
 export function esc(v) {
   return String(v ?? "").replace(/[&<>"']/g, (c) =>
     ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
@@ -71,4 +81,14 @@ export function fechaPE(v) {
 
 export function moduleHead(title, sub, extra = "") {
   return `<div class="module-head"><div><p class="eyebrow">CERRO VERDE</p><h1>${esc(title)}</h1><p>${esc(sub)}</p></div>${extra}</div>`;
+}
+
+/** ArrayBuffer → base64 (por chunks, para Excel grandes). */
+export function bufferToBase64(buffer) {
+  const u = new Uint8Array(buffer);
+  let s = "";
+  for (let i = 0; i < u.length; i += 32768) {
+    s += String.fromCharCode(...u.subarray(i, i + 32768));
+  }
+  return btoa(s);
 }
