@@ -247,10 +247,18 @@ async function enrichWithMaster(db: any, rows: any[]) {
     const plate = masterKey(payload["Placa Tracto"] || payload.TRACTO);
     if (Object.hasOwn(GESTOR_POR_PLACA, plate)) payload.GESTOR = GESTOR_POR_PLACA[plate] || "";
     const sap = sapByOc.get(String(row.orden_carga)) || {};
+    // Conductor siempre desde SAP si falta o quedó en guión por la máscara antigua
+    const sapConductor = String(sap["Nombre Piloto"] || "").trim();
+    const curConductor = String(payload.CONDUCTOR || "").trim();
+    if (sapConductor && (!has(curConductor) || curConductor === "-")) {
+      payload.CONDUCTOR = sapConductor;
+    }
     const license = masterKey(sap.LicencCond);
     const masterPhone = TELEFONOS_POR_LICENCIA[license];
     if (masterPhone) payload.Celular = masterPhone;
-    else if (!has(payload.Celular) && has(sap["Teléfono"])) payload.Celular = sap["Teléfono"];
+    else if ((!has(payload.Celular) || String(payload.Celular).trim() === "-") && has(sap["Teléfono"])) {
+      payload.Celular = sap["Teléfono"];
+    }
     return { ...row, payload };
   });
 }
@@ -447,44 +455,60 @@ async function readSap(db: any) {
   }
   return rows;
 }
-function rowsWithDriverMask(rows: any[]) {
-  const cloned = rows.map((row) => ({ ...row, payload: { ...(row.payload || {}) } }));
-  const groups = new Map<string, any[]>();
-  for (const row of cloned) {
-    const p = row.payload || {};
-    const conductor = String(p.CONDUCTOR || "").trim();
-    const tracto = String(p.TRACTO || "").trim();
-    if (!has(conductor) || conductor === "-" || !has(tracto)) continue;
-    const key = norm(conductor);
-    groups.set(key, [...(groups.get(key) || []), row]);
-  }
-  for (const items of groups.values()) {
-    const tractos = new Set(items.map((row) => String(row.payload?.TRACTO || "").trim()).filter(Boolean));
-    if (tractos.size <= 1) continue;
-    const active = items.filter((row) => {
-      const etapa = trip(row.payload || {});
-      return etapa === "IDA" || etapa === "PARADA";
+
+/** Repara en Supabase CONDUCTOR="-" o vacío usando Nombre Piloto de SAP histórico. */
+async function repairConductoresInStaging(db: any) {
+  const origins = ["DIARIO", "HISTORICO"];
+  let updated = 0;
+  for (const origin of origins) {
+    const rows: any[] = [];
+    for (let from = 0; ; from += 500) {
+      const { data, error } = await db.from("seguimiento_staging")
+        .select("id,orden_carga,payload")
+        .eq("itinerario", "CEMENTO")
+        .eq("origen", origin)
+        .order("id")
+        .range(from, from + 499);
+      if (error) throw error;
+      rows.push(...(data || []));
+      if ((data || []).length < 500) break;
+    }
+    const need = rows.filter((r) => {
+      const c = String(r.payload?.CONDUCTOR ?? "").trim();
+      return !c || c === "-";
     });
-    const candidates = active.length ? active : items;
-    const keep = candidates.slice().sort((a, b) => {
-      const da = dateMillis(a.payload?.["Fecha Carga Real"]),
-        db = dateMillis(b.payload?.["Fecha Carga Real"]);
-      if (Number.isFinite(da) && Number.isFinite(db) && da !== db) return db - da;
-      const oa = Number(a.orden_carga || 0),
-        ob = Number(b.orden_carga || 0);
-      return ob - oa;
-    })[0];
-    const keepTracto = String(keep.payload?.TRACTO || "").trim();
-    for (const row of items) {
-      const tracto = String(row.payload?.TRACTO || "").trim();
-      if (tracto && tracto !== keepTracto) row.payload.CONDUCTOR = "-";
+    if (!need.length) continue;
+    const orders = [...new Set(need.map((r) => String(r.orden_carga || "").trim()).filter(Boolean))];
+    const sapByOc = new Map<string, any>();
+    for (let i = 0; i < orders.length; i += 100) {
+      const { data, error } = await db.from("sap_registros_staging")
+        .select("orden_carga,payload")
+        .eq("itinerario", "CEMENTO")
+        .in("orden_carga", orders.slice(i, i + 100));
+      if (error) throw error;
+      for (const row of data || []) sapByOc.set(String(row.orden_carga), row.payload || {});
+    }
+    for (const row of need) {
+      const sap = sapByOc.get(String(row.orden_carga)) || {};
+      const name = String(sap["Nombre Piloto"] || "").trim();
+      if (!name) continue;
+      const payload = { ...(row.payload || {}), CONDUCTOR: name };
+      const phone = String(sap["Teléfono"] || "").trim();
+      const cel = String(payload.Celular || "").trim();
+      if (phone && (!cel || cel === "-")) payload.Celular = phone;
+      const { error } = await db.from("seguimiento_staging")
+        .update({ payload })
+        .eq("id", row.id);
+      if (error) throw error;
+      updated++;
     }
   }
-  return cloned;
+  return updated;
 }
 
 async function workbook(rows: any[], report: boolean, archiveOrigin = "SEGUIMIENTO") {
-  const dataRows = report ? rowsWithDriverMask(rows) : rows;
+  // Ya no se enmascara CONDUCTOR por chofer/tracto: cada OC conserva su conductor.
+  const dataRows = rows;
   const wb = new ExcelJS.Workbook(),
     ws = wb.addWorksheet(
       report
@@ -722,6 +746,8 @@ Deno.serve(async (req) => {
         },
       });
     }
+    // Repara conductores en "-" desde SAP (DIARIO + HISTORICO) antes de leer el corte
+    await repairConductoresInStaging(db);
     const [rows, { data: sessionRows, error: de }] =
       await Promise.all([
         readTracking(db, "DIARIO"),
