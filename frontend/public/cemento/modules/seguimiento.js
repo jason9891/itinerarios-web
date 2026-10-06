@@ -12,8 +12,9 @@ import {
   isRunning,
   getStatus,
   nplate,
-  formatPE,,
-  getOrdenPlacas} from "../precarga-engine.js";
+  formatPE,
+  getOrdenPlacas,
+} from "../precarga-engine.js";
 import { readGPS, cacheGPS, gpsKey } from "../gps-cache.js";
 import { queryClocator } from "../../shared/clocator-client.js";
 import { ensureTrackingMap, drawTrackingRoute, toggleInspection, resetMapState } from "../map-draw.js";
