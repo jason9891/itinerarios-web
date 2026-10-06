@@ -338,9 +338,18 @@ async function analyze(container, runtime, resultEl) {
       : `APLICAR ${actionable.length} OCs APROBADAS`;
 
   const unknownBlock = blocked
-    ? `<section class="error-box"><h2>Rutas sin regla</h2>
-        <p>Hay ${unknown.length} descripción(es) de ruta sin decisión SI/NO. Resuélvalas en Admin antes de aplicar.</p>
-        <ul>${unknown.slice(0, 12).map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+    ? `<section class="route-decisions">
+        <h2>Rutas nuevas · decisión requerida</h2>
+        <p>Hay ${unknown.length} descripción(es) de ruta sin regla. Indique si es <b>válida (SI)</b> o <b>no válida (NO)</b>. Se guarda en Supabase al instante.</p>
+        ${unknown.map((ruta, i) => `
+          <article data-ruta-idx="${i}">
+            <b>${esc(ruta)}</b>
+            <div>
+              <button type="button" data-ruta-si="${i}">RUTA VÁLIDA · SI</button>
+              <button type="button" data-ruta-no="${i}" class="danger">NO VÁLIDA · NO</button>
+            </div>
+          </article>`).join("")}
+        <p id="cem-ruta-msg" class="muted" style="margin:10px 0 0"></p>
       </section>`
     : "";
 
@@ -373,6 +382,37 @@ async function analyze(container, runtime, resultEl) {
     reviewBtn.addEventListener("click", onReview);
     cleanup.push(() => reviewBtn.removeEventListener("click", onReview));
   }
+
+  // Decisiones SI/NO para rutas nuevas → guardar_regla_ruta y reanalizar
+  const rutaMsg = resultEl.querySelector("#cem-ruta-msg");
+  resultEl.querySelectorAll("[data-ruta-si], [data-ruta-no]").forEach((btn) => {
+    const onClick = async () => {
+      const isSi = btn.hasAttribute("data-ruta-si");
+      const idx = Number(btn.getAttribute("data-ruta-si") ?? btn.getAttribute("data-ruta-no"));
+      const descripcion = unknown[idx];
+      if (!descripcion) return;
+      const article = btn.closest("article");
+      article?.querySelectorAll("button").forEach((b) => { b.disabled = true; });
+      if (rutaMsg) rutaMsg.textContent = `Guardando regla (${isSi ? "SI" : "NO"})…`;
+      try {
+        await sapApi({
+          action: "guardar_regla_ruta",
+          descripcion,
+          usar: isSi,
+        });
+        if (rutaMsg) {
+          rutaMsg.innerHTML = `<span style="color:#86efac">Guardado: <b>${esc(descripcion)}</b> → ${isSi ? "RUTA VÁLIDA (SI)" : "NO VÁLIDA (NO)"}</span>`;
+        }
+        // Reclasificar con la nueva regla
+        await analyze(container, runtime, resultEl);
+      } catch (e) {
+        article?.querySelectorAll("button").forEach((b) => { b.disabled = false; });
+        if (rutaMsg) rutaMsg.innerHTML = `<span class="error-text">${esc(e.message)}</span>`;
+      }
+    };
+    btn.addEventListener("click", onClick);
+    cleanup.push(() => btn.removeEventListener("click", onClick));
+  });
 
   const applyBtn = resultEl.querySelector("#cem-apply-sap");
   if (applyBtn && !applyDisabled) {
