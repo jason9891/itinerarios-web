@@ -141,8 +141,8 @@ async function copyToClipboard(text) {
 
 function showTimePopup(marker, title, fecha, copied) {
   infoWindow ??= new google.maps.InfoWindow({
-    maxWidth: 280,
-    pixelOffset: new google.maps.Size(0, -8),
+    maxWidth: 220,
+    pixelOffset: new google.maps.Size(0, -6),
   });
   const t = fecha || "Sin hora";
   const code = String(title || "")
@@ -150,36 +150,51 @@ function showTimePopup(marker, title, fecha, copied) {
     .trim()
     .replace(/</g, "&lt;");
   const safeT = String(t).replace(/</g, "&lt;");
-  const copyMsg = copied
-    ? `<div style="margin-top:6px;color:#15803d;font-size:11px;font-weight:800">✓ Copiado</div>`
-    : `<div style="margin-top:6px;color:#64748b;font-size:11px">Clic en la hora para copiar</div>`;
-  // Layout simple y estable (sin mover el botón X de Google)
+  const hint = copied ? "✓ Copiado" : "Clic hora = copiar";
+  const hintColor = copied ? "#15803d" : "#64748b";
+  // Una sola tarjeta compacta: código + hora + hint
   infoWindow.setContent(
-    `<div id="gm-iw-root" style="font:13px/1.3 system-ui,sans-serif;padding:10px 14px 12px 12px;margin:0;min-width:168px;max-width:260px;box-sizing:border-box">
-      <div style="font-size:16px;font-weight:950;color:#0b2f68;letter-spacing:.03em;line-height:1.2;margin:0 18px 8px 0;word-break:break-word">${code}</div>
+    `<div id="gm-iw-root" style="font:12px/1.2 system-ui,sans-serif;padding:6px 8px 8px;margin:0;width:168px;box-sizing:border-box">
+      <div style="font-size:14px;font-weight:950;color:#0b2f68;margin:0 0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${code}</div>
       <button type="button" id="gm-copy-hora" data-hora="${safeT}"
-        style="display:block;width:100%;text-align:left;border:1px solid #c7d2fe;background:#eef2ff;border-radius:8px;padding:8px 10px;cursor:pointer;font-size:14px;font-weight:900;color:#0f172a;line-height:1.25;white-space:normal;word-break:break-word">
+        style="display:block;width:100%;text-align:left;border:1px solid #c7d2fe;background:#eef2ff;border-radius:6px;padding:5px 7px;cursor:pointer;font-size:12px;font-weight:800;color:#0f172a;line-height:1.2">
         ${safeT}
       </button>
-      <div id="gm-copy-msg">${copyMsg}</div>
+      <div id="gm-copy-msg" style="margin-top:3px;font-size:10px;font-weight:700;color:${hintColor}">${hint}</div>
     </div>`,
   );
   infoWindow.open({ map: mapInstance, anchor: marker });
   google.maps.event.addListenerOnce(infoWindow, "domready", () => {
+    try {
+      // Compactar chrome de Google (fila vacía del botón cerrar)
+      document.querySelectorAll(".gm-style-iw-chr").forEach((el) => {
+        el.style.height = "28px";
+        el.style.position = "absolute";
+        el.style.top = "0";
+        el.style.right = "0";
+        el.style.width = "28px";
+        el.style.margin = "0";
+        el.style.padding = "0";
+      });
+      document.querySelectorAll(".gm-style-iw-c").forEach((el) => {
+        el.style.padding = "0";
+        el.style.borderRadius = "8px";
+        el.style.overflow = "visible";
+      });
+      document.querySelectorAll(".gm-style-iw-d").forEach((el) => {
+        el.style.overflow = "hidden";
+        el.style.maxHeight = "none";
+        el.style.padding = "0";
+      });
+      document.querySelectorAll(".gm-ui-hover-effect").forEach((el) => {
+        el.style.width = "28px";
+        el.style.height = "28px";
+        el.style.top = "0";
+        el.style.right = "0";
+      });
+    } catch (_) {}
     const btn = document.getElementById("gm-copy-hora");
     const msg = document.getElementById("gm-copy-msg");
-    try {
-      const iwC = document.querySelector(".gm-style-iw-c");
-      const iwD = document.querySelector(".gm-style-iw-d");
-      if (iwC) {
-        iwC.style.padding = "0";
-        iwC.style.borderRadius = "10px";
-      }
-      if (iwD) {
-        iwD.style.overflow = "hidden";
-        iwD.style.maxHeight = "none";
-      }
-    } catch (_) {}
     if (!btn) return;
     btn.onclick = async (ev) => {
       ev.preventDefault();
@@ -187,9 +202,8 @@ function showTimePopup(marker, title, fecha, copied) {
       const hora = btn.getAttribute("data-hora") || btn.textContent || "";
       const ok = await copyToClipboard(hora);
       if (msg) {
-        msg.innerHTML = ok
-          ? `<div style="margin-top:6px;color:#15803d;font-size:11px;font-weight:800">✓ Copiado</div>`
-          : `<div style="margin-top:6px;color:#b91c1c;font-size:11px">No se pudo copiar</div>`;
+        msg.style.color = ok ? "#15803d" : "#b91c1c";
+        msg.textContent = ok ? "✓ Copiado" : "No se pudo copiar";
       }
     };
   });

@@ -20,13 +20,16 @@ import { auth } from "../shared/auth.js";
 import { cacheGPS, gpsKey } from "./gps-cache.js";
 
 const STORAGE_KEY = "cemento_precarga_v1";
-const TIMEOUT_MS = 120000;
+const TIMEOUT_MS = 45000;
+const CONCURRENCY = 2;
 const DONE_STATES = new Set(["COMPLETO", "SIN MOVIMIENTO", "SIN PUNTOS", "ERROR FINAL"]);
 
 let runtimeRef = null;
 let running = false;
 let stopFlag = false;
 let controller = null;
+/** @type {Set<AbortController>} */
+const activeControllers = new Set();
 let currentPlaca = null;
 /** @type {Array<{placa:string,tracto:string}>} */
 let unitsSnapshot = [];
@@ -221,92 +224,109 @@ export async function startPreload(units, opts = {}) {
     total: unitsSnapshot.length,
   });
 
-  // Token fresco por unidad (evita JWT vencido a mitad de la cola)
-  const process = async (list, second) => {
-    for (const u of list) {
-      if (stopFlag) break;
-      const k = nplate(u.placa);
-      const prev = meta.resultados[k]?.estado;
-      if (DONE_STATES.has(prev) && prev !== "ERROR FINAL") continue;
-      if (second && prev === "ERROR FINAL") continue;
+  // Hasta CONCURRENCY unidades en paralelo (evita atascos de 2 min por una sola placa)
+  const processOne = async (u, second) => {
+    if (stopFlag) return;
+    const k = nplate(u.placa);
+    const prev = meta.resultados[k]?.estado;
+    if (DONE_STATES.has(prev) && prev !== "ERROR FINAL") return;
+    if (second && prev === "ERROR FINAL") return;
 
-      currentPlaca = u.placa;
-      meta.resultados[k] = {
-        estado: second ? "SEGUNDO INTENTO" : "PROCESANDO",
-        puntos: meta.resultados[k]?.puntos,
-        visitas: meta.resultados[k]?.visitas,
-      };
-      saveMeta(meta);
+    currentPlaca = u.placa;
+    meta.resultados[k] = {
+      estado: second ? "SEGUNDO INTENTO" : "PROCESANDO",
+      puntos: meta.resultados[k]?.puntos,
+      visitas: meta.resultados[k]?.visitas,
+    };
+    saveMeta(meta);
+    emit("cemento:precarga-unit", { placa: u.placa, tracto: u.tracto, ...meta.resultados[k] });
+    emit("cemento:precarga-progress", {
+      running: true,
+      done: counts(meta).done,
+      total: unitsSnapshot.length,
+      currentPlaca: u.placa,
+    });
+
+    const ac = new AbortController();
+    activeControllers.add(ac);
+    controller = ac;
+    const timer = setTimeout(() => ac.abort("timeout"), TIMEOUT_MS);
+    try {
+      if (!auth.currentUser) throw new Error("Sesión cerrada");
+      const token = await auth.currentUser.getIdToken(true);
+      const data = await queryClocator({
+        endpoint: API.clocator,
+        token,
+        placa: u.placa,
+        tracto: u.tracto,
+        desde: meta.desde,
+        hasta: meta.hasta,
+        includeMap: false,
+        signal: ac.signal,
+      });
+      clearTimeout(timer);
+      meta.intentos[k] = (meta.intentos[k] || 0) + 1;
+      meta.resultados[k] = classifyResult(data);
+      try {
+        await cacheGPS(
+          { ...data, placa: u.placa, tracto: u.tracto, run_id: meta.id, desde: meta.desde, hasta: meta.hasta },
+          gpsKey(meta.id, u.tracto, u.placa),
+        );
+      } catch (_) {}
       emit("cemento:precarga-unit", { placa: u.placa, tracto: u.tracto, ...meta.resultados[k] });
+    } catch (e) {
+      clearTimeout(timer);
+      meta.intentos[k] = (meta.intentos[k] || 0) + 1;
+      if (stopFlag) {
+        meta.resultados[k] = { estado: "PENDIENTE", mensaje: "Detenido por el operador" };
+        saveMeta(meta);
+        emit("cemento:precarga-unit", { placa: u.placa, tracto: u.tracto, ...meta.resultados[k] });
+        return;
+      }
+      const msg = ac.signal.aborted
+        ? "Tiempo de respuesta agotado"
+        : String(e.message || e);
+      const networky = /networkerror|failed to fetch|load failed|abort/i.test(msg);
+      if (!second && ((meta.intentos[k] || 0) <= 2 || networky)) {
+        meta.resultados[k] = { estado: "REINTENTO", mensaje: msg };
+      } else {
+        meta.resultados[k] = { estado: "ERROR FINAL", mensaje: msg };
+      }
+      emit("cemento:precarga-unit", { placa: u.placa, tracto: u.tracto, ...meta.resultados[k] });
+      if (networky && !stopFlag) {
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    } finally {
+      activeControllers.delete(ac);
+      if (controller === ac) controller = null;
+      if (currentPlaca === u.placa) currentPlaca = null;
+      saveMeta(meta);
       emit("cemento:precarga-progress", {
         running: true,
         done: counts(meta).done,
         total: unitsSnapshot.length,
-        currentPlaca: u.placa,
       });
-
-      controller = new AbortController();
-      const timer = setTimeout(() => controller.abort("timeout"), TIMEOUT_MS);
-      try {
-        if (!auth.currentUser) throw new Error("Sesión cerrada");
-        const token = await auth.currentUser.getIdToken(false);
-        const data = await queryClocator({
-          endpoint: API.clocator,
-          token,
-          placa: u.placa,
-          tracto: u.tracto,
-          desde: meta.desde,
-          hasta: meta.hasta,
-          includeMap: false,
-          signal: controller.signal,
-        });
-        clearTimeout(timer);
-        meta.intentos[k] = (meta.intentos[k] || 0) + 1;
-        meta.resultados[k] = classifyResult(data);
-        try {
-          await cacheGPS(
-            { ...data, placa: u.placa, tracto: u.tracto, run_id: meta.id, desde: meta.desde, hasta: meta.hasta },
-            gpsKey(meta.id, u.tracto, u.placa),
-          );
-        } catch (_) {}
-        emit("cemento:precarga-unit", { placa: u.placa, tracto: u.tracto, ...meta.resultados[k] });
-      } catch (e) {
-        clearTimeout(timer);
-        meta.intentos[k] = (meta.intentos[k] || 0) + 1;
-        if (stopFlag) {
-          meta.resultados[k] = { estado: "PENDIENTE", mensaje: "Detenido por el operador" };
-          saveMeta(meta);
-          emit("cemento:precarga-unit", { placa: u.placa, tracto: u.tracto, ...meta.resultados[k] });
-          break;
-        }
-        const msg = controller?.signal?.aborted
-          ? "Tiempo de respuesta agotado"
-          : String(e.message || e);
-        const networky = /networkerror|failed to fetch|load failed|abort/i.test(msg);
-        // Primer fallo de red → REINTENTO; en segundo pase o muchos intentos → ERROR FINAL
-        if (!second && ((meta.intentos[k] || 0) <= 2 || networky)) {
-          meta.resultados[k] = { estado: "REINTENTO", mensaje: msg };
-        } else {
-          meta.resultados[k] = { estado: "ERROR FINAL", mensaje: msg };
-        }
-        emit("cemento:precarga-unit", { placa: u.placa, tracto: u.tracto, ...meta.resultados[k] });
-        // Pausa breve tras error de red para no tumbar toda la cola
-        if (networky && !stopFlag) {
-          await new Promise((r) => setTimeout(r, 800));
-        }
-      } finally {
-        controller = null;
-        currentPlaca = null;
-        saveMeta(meta);
-        emit("cemento:precarga-progress", {
-          running: true,
-          done: counts(meta).done,
-          total: unitsSnapshot.length,
-        });
-      }
-      // Respiro entre unidades (deja vivo el event loop al cambiar de módulo)
-      if (!stopFlag) await new Promise((r) => setTimeout(r, 120));
     }
+  };
+
+  const process = async (list, second) => {
+    const queue = list.filter((u) => {
+      const prev = meta.resultados[nplate(u.placa)]?.estado;
+      if (DONE_STATES.has(prev) && prev !== "ERROR FINAL") return false;
+      if (second && prev === "ERROR FINAL") return false;
+      return true;
+    });
+    let i = 0;
+    const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length || 1) }, async () => {
+      while (!stopFlag && i < queue.length) {
+        const idx = i++;
+        const u = queue[idx];
+        if (!u) break;
+        await processOne(u, second);
+        if (!stopFlag) await new Promise((r) => setTimeout(r, 60));
+      }
+    });
+    await Promise.all(workers);
   };
 
   try {
@@ -365,6 +385,10 @@ export function stopPreload() {
   try {
     controller?.abort("operator");
   } catch (_) {}
+  for (const ac of activeControllers) {
+    try { ac.abort("operator"); } catch (_) {}
+  }
+  activeControllers.clear();
 }
 
 export { DONE_STATES, STORAGE_KEY };
