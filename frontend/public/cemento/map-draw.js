@@ -141,8 +141,8 @@ async function copyToClipboard(text) {
 
 function showTimePopup(marker, title, fecha, copied) {
   infoWindow ??= new google.maps.InfoWindow({
-    maxWidth: 260,
-    pixelOffset: new google.maps.Size(0, -6),
+    maxWidth: 280,
+    pixelOffset: new google.maps.Size(0, -8),
   });
   const t = fecha || "Sin hora";
   const code = String(title || "")
@@ -151,14 +151,14 @@ function showTimePopup(marker, title, fecha, copied) {
     .replace(/</g, "&lt;");
   const safeT = String(t).replace(/</g, "&lt;");
   const copyMsg = copied
-    ? `<div style="margin-top:4px;color:#15803d;font-size:11px;font-weight:800">✓ Copiado</div>`
-    : `<div style="margin-top:4px;color:#64748b;font-size:10px">Clic en la hora para copiar</div>`;
-  // Código en la franja del botón cerrar (se sube con margen negativo + domready)
+    ? `<div style="margin-top:6px;color:#15803d;font-size:11px;font-weight:800">✓ Copiado</div>`
+    : `<div style="margin-top:6px;color:#64748b;font-size:11px">Clic en la hora para copiar</div>`;
+  // Layout simple y estable (sin mover el botón X de Google)
   infoWindow.setContent(
-    `<div id="gm-iw-root" style="font:13px/1.25 system-ui,sans-serif;padding:0;margin:0;min-width:150px;position:relative">
-      <div id="gm-iw-code" style="font-size:17px;font-weight:950;color:#0b2f68;letter-spacing:.04em;line-height:1;margin:0 28px 6px 0">${code}</div>
+    `<div id="gm-iw-root" style="font:13px/1.3 system-ui,sans-serif;padding:10px 14px 12px 12px;margin:0;min-width:168px;max-width:260px;box-sizing:border-box">
+      <div style="font-size:16px;font-weight:950;color:#0b2f68;letter-spacing:.03em;line-height:1.2;margin:0 18px 8px 0;word-break:break-word">${code}</div>
       <button type="button" id="gm-copy-hora" data-hora="${safeT}"
-        style="display:block;width:100%;text-align:left;border:0;background:#eef2ff;border-radius:6px;padding:7px 9px;cursor:pointer;font-size:14px;font-weight:900;color:#0f172a">
+        style="display:block;width:100%;text-align:left;border:1px solid #c7d2fe;background:#eef2ff;border-radius:8px;padding:8px 10px;cursor:pointer;font-size:14px;font-weight:900;color:#0f172a;line-height:1.25;white-space:normal;word-break:break-word">
         ${safeT}
       </button>
       <div id="gm-copy-msg">${copyMsg}</div>
@@ -168,12 +168,9 @@ function showTimePopup(marker, title, fecha, copied) {
   google.maps.event.addListenerOnce(infoWindow, "domready", () => {
     const btn = document.getElementById("gm-copy-hora");
     const msg = document.getElementById("gm-copy-msg");
-    const codeEl = document.getElementById("gm-iw-code");
     try {
-      // Contenedor blanco del InfoWindow
       const iwC = document.querySelector(".gm-style-iw-c");
       const iwD = document.querySelector(".gm-style-iw-d");
-      const closeBtn = document.querySelector(".gm-ui-hover-effect");
       if (iwC) {
         iwC.style.padding = "0";
         iwC.style.borderRadius = "10px";
@@ -181,35 +178,6 @@ function showTimePopup(marker, title, fecha, copied) {
       if (iwD) {
         iwD.style.overflow = "hidden";
         iwD.style.maxHeight = "none";
-        iwD.style.padding = "0";
-      }
-      // Poner el código en la misma franja que la X
-      if (codeEl && closeBtn && iwC) {
-        const bar = document.createElement("div");
-        bar.style.cssText =
-          "display:flex;align-items:center;justify-content:space-between;gap:8px;" +
-          "padding:8px 6px 4px 12px;min-height:32px;box-sizing:border-box";
-        const label = document.createElement("div");
-        label.textContent = codeEl.textContent || "";
-        label.style.cssText =
-          "font-size:17px;font-weight:950;color:#0b2f68;letter-spacing:.04em;line-height:1;flex:1;min-width:0";
-        bar.appendChild(label);
-        // Mover la X dentro de la barra (misma línea)
-        closeBtn.style.position = "relative";
-        closeBtn.style.top = "0";
-        closeBtn.style.right = "0";
-        closeBtn.style.width = "28px";
-        closeBtn.style.height = "28px";
-        closeBtn.style.flex = "0 0 28px";
-        bar.appendChild(closeBtn);
-        iwC.insertBefore(bar, iwC.firstChild);
-        codeEl.remove();
-        // Contenido (hora) con padding propio
-        const root = document.getElementById("gm-iw-root");
-        if (root) root.style.padding = "0 12px 10px 12px";
-      } else if (codeEl) {
-        // Fallback: subir el código hacia la X
-        codeEl.style.margin = "-2px 28px 6px 0";
       }
     } catch (_) {}
     if (!btn) return;
@@ -220,8 +188,8 @@ function showTimePopup(marker, title, fecha, copied) {
       const ok = await copyToClipboard(hora);
       if (msg) {
         msg.innerHTML = ok
-          ? `<div style="margin-top:4px;color:#15803d;font-size:11px;font-weight:800">✓ Copiado</div>`
-          : `<div style="margin-top:4px;color:#b91c1c;font-size:11px">No se pudo copiar</div>`;
+          ? `<div style="margin-top:6px;color:#15803d;font-size:11px;font-weight:800">✓ Copiado</div>`
+          : `<div style="margin-top:6px;color:#b91c1c;font-size:11px">No se pudo copiar</div>`;
       }
     };
   });

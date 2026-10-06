@@ -9,7 +9,7 @@
  * No tocar cerro-verde/ ni shared/ (salvo que sea infraestructura común).
  * No importar desde módulos de Cerro Verde.
  */
-const V = "sg-orden-precarga";
+const V = "sg-popup-closed-reset";
 
 export const modules = {
   home:        () => import(`./modules/home.js?v=${V}`),

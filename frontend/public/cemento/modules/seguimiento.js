@@ -515,7 +515,10 @@ async function selectFirstActive(container, runtime) {
   container.querySelectorAll(".pg-filter[data-filter]").forEach((b) => {
     b.classList.toggle("active", b.dataset.filter === "activas");
   });
+  // Cerrar panel de OC cerradas antes de pintar la nueva unidad
+  resetClosedSection(container);
   state.selectedKey = key;
+  state._focusedKey = ""; // fuerza reset también dentro de focusUnit
   paintUnitList(container);
   await focusUnit(container, key, runtime);
 }
@@ -608,6 +611,17 @@ function closedOcCardHtml(oc) {
     </button>
     ${body}
   </article>`;
+}
+
+function resetClosedSection(container) {
+  if (!state) return;
+  state.closedOpen = false;
+  state.closedLoading = false;
+  state.closedTracto = "";
+  state.closedAll = [];
+  state.closedShown = 0;
+  state.closedExpanded = new Set();
+  if (container) paintClosedSection(container);
 }
 
 function paintClosedSection(container) {
@@ -1279,9 +1293,16 @@ async function bootstrap(container, runtime) {
 }
 
 async function focusUnit(container, key, runtime) {
-  state.selectedKey = key;
+  const prevFocus = state._focusedKey || "";
+  const nextKey = nplate(key);
+  state.selectedKey = nextKey;
+  // Al cambiar de unidad: OC cerradas vuelve a estado inicial (colapsado, sin datos ajenos)
+  if (prevFocus && prevFocus !== nextKey) {
+    resetClosedSection(container);
+  }
+  state._focusedKey = nextKey;
 
-  const unit = state.units.find((u) => nplate(u.placa) === key);
+  const unit = state.units.find((u) => nplate(u.placa) === nextKey);
   if (!unit) return;
   const unitLabel = shortTracto(unit.tracto || unit.placa);
   const idEl = container.querySelector("#map-unit-id");
