@@ -12,8 +12,8 @@ import {
   isRunning,
   getStatus,
   nplate,
-  formatPE,
-} from "../precarga-engine.js";
+  formatPE,,
+  getOrdenPlacas} from "../precarga-engine.js";
 import { readGPS, cacheGPS, gpsKey } from "../gps-cache.js";
 import { queryClocator } from "../../shared/clocator-client.js";
 import { ensureTrackingMap, drawTrackingRoute, toggleInspection, resetMapState } from "../map-draw.js";
@@ -1036,24 +1036,17 @@ async function loadData(onProgress) {
     }
   }
 
-  // Orden tipo precarga: primero las que YA tienen recorrido (puntos > 0),
-  // luego pendientes de precarga; al final las revisadas / sin movimiento.
-  const score = (u) => {
-    const k = nplate(u.placa);
-    const r = results[k];
-    const st = String(r?.estado || "").toUpperCase();
-    const pts = Number(r?.puntos ?? 0);
-    if (reviewed.has(k)) return 3000; // revisadas al final
-    if (pts > 0) return 0 + Math.max(0, 500 - Math.min(pts, 500)); // con ruta primero
-    if (st === "SIN MOVIMIENTO" || st === "SIN PUNTOS") return 2500;
-    if (st === "COMPLETO" && pts === 0) return 2500;
-    if (st === "PROCESANDO" || st === "PENDIENTE" || !r) return 1000; // aún cargando
-    if (st === "ERROR FINAL" || st === "REINTENTO") return 1500;
-    return 2000;
-  };
+  // Mismo orden que la cola de precarga (meta.orden). Si no hay, orden de lista API.
+  const orden = getOrdenPlacas();
+  const rank = new Map(orden.map((k, i) => [nplate(k), i]));
   units.sort((a, b) => {
-    const d = score(a) - score(b);
-    if (d !== 0) return d;
+    const ia = rank.has(nplate(a.placa)) ? rank.get(nplate(a.placa)) : 1e9;
+    const ib = rank.has(nplate(b.placa)) ? rank.get(nplate(b.placa)) : 1e9;
+    if (ia !== ib) return ia - ib;
+    // fallback estable: posición original en lista de placas
+    const pa = plates.findIndex((p) => nplate(p.placa) === nplate(a.placa));
+    const pb = plates.findIndex((p) => nplate(p.placa) === nplate(b.placa));
+    if (pa !== pb) return pa - pb;
     return String(a.tracto || "").localeCompare(String(b.tracto || ""));
   });
 

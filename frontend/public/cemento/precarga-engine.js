@@ -83,6 +83,15 @@ export function isRunning() {
   return running;
 }
 
+/** Orden de placas de la precarga actual (normalizadas). */
+export function getOrdenPlacas() {
+  const m = loadMeta();
+  if (Array.isArray(m?.orden) && m.orden.length) return m.orden.map(nplate);
+  if (unitsSnapshot.length) return unitsSnapshot.map((u) => nplate(u.placa || u.tracto));
+  return [];
+}
+
+
 export function getCurrentPlaca() {
   return currentPlaca;
 }
@@ -162,6 +171,7 @@ export async function startPreload(units, opts = {}) {
     placa: String(u.placa || u.tracto || "").trim(),
     tracto: String(u.tracto || u.placa || "").trim(),
   }));
+  const ordenPlacas = unitsSnapshot.map((u) => nplate(u.placa || u.tracto));
 
   let meta = loadMeta();
   const corteCambio = meta && meta.desde && meta.desde !== desde;
@@ -175,6 +185,7 @@ export async function startPreload(units, opts = {}) {
       completo: false,
       resultados: wipeResults ? {} : meta?.resultados || {},
       intentos: wipeResults ? {} : meta?.intentos || {},
+      orden: ordenPlacas,
       started_at: Date.now(),
     };
     if (wipeResults) {
@@ -195,7 +206,10 @@ export async function startPreload(units, opts = {}) {
     meta.total = unitsSnapshot.length;
     meta.resultados ||= {};
     meta.intentos ||= {};
+    meta.orden = ordenPlacas;
   }
+  // Orden canónico de la cola de precarga (mismo en Seguimiento)
+  meta.orden = ordenPlacas;
   localStorage.setItem("cemento_rango_desde", meta.desde);
   saveMeta(meta);
 

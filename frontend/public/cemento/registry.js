@@ -9,7 +9,7 @@
  * No tocar cerro-verde/ ni shared/ (salvo que sea infraestructura común).
  * No importar desde módulos de Cerro Verde.
  */
-const V = "sap-ruta-si-no-2";
+const V = "sg-orden-precarga";
 
 export const modules = {
   home:        () => import(`./modules/home.js?v=${V}`),
