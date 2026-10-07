@@ -522,6 +522,7 @@ async function renderShell(container, runtime) {
     `<nav class="cv-tabs" id="cv-paradas-tabs">
       <button type="button" data-tab="sin-registro" class="${activeTab === "sin-registro" ? "active" : ""}">SIN REGISTRO</button>
       <button type="button" data-tab="validacion" class="${activeTab === "validacion" ? "active" : ""}">VALIDACIÓN SI / NO</button>
+      <button type="button" data-tab="enviable" class="${activeTab === "enviable" ? "active" : ""}">ENVIABLE (PREVIEW)</button>
     </nav>
     <div id="cv-paradas-panel"></div>
     <style>
@@ -567,6 +568,15 @@ async function renderShell(container, runtime) {
       .pernocte-decision button.selected{outline:2px solid #38bdf8;outline-offset:2px}
       .pending-warning{background:#7c2d12;color:#ffedd5;padding:10px 12px;border-radius:8px;margin-bottom:12px}
       .pending-ok{background:#14532d;color:#bbf7d0;padding:10px 12px;border-radius:8px;margin-bottom:12px}
+      .cv-env-wrap{overflow:auto;max-height:calc(100vh - 280px);border:1px solid #1e3a5f;border-radius:8px}
+      .cv-env-table{width:100%;border-collapse:collapse;font-size:11px;min-width:1200px}
+      .cv-env-table th{position:sticky;top:0;background:#0b1d30;color:#94a3b8;padding:8px 6px;border-bottom:1px solid #1e3a5f;z-index:1;text-align:left;white-space:nowrap}
+      .cv-env-table td{padding:4px 4px;border-bottom:1px solid #132337;vertical-align:middle}
+      .cv-env-table tr.alerta{background:rgba(127,29,29,.25)}
+      .cv-env-table tr.dirty{outline:1px solid #38bdf8}
+      .cv-env-table input,.cv-env-table select{width:100%;min-width:72px;box-sizing:border-box;border:1px solid #1e3a5f;background:#071525;color:#e2e8f0;border-radius:4px;padding:4px 6px;font-size:11px}
+      .cv-env-table input.narrow{min-width:40px;width:48px}
+      .cv-env-badge{display:inline-block;font-size:9px;font-weight:800;padding:2px 6px;border-radius:999px;background:#7c2d12;color:#ffedd5;margin-left:4px}
       .pernocte-proposal{border-radius:999px;padding:4px 10px;font-size:10px;font-weight:800}
       .pernocte-proposal.pendiente{background:#fef3c7;color:#92400e}
       @media(max-width:960px){.cv-paradas-layout,.pernocte-toolbar{grid-template-columns:1fr}.cv-paradas-form{grid-template-columns:1fr}}
@@ -579,7 +589,8 @@ async function renderShell(container, runtime) {
       b.classList.toggle("active", b.dataset.tab === tab);
     });
     if (tab === "sin-registro") await renderSinRegistro(panel, container);
-    else await renderValidacion(panel, container);
+    else if (tab === "validacion") await renderValidacion(panel, container);
+    else await renderEnviable(panel, container);
   };
 
   container.querySelector("#cv-paradas-tabs")?.addEventListener("click", (ev) => {
@@ -1169,5 +1180,211 @@ async function renderValidacion(panel) {
         btn.disabled = false;
       }
     });
+  });
+}
+
+
+/* ───────── Tab 3: previsualización ENVIABLE editable ───────── */
+
+async function renderEnviable(panel) {
+  panel.innerHTML = `<section class="panel"><p class="muted">Cargando previsualización ENVIABLE…</p></section>`;
+  let data;
+  try {
+    data = await apiPost(API.report, { action: "enviable_preview" });
+  } catch (e) {
+    panel.innerHTML = `<section class="error-box"><h2>No se pudo cargar</h2><p>${esc(e.message)}</p></section>`;
+    return;
+  }
+
+  const rows = data.rows || [];
+  const dirty = new Map(); // id -> patch
+
+  const markDirty = (id, field, value) => {
+    const cur = dirty.get(id) || { id };
+    cur[field] = value;
+    dirty.set(id, cur);
+    const tr = panel.querySelector(`tr[data-id="${id}"]`);
+    if (tr) tr.classList.add("dirty");
+    const n = panel.querySelector("#cv-env-dirty");
+    if (n) n.textContent = `${dirty.size} fila(s) modificada(s)`;
+  };
+
+  const cell = (id, field, value, opts = {}) => {
+    const v = value ?? "";
+    if (opts.select) {
+      const optsHtml = opts.select
+        .map(
+          (o) =>
+            `<option value="${esc(o)}" ${String(v) === String(o) ? "selected" : ""}>${esc(o || "—")}</option>`,
+        )
+        .join("");
+      return `<select data-id="${id}" data-field="${field}">${optsHtml}</select>`;
+    }
+    return `<input data-id="${id}" data-field="${field}" value="${esc(v)}" placeholder="${esc(opts.ph || "")}" class="${opts.narrow ? "narrow" : ""}" />`;
+  };
+
+  panel.innerHTML = `
+    <section class="notice">
+      <b>Previsualización ENVIABLE</b> (maestro desde ${esc(data.desde || "09/09/2026")}).
+      Corrija inconsistencias aquí antes de generar el Excel.
+      Ej.: salida Caracoto sin llegada SMCV → complete la llegada; mismo día → SIN PERNOCTE + SI.
+      <br><span class="muted">${data.total || 0} filas · <b>${data.alertas || 0}</b> con alerta</span>
+    </section>
+    <section class="panel" style="margin-bottom:12px">
+      <div class="panel-title" style="display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between">
+        <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+          <label class="muted" style="display:flex;gap:6px;align-items:center;font-size:12px">
+            <input type="checkbox" id="cv-env-only-alert" /> Solo alertas
+          </label>
+          <span id="cv-env-dirty" class="muted">0 fila(s) modificada(s)</span>
+        </div>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button type="button" id="cv-env-refresh" class="secondary">ACTUALIZAR</button>
+          <button type="button" id="cv-env-save" class="secondary">GUARDAR CORRECCIONES</button>
+          <button type="button" id="cv-env-xlsx" class="primary">DESCARGAR EXCEL</button>
+        </div>
+      </div>
+      <p id="cv-env-msg" class="muted"></p>
+      <div class="cv-env-wrap">
+        <table class="cv-env-table" id="cv-env-table">
+          <thead>
+            <tr>
+              <th>N°</th><th>PLACA</th><th>TRACTO</th><th>CONDUCTOR</th>
+              <th>F. CARGA</th><th>SALIDA CARACOTO</th><th>LLEGADA SMCV</th>
+              <th>DEBIÓ PERNOCTAR</th><th>PERNOCTÓ EN</th><th>SE CUMPLIÓ</th>
+              <th>INICIO</th><th>FIN</th><th></th>
+            </tr>
+          </thead>
+          <tbody>
+            ${rows
+              .map((r) => {
+                const alerts = (r.inconsistencias || []).join(", ");
+                return `<tr data-id="${r.id}" class="${r.alerta ? "alerta" : ""}" data-alerta="${r.alerta ? "1" : "0"}">
+                  <td>${esc(r.numero)}</td>
+                  <td>${cell(r.id, "placa", r.placa, { narrow: true })}</td>
+                  <td>${cell(r.id, "codigo_tracto", r.codigo_tracto)}</td>
+                  <td>${cell(r.id, "conductor", r.conductor)}</td>
+                  <td>${cell(r.id, "fecha_carga", r.fecha_carga)}</td>
+                  <td>${cell(r.id, "salida_caracoto", r.salida_caracoto)}</td>
+                  <td>${cell(r.id, "llegada_smcv", r.llegada_smcv, { ph: "dd/mm/yyyy hh:mm:ss" })}</td>
+                  <td>${cell(r.id, "destino_esperado", r.destino_esperado)}</td>
+                  <td>${cell(r.id, "pernocto_en", r.pernocto_en, {
+                    select: [
+                      "",
+                      "SIN PERNOCTE",
+                      "AREQUIPA",
+                      "RACIEMSA",
+                      "PLANTA YURA",
+                      "YURA",
+                      "CABANILLAS",
+                      "JULIACA / CARACOTO",
+                      "FUERA DE GEOCERCA",
+                    ],
+                  })}</td>
+                  <td>${cell(r.id, "cumplimiento", r.cumplimiento, { select: ["", "SI", "NO"] })}</td>
+                  <td>${cell(r.id, "inicio_pernocte", r.inicio_pernocte)}</td>
+                  <td>${cell(r.id, "fin_pernocte", r.fin_pernocte)}</td>
+                  <td>${r.alerta ? `<span class="cv-env-badge" title="${esc(alerts)}">ALERTA</span>` : ""}</td>
+                </tr>`;
+              })
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    </section>`;
+
+  panel.querySelector("#cv-env-table")?.addEventListener("input", (ev) => {
+    const el = ev.target.closest("[data-id][data-field]");
+    if (!el) return;
+    markDirty(Number(el.dataset.id), el.dataset.field, el.value);
+  });
+  panel.querySelector("#cv-env-table")?.addEventListener("change", (ev) => {
+    const el = ev.target.closest("[data-id][data-field]");
+    if (!el) return;
+    markDirty(Number(el.dataset.id), el.dataset.field, el.value);
+  });
+
+  panel.querySelector("#cv-env-only-alert")?.addEventListener("change", (ev) => {
+    const only = ev.target.checked;
+    panel.querySelectorAll("#cv-env-table tbody tr").forEach((tr) => {
+      tr.style.display = only && tr.dataset.alerta !== "1" ? "none" : "";
+    });
+  });
+
+  panel.querySelector("#cv-env-refresh")?.addEventListener("click", () =>
+    renderEnviable(panel),
+  );
+
+  panel.querySelector("#cv-env-save")?.addEventListener("click", async () => {
+    const msg = panel.querySelector("#cv-env-msg");
+    if (!dirty.size) {
+      if (msg) msg.textContent = "No hay cambios para guardar.";
+      return;
+    }
+    const btn = panel.querySelector("#cv-env-save");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "GUARDANDO…";
+    }
+    try {
+      const out = await apiPost(API.report, {
+        action: "enviable_actualizar_lote",
+        filas: [...dirty.values()],
+      });
+      if (msg) {
+        msg.textContent = `${out.actualizadas || 0} fila(s) guardadas en el maestro ENVIABLE.`;
+        msg.style.color = "#86efac";
+      }
+      dirty.clear();
+      await renderEnviable(panel);
+    } catch (e) {
+      if (msg) {
+        msg.textContent = e.message || String(e);
+        msg.style.color = "#fca5a5";
+      }
+      alert(e.message || e);
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "GUARDAR CORRECCIONES";
+      }
+    }
+  });
+
+  panel.querySelector("#cv-env-xlsx")?.addEventListener("click", async () => {
+    const msg = panel.querySelector("#cv-env-msg");
+    if (dirty.size) {
+      if (
+        !confirm(
+          `Hay ${dirty.size} cambio(s) sin guardar. ¿Descargar el Excel con los datos ya guardados en servidor (sin estos cambios)?\n\nCancele y pulse GUARDAR CORRECCIONES primero si desea incluirlos.`,
+        )
+      )
+        return;
+    }
+    const btn = panel.querySelector("#cv-env-xlsx");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "GENERANDO…";
+    }
+    try {
+      const name = await downloadReport(
+        "pernoctes_enviable",
+        "ENVIABLE_PERNOCTES_CERRO_VERDE_DESDE_09_09_2026.xlsx",
+      );
+      if (msg) {
+        msg.textContent = `Descargado: ${name}`;
+        msg.style.color = "#86efac";
+      }
+    } catch (e) {
+      if (msg) {
+        msg.textContent = e.message || String(e);
+        msg.style.color = "#fca5a5";
+      }
+      alert(e.message || e);
+    } finally {
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "DESCARGAR EXCEL";
+      }
+    }
   });
 }
