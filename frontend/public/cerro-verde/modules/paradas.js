@@ -473,6 +473,10 @@ async function registerPernocte(item, form) {
   )
     throw new Error("El pernocte debe cambiar de fecha");
   if (!geocerca) throw new Error("Indique el lugar / zona de pernocte");
+  const llegadaRaw = String(fd.get("llegada_smcv") || "").trim();
+  const llegada_smcv = llegadaRaw
+    ? fmtPE(llegadaRaw).replace(/^—$/, "") || llegadaRaw
+    : "";
   return apiPost(API.report, {
     action: "pernocte_registrar",
     entrega_sap: item.entrega_sap,
@@ -480,6 +484,7 @@ async function registerPernocte(item, form) {
     codigo_tracto: item.codigo_tracto,
     conductor: item.conductor,
     fecha_carga: item.fecha_carga,
+    llegada_smcv: llegada_smcv || undefined,
     parada: {
       tipo: "PERNOCTE",
       inicio,
@@ -584,14 +589,16 @@ async function renderShell(container, runtime) {
 /* ───────── Tab 1: sin registro ───────── */
 
 function rowHtml(it, selected) {
+  const sinLleg = it.sin_llegada_smcv || !it.llegada_smcv;
   return `<button type="button" class="cv-pernocte-row ${selected ? "selected" : ""}" data-key="${esc(itemKey(it))}">
     <div class="cv-pernocte-row-top"><b>${esc(it.codigo_tracto || "—")}</b><span>${esc(it.placa || "—")}</span></div>
     <div class="cv-pernocte-row-mid">
       <small>SALIDA CARACOTO</small><span>${esc(fmtPE(it.salida_caracoto))}</span>
-      <small>LLEGADA SMCV</small><span>${esc(fmtPE(it.llegada_smcv))}</span>
+      <small>LLEGADA SMCV</small><span>${sinLleg ? "SIN REGISTRAR (editable)" : esc(fmtPE(it.llegada_smcv))}</span>
     </div>
     <div class="cv-pernocte-row-bot">
       <span class="badge warn">SIN PERNOCTE REGISTRADO</span>
+      ${sinLleg ? `<span class="badge warn" style="background:#334155">EXIGIBLE DESDE ${esc(it.exigible_desde || "06:30 día +1")}</span>` : ""}
       <span class="muted">${esc(it.ventana_gps_desde)} → ${esc(it.ventana_gps_hasta)}</span>
     </div>
   </button>`;
@@ -638,8 +645,10 @@ async function renderSinRegistro(panel, root) {
 
   panel.innerHTML = `
     <section class="notice">
-      <b>Sin registro:</b> Caracoto→SMCV en <b>fechas distintas</b> y sin evento PERNOCTE.
-      Ventana GPS: ${esc(data.ventana || "20:00 → 08:00")}. Tras registrar, pase a la pestaña <b>Validación</b> para SI/NO.
+      <b>Sin registro:</b> pernocte <b>exigible desde las 06:30 del día siguiente</b> a la salida de Caracoto (hora Lima),
+      con o sin llegada a SMCV. Antes de ese umbral el viaje sigue en tránsito y no se lista.
+      <b>Llegada SMCV es editable</b> (evita conflicto si cerraron el despacho sin registrarla).
+      Ventana GPS: ${esc(data.ventana || "20:00 → 08:00")}. Tras registrar → pestaña <b>Validación</b> SI/NO.
     </section>
     <section class="cv-paradas-layout">
       <aside class="panel">
@@ -675,6 +684,9 @@ async function renderSinRegistro(panel, root) {
             <label><span>FIN</span><input name="fin" type="text" placeholder="dd/mm/yyyy hh:mm:ss" required></label>
             <label class="full"><span>LUGAR / ZONA DE PERNOCTE</span>
               <input name="geocerca" list="cv-zonas-pernocte" required placeholder="AREQUIPA, PLANTA YURA…">
+            </label>
+            <label class="full"><span>LLEGADA A SMCV (editable)</span>
+              <input name="llegada_smcv" type="text" placeholder="dd/mm/yyyy hh:mm:ss — opcional si aún en tránsito">
             </label>
             <label class="full"><span>OBSERVACIÓN</span><input name="descripcion" type="text"></label>
             <input type="hidden" name="lat"><input type="hidden" name="lng">
@@ -728,6 +740,15 @@ async function renderSinRegistro(panel, root) {
       btn.classList.toggle("selected", btn.dataset.key === selectedKey);
     });
     form?.reset();
+    if (form) {
+      const lleg = form.querySelector('[name="llegada_smcv"]');
+      if (lleg) {
+        lleg.value =
+          it.llegada_smcv && !it.sin_llegada_smcv
+            ? fmtPE(it.llegada_smcv).replace(/^—$/, "")
+            : "";
+      }
+    }
     if (formMsg) formMsg.textContent = "";
     if (candHost) candHost.innerHTML = `<p class="muted">Consultando GPS…</p>`;
     try {
@@ -870,7 +891,10 @@ function validationCard(x) {
       </header>
       <div class="pernocte-data">
         <div><b>SALIDA CARACOTO</b><span>${esc(fmtPE(x.salida_caracoto))}</span></div>
-        <div><b>LLEGADA SMCV</b><span>${esc(fmtPE(x.llegada_smcv))}</span></div>
+        <div class="editable-zone">
+          <b>LLEGADA SMCV (editable)</b>
+          <input type="text" data-llegada value="${esc(x.llegada_smcv ? fmtPE(x.llegada_smcv).replace(/^—$/, "") : "")}" placeholder="dd/mm/yyyy hh:mm:ss" spellcheck="false">
+        </div>
         <div><b>LÍMITE PERMITIDO</b><span>${esc(x.limite_permitido || "—")}</span></div>
         <div class="editable-zone">
           <b>PERNOCTÓ EN</b>
@@ -1032,6 +1056,24 @@ async function renderValidacion(panel) {
       btn.textContent = "GUARDANDO…";
     }
     try {
+      // Persistir llegadas SMCV editadas antes del lote
+      for (const card of panel.querySelectorAll(".batch-validation")) {
+        const key = card.dataset.key;
+        const draft = validationDrafts.get(key);
+        const inp = card.querySelector("[data-llegada]");
+        const val = (inp?.value || "").trim();
+        if (draft && val) {
+          try {
+            await apiPost(API.report, {
+              action: "actualizar_llegada_smcv",
+              entrega_sap: draft.entrega_sap,
+              llegada_smcv: fmtPE(val).replace(/^—$/, "") || val,
+            });
+          } catch (e) {
+            console.warn("llegada_smcv", draft.entrega_sap, e);
+          }
+        }
+      }
       const out = await apiPost(API.report, {
         action: "validar_pernoctes_lote",
         validaciones: rows,

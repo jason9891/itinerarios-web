@@ -32,6 +32,17 @@ function border(cell:any){cell.border={top:{style:"thin",color:{argb:`FF${COLORS
 function setStateStyle(c:any){const s=norm(c.value);if(s.includes("VACIO")){c.fill={type:"pattern",pattern:"solid",fgColor:{argb:`FF${COLORS.green}`}};c.font={bold:true,color:{argb:`FF${COLORS.greenText}`}}}else if(s.includes("DESCARGUIO")){c.fill={type:"pattern",pattern:"solid",fgColor:{argb:`FF${COLORS.yellow}`}};c.font={bold:true,color:{argb:"FF9C6500"}}}else if(s.includes("CARGADO")){c.fill={type:"pattern",pattern:"solid",fgColor:{argb:`FF${COLORS.lightBlue}`}};c.font={bold:true,color:{argb:`FF${COLORS.blue}`}}}}
 function writeBlock(ws:any,start:number,title:string,headers:string[],rows:any[],titleColor:string){ws.mergeCells(start,1,start,headers.length);const t=ws.getCell(start,1);t.value=title;t.fill={type:"pattern",pattern:"solid",fgColor:{argb:`FF${titleColor}`}};t.font={bold:true,color:{argb:`FF${COLORS.white}`},size:14};t.alignment={horizontal:"left",vertical:"middle"};ws.getRow(start).height=24;const hr=start+1;headers.forEach((h,i)=>{const c=ws.getCell(hr,i+1);c.value=h;c.fill={type:"pattern",pattern:"solid",fgColor:{argb:`FF${COLORS.dark}`}};c.font={bold:true,color:{argb:`FF${COLORS.white}`},size:10};c.alignment={horizontal:"center",vertical:"middle",wrapText:true};border(c)});ws.getRow(hr).height=50;let r=hr+1;for(const [idx,x] of rows.entries()){const vals=[x.conductor,x.tracto,x.carreta,x.h1,x.h2,x.h3,x.h4,x.estado,x.monitoreo,x.observacion];vals.forEach((v,i)=>{const c=ws.getCell(r,i+1);c.value=i>=3&&i<=6?excelDate(v):v;c.fill={type:"pattern",pattern:"solid",fgColor:{argb:idx%2?"FFF7FAFC":"FFFFFFFF"}};c.alignment={horizontal:[0,8,9].includes(i)?"left":"center",vertical:"middle",wrapText:true};c.font={color:{argb:`FF${COLORS.black}`},size:10};border(c);if(c.value instanceof Date)c.numFmt="d/m/yyyy hh:mm";if(i===7)setStateStyle(c)});ws.getRow(r).height=30;r++}return r}
 function localDatePE(){const p=new Intl.DateTimeFormat("en-US",{timeZone:"America/Lima",year:"numeric",month:"2-digit",day:"2-digit"}).formatToParts(new Date()),g=(t:string)=>p.find(x=>x.type===t)?.value||"";return`${g("year")}-${g("month")}-${g("day")}`}
+/** Hora actual Lima como Date.UTC(y,m,d,h,mi,s) — comparable con parseDate (strings operativos PE). */
+function peNowUtcMs(){
+  const p=new Intl.DateTimeFormat("en-US",{timeZone:"America/Lima",year:"numeric",month:"2-digit",day:"2-digit",hour:"2-digit",minute:"2-digit",second:"2-digit",hour12:false}).formatToParts(new Date());
+  const g=(t:string)=>Number(p.find(x=>x.type===t)?.value||0);
+  return Date.UTC(g("year"),g("month")-1,g("day"),g("hour"),g("minute"),g("second"));
+}
+/** Umbral de exigibilidad de pernocte: 06:30 del día calendario siguiente a SALIDA DE CARACOTO. */
+function pernocteExigibleDesde(salida:any){
+  const d=parseDate(salida);if(!d)return null;
+  return Date.UTC(d.getUTCFullYear(),d.getUTCMonth(),d.getUTCDate()+1,6,30,0);
+}
 function equipmentLookup(rows:any[]){const byCode=new Map<string,any>(),byPlate=new Map<string,any>();for(const x of rows){const code=text(x.codigo_sap),plate=norm(x.placa).replace(/[^A-Z0-9]/g,"");if(code)byCode.set(norm(code),{codigo_sap:code,placa:plate});if(plate)byPlate.set(plate,{codigo_sap:code,placa:plate})}return(value:any)=>byCode.get(norm(value))||byPlate.get(norm(value).replace(/[^A-Z0-9]/g,""))||null}
 async function convoyMasters(db:any){const[equipment,drivers]=await Promise.all([allPages((from:number,to:number)=>db.from("cerro_verde_maestro_equipos").select("placa,codigo_sap").range(from,to)),allPages((from:number,to:number)=>db.from("cerro_verde_maestro_conductores").select("licencia,conductor").range(from,to))]);const tractos=equipment.filter((x:any)=>/^20-R-/i.test(text(x.codigo_sap))).map((x:any)=>({codigo_sap:text(x.codigo_sap),placa:norm(x.placa).replace(/[^A-Z0-9]/g,"")})).filter((x:any)=>x.codigo_sap&&x.placa).sort((a:any,b:any)=>norm(a.codigo_sap).localeCompare(norm(b.codigo_sap),undefined,{numeric:true})),carretas=equipment.filter((x:any)=>/^20-(T|P)-/i.test(text(x.codigo_sap))).map((x:any)=>({codigo_sap:text(x.codigo_sap),placa:norm(x.placa).replace(/[^A-Z0-9]/g,"")})).filter((x:any)=>x.codigo_sap&&x.placa).sort((a:any,b:any)=>norm(a.codigo_sap).localeCompare(norm(b.codigo_sap),undefined,{numeric:true})),conductores=drivers.map((x:any)=>({licencia:text(x.licencia),conductor:text(x.conductor)})).filter((x:any)=>x.licencia&&x.conductor).sort((a:any,b:any)=>norm(a.conductor).localeCompare(norm(b.conductor)));return{equipment,drivers,tractos,carretas,conductores}}
 async function convoyRows(db:any){const fecha=localDatePE(),{data,error}=await db.from("cerro_verde_convoy_diario").select("posicion,conductor,licencia,codigo_tracto,placa_tracto,codigo_carreta,placa_carreta,hito_1,hito_2,hito_3,hito_4,estado,monitoreo,observacion,fecha_operativa,actualizado_en").order("posicion");if(error)throw error;const today=(data||[]).filter((x:any)=>text(x.fecha_operativa)===fecha),by=new Map(today.map((x:any)=>[Number(x.posicion),x]));return Array.from({length:10},(_,i)=>by.get(i+1)||{posicion:i+1})}
@@ -546,47 +557,68 @@ Deno.serve(async(req)=>{
       );
     }
     if(action==="pernoctes_sin_registro"){
-      // Viajes con cambio de día Caracoto→SMCV y sin pernocte registrado (evento).
-      // No incluye mismo día. Validación pendiente se trata en otro módulo.
+      // Regla limpia (post-punto-base):
+      // - Con SALIDA DE CARACOTO, el pernocte es EXIGIBLE desde las 06:30 del día siguiente (Lima),
+      //   aunque aún no exista INGRESO A SMCV (sigue en tránsito pero ya debió pernoctar).
+      // - Antes de ese umbral: no listar (aún en tránsito; no se afirma "sin pernocte").
+      // - Llegada SMCV es opcional en listado; se puede editar al registrar.
       const all=await pernocteDataset(db);
+      const nowMs=peNowUtcMs();
       const faltantes:any[]=[];
       for(const r of all){
+        const salidaDt=parseDate(r.salida);
+        if(!salidaDt)continue;
         const salidaDate=pernocteDateKey(r.salida);
-        const llegadaDate=pernocteDateKey(r.llegada);
-        if(!salidaDate||!llegadaDate)continue;
-        if(salidaDate===llegadaDate)continue; // mismo día: aún no evaluamos
+        if(!salidaDate)continue;
+        const umbral=pernocteExigibleDesde(r.salida);
+        if(umbral==null||nowMs<umbral)continue; // aún no evaluable
         const tienePernocte=!!(r.event_id&&parseDate(r.inicio)&&parseDate(r.fin));
         if(tienePernocte)continue;
-        // Ventana fija de análisis GPS: 20:00 día salida → 08:00 día llegada (hora Lima)
+        const llegadaDate=pernocteDateKey(r.llegada);
+        // Ventana GPS: 20:00 día salida → 08:00 día llegada (si hay) o 08:00 día siguiente a salida
         const [ys,ms,ds]=salidaDate.split("-");
-        const [yl,ml,dl]=llegadaDate.split("-");
         const z=(n:string)=>String(n).padStart(2,"0");
         const desdeGps=`${z(ds)}/${z(ms)}/${ys} 20:00:00`;
-        const hastaGps=`${z(dl)}/${z(ml)}/${yl} 08:00:00`;
+        let hastaGps:string;
+        if(llegadaDate){
+          const [yl,ml,dl]=llegadaDate.split("-");
+          hastaGps=`${z(dl)}/${z(ml)}/${yl} 08:00:00`;
+        }else{
+          // día siguiente a salida 08:00
+          const next=new Date(Date.UTC(+ys,+ms-1,+ds+1,8,0,0));
+          hastaGps=`${z(String(next.getUTCDate()))}/${z(String(next.getUTCMonth()+1))}/${next.getUTCFullYear()} 08:00:00`;
+        }
+        const umbralFmt=(()=>{
+          const u=new Date(umbral!);
+          const zz=(n:number)=>String(n).padStart(2,"0");
+          return `${zz(u.getUTCDate())}/${zz(u.getUTCMonth()+1)}/${u.getUTCFullYear()} 06:30:00`;
+        })();
         faltantes.push({
           entrega_sap:r.ent,
           placa:r.placa,
           codigo_tracto:r.tracto,
           conductor:r.conductor,
-          // Fechas siempre dd/mm/yyyy hh:mm:ss (UTC=hora Lima operativa)
           fecha_carga:fmtLocal(r.fecha)||text(r.fecha),
           salida_caracoto:fmtLocal(r.salida)||text(r.salida),
-          llegada_smcv:fmtLocal(r.llegada)||text(r.llegada),
+          llegada_smcv:r.llegada?(fmtLocal(r.llegada)||text(r.llegada)):"",
+          llegada_smcv_editable:true,
+          sin_llegada_smcv:!r.llegada,
           salida_fecha:salidaDate,
-          llegada_fecha:llegadaDate,
+          llegada_fecha:llegadaDate||"",
+          exigible_desde:umbralFmt,
           tiene_pernocte_registrado:false,
           tiene_pernocte_validado:!!r.validado_en,
           ventana_gps_desde:desdeGps,
           ventana_gps_hasta:hastaGps,
-          motivo:"CAMBIO_DE_DIA_SIN_PERNOCTE_REGISTRADO",
+          motivo:r.llegada?"CAMBIO_DE_DIA_SIN_PERNOCTE_REGISTRADO":"EXIGIBLE_SIN_LLEGADA_SMCV",
         });
       }
       faltantes.sort((a,b)=>(parseDate(b.salida_caracoto)?.getTime()||0)-(parseDate(a.salida_caracoto)?.getTime()||0));
       return responseJson(req,{
         ok:true,
         total:faltantes.length,
-        regla:"salida_caracoto y llegada_smcv en fechas distintas + sin evento PERNOCTE registrado",
-        ventana:"20:00 día salida → 08:00 día llegada (America/Lima)",
+        regla:"Exigible desde 06:30 del día siguiente a SALIDA DE CARACOTO (Lima), con o sin INGRESO A SMCV",
+        ventana:"20:00 día salida → 08:00 día llegada (o día siguiente si aún no hay llegada)",
         items:faltantes,
       });
     }
@@ -613,6 +645,18 @@ Deno.serve(async(req)=>{
         if(data){row=data;break;}
       }
       if(!row)throw Error(`No se encontró la entrega ${entrega} en DIARIO/HISTÓRICO`);
+      // Llegada SMCV editable: evita conflicto al cerrar sin haber registrado ingreso
+      const llegadaIn=text(b.llegada_smcv);
+      if(llegadaIn){
+        const llegadaFmt=fmtLocal(llegadaIn)||llegadaIn;
+        const payload0={...(row.payload||{})};
+        payload0["INGRESO A SMCV"]=llegadaFmt;
+        const{error:ue}=await db.from("seguimiento_staging")
+          .update({payload:payload0})
+          .eq("id",row.id);
+        if(ue)throw ue;
+        row.payload=payload0;
+      }
       const isoLocal=(v:any)=>{
         // Canónico interno: yyyy-mm-dd hh:mm:ss (acepta dd/mm y yyyy-mm)
         const d=parseDate(v);
@@ -653,7 +697,30 @@ Deno.serve(async(req)=>{
         evento_origen_id:eid,tipo:"PERNOCTE",entrega_sap:entrega,payload,actualizado_en:new Date().toISOString()
       });
       if(ie)throw ie;
-      return responseJson(req,{ok:true,id:eid,payload,origen_despacho:row.origen});
+      return responseJson(req,{ok:true,id:eid,payload,origen_despacho:row.origen,llegada_smcv_actualizada:!!text(b.llegada_smcv)});
+    }
+    if(action==="actualizar_llegada_smcv"){
+      const entrega=text(b.entrega_sap);
+      const llegadaIn=text(b.llegada_smcv);
+      if(!entrega)throw Error("Falta entrega SAP");
+      if(!llegadaIn)throw Error("Indique la llegada a SMCV");
+      const llegadaFmt=fmtLocal(llegadaIn)||llegadaIn;
+      if(!parseDate(llegadaFmt))throw Error("Fecha de llegada a SMCV inválida");
+      let row:any=null;
+      for(const origen of ["DIARIO","HISTORICO"]){
+        const{data,error}=await db.from("seguimiento_staging")
+          .select("id,orden_carga,payload,origen")
+          .eq("itinerario",IT).eq("origen",origen).eq("orden_carga",entrega).maybeSingle();
+        if(error)throw error;
+        if(data){row=data;break;}
+      }
+      if(!row)throw Error(`No se encontró la entrega ${entrega}`);
+      const payload0={...(row.payload||{})};
+      const prev=text(payload0["INGRESO A SMCV"]);
+      payload0["INGRESO A SMCV"]=llegadaFmt;
+      const{error:ue}=await db.from("seguimiento_staging").update({payload:payload0}).eq("id",row.id);
+      if(ue)throw ue;
+      return responseJson(req,{ok:true,entrega_sap:entrega,origen:row.origen,llegada_smcv:llegadaFmt,anterior:prev||null});
     }
 
     if(action==="convoy_datos"){
