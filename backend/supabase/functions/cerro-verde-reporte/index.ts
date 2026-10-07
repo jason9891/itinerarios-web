@@ -269,15 +269,7 @@ async function syncPernocteMaster(db:any){
         continue;
       }
 
-      // Si el viaje continúa abierto y ya pasó otra noche, el pernocte anterior
-      // no basta: se exige el descanso más reciente antes de volver a congelar.
-      if(faltaNocheActual){
-        pendientes.push({...r,pending:true,tipo_pendiente:"FALTA_PERNOCTE",proposal:"FALTA PERNOCTE",cum:"FALTA PERNOCTE"});
-        continue;
-      }
-
-      // Si apareció un pernocte más reciente, debe estar resuelto antes de
-      // reemplazar el provisional anterior.
+      // Validación manual pendiente (tiene evento, aún sin SI/NO).
       if(tienePernocte&&(r.pending||!["SI","NO"].includes(decision))){
         pendientes.push({...r,pending:true,tipo_pendiente:"VALIDACION_MANUAL"});
         continue;
@@ -287,15 +279,35 @@ async function syncPernocteMaster(db:any){
       let changed=false;
       const eventId=Number(r.event_id)||null;
 
-      if(tienePernocte&&eventId!==Number(existing.evento_origen_id||0)){
-        patch.destino_esperado=r.expected||"";
-        patch.pernocto_en=r.actual||"";
-        patch.cumplimiento=decision;
-        patch.inicio_pernocte=pernocteDbTs(r.inicio);
-        patch.fin_pernocte=pernocteDbTs(r.fin);
-        patch.evento_origen_id=eventId;
-        patch.fuente="OPERATIVO_DIARIO";
-        changed=true;
+      // Con SI/NO (o auto), congelar maestro aunque el evento ya estuviera asociado.
+      // Antes solo actualizaba si cambiaba evento_origen_id → REABIERTO quedaba colgado.
+      if(tienePernocte&&["SI","NO"].includes(decision)){
+        if(
+          eventId!==Number(existing.evento_origen_id||0)
+          || norm(existing.cumplimiento)!==decision
+          || text(existing.fuente)==="OPERATIVO_REABIERTO"
+          || text(existing.fuente)==="OPERATIVO_SIN_REPORTE_GPS"
+          || !existing.inicio_pernocte
+        ){
+          patch.destino_esperado=r.expected||"";
+          patch.pernocto_en=r.actual||"";
+          patch.cumplimiento=decision;
+          patch.inicio_pernocte=pernocteDbTs(r.inicio);
+          patch.fin_pernocte=pernocteDbTs(r.fin);
+          patch.evento_origen_id=eventId;
+          patch.fuente="OPERATIVO_DIARIO";
+          changed=true;
+        }
+      }
+
+      // Otra noche aún no cubierta: no bloquea la validación ya hecha; va a "sin registro".
+      if(faltaNocheActual&&!["SI","NO"].includes(decision)){
+        pendientes.push({...r,pending:true,tipo_pendiente:"FALTA_PERNOCTE",proposal:"FALTA PERNOCTE",cum:"FALTA PERNOCTE"});
+        continue;
+      }
+      if(faltaNocheActual&&["SI","NO"].includes(decision)){
+        // Ya validó un pernocte; si falta otra noche, el maestro queda con la validación
+        // y el faltante se gestiona por pernoctes_sin_registro (no en cola SI/NO).
       }
 
       // La llegada completa el ciclo, pero no invalida el pernocte ya validado.
@@ -421,26 +433,38 @@ Deno.serve(async(req)=>{
           "revision"
         );
 
+      // Cola SI/NO: solo VALIDACION_MANUAL (con evento). FALTA_PERNOCTE va a "Sin registro".
       const pending=[
         ...state.pendientes
-      ].sort(
-        (a:any,b:any)=>
-          (
-            parseDate(b.inicio)?.getTime()
-            ||
-            parseDate(b.salida)?.getTime()
-            ||
-            0
-          )
-          -
-          (
-            parseDate(a.inicio)?.getTime()
-            ||
-            parseDate(a.salida)?.getTime()
-            ||
-            0
-          )
-      );
+      ]
+        .filter(
+          (r:any)=>
+            text(r.tipo_pendiente)!=="FALTA_PERNOCTE"
+            &&
+            !!(r.event_id||r.evento_origen_id)
+            &&
+            (r.pending!==false)
+            &&
+            !["SI","NO"].includes(norm(r.cum))
+        )
+        .sort(
+          (a:any,b:any)=>
+            (
+              parseDate(b.inicio)?.getTime()
+              ||
+              parseDate(b.salida)?.getTime()
+              ||
+              0
+            )
+            -
+            (
+              parseDate(a.inicio)?.getTime()
+              ||
+              parseDate(a.salida)?.getTime()
+              ||
+              0
+            )
+        );
 
       const sinGps=[
         ...state.master
@@ -1158,6 +1182,33 @@ Deno.serve(async(req)=>{
             .insert(payloads);
 
         if(ie)throw ie;
+
+        // Actualizar maestro de inmediato (no depender solo de sync).
+        for(const pl of payloads){
+          const ent=text(pl.entrega_sap);
+          if(!ent)continue;
+          const{data:masters,error:me}=await db
+            .from(PERNOCTE_MASTER_TABLE)
+            .select("id")
+            .eq("entrega_sap",ent)
+            .limit(5);
+          if(me)throw me;
+          const snap=pl.snapshot||{};
+          const patch={
+            cumplimiento:text(pl.cumple_final),
+            pernocto_en:text(pl.zona_detectada)||"",
+            destino_esperado:text(pl.limite_permitido)||"",
+            evento_origen_id:Number(pl.evento_origen_id)||null,
+            inicio_pernocte:pernocteDbTs(snap.inicio),
+            fin_pernocte:pernocteDbTs(snap.fin),
+            fuente:"OPERATIVO_DIARIO",
+            actualizado_en:new Date().toISOString(),
+          };
+          for(const m of masters||[]){
+            const{error:ue}=await db.from(PERNOCTE_MASTER_TABLE).update(patch).eq("id",m.id);
+            if(ue)throw ue;
+          }
+        }
       }
 
       if(masterInserts.length){

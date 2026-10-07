@@ -838,7 +838,7 @@ async function renderSinRegistro(panel, root) {
         clearAllMap();
         if (statusEl) statusEl.textContent = "Sin pendientes · mapa listo";
         if (candHost)
-          candHost.innerHTML = `<p class="muted">No quedan sin registro. Pase a Validación SI/NO.</p>`;
+          candHost.innerHTML = `<p class="muted">No quedan sin registro. Pase a la pestaña <b>Validación SI/NO</b> y pulse ACTUALIZAR / reabra la pestaña para ver los nuevos pendientes.</p>`;
       }
     } catch (e) {
       if (formMsg) {
@@ -960,9 +960,9 @@ async function renderValidacion(panel) {
 
   panel.innerHTML = `
     <section class="notice">
-      <b>Validación manual:</b> seleccione SI, NO o SIN REPORTE GPS.
-      Incluye pernoctes registrados (con o sin cambio de día) que el motor dejó pendientes.
-      Sin pendientes, puede descargar el <b>ENVIABLE</b> de pernoctes.
+      <b>Validación SI/NO:</b> solo pernoctes <b>ya registrados</b> que faltan de decisión.
+      Los sin evento van a la pestaña <b>Sin registro</b>. Al guardar, salen de esta cola y baja el contador.
+      Sin pendientes → <b>DESCARGAR ENVIABLE</b>.
     </section>
     <section class="pernocte-toolbar">
       <article class="panel"><small>VALIDACIÓN PENDIENTE</small><h1>${pending.length}</h1><p>Requieren revisión manual.</p></article>
@@ -988,7 +988,10 @@ async function renderValidacion(panel) {
           <h2>PERNOCTES POR VALIDAR</h2>
           <p class="muted">Seleccione SI/NO en cada caso y guarde una sola vez.</p>
         </div>
-        <button type="button" id="cv-validar-guardar" class="primary" ${pending.length ? "" : "disabled"}>GUARDAR VALIDACIONES</button>
+        <div style="display:flex;gap:8px">
+          <button type="button" id="cv-validar-refresh" class="secondary">ACTUALIZAR</button>
+          <button type="button" id="cv-validar-guardar" class="primary" ${pending.length ? "" : "disabled"}>GUARDAR VALIDACIONES</button>
+        </div>
       </div>
       <div class="pernocte-pending-list">
         ${pending.length ? pending.map(validationCard).join("") : `<div class="muted">No hay pernoctes pendientes de validación.</div>`}
@@ -1028,6 +1031,8 @@ async function renderValidacion(panel) {
       });
     });
   });
+
+  panel.querySelector("#cv-validar-refresh")?.addEventListener("click", () => renderValidacion(panel));
 
   panel.querySelector("#cv-validar-guardar")?.addEventListener("click", async () => {
     const rows = [...validationDrafts.values()]
