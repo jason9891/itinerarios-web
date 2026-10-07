@@ -19,7 +19,7 @@ const JWKS = createRemoteJWKSet(
 );
 const TYPES = ["geocercas", "rutas_madre", "geocerca_tramo"] as const;
 type MasterType = (typeof TYPES)[number];
-const ITINERARIES = ["CEMENTO", "CERRO VERDE"];
+const ITINERARIES = ["CEMENTO", "CERRO VERDE", "TURNO AMANECIDA"];
 
 function reply(req: Request, body: unknown, status = 200) {
   const origin = req.headers.get("origin") || "";

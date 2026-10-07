@@ -1,0 +1,707 @@
+{
+  "objetos_geocercas_tn": [
+    {
+      "id": "ZGTN01",
+      "name": "Filtro_Macro_Sur_TN",
+      "kind": "geocerca",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -75.262608,
+              -14.6595094
+            ],
+            [
+              -73.4637702,
+              -12.6555505
+            ],
+            [
+              -71.5467158,
+              -13.2358952
+            ],
+            [
+              -69.3647563,
+              -14.8092475
+            ],
+            [
+              -66.5796457,
+              -21.4828531
+            ],
+            [
+              -70.6047799,
+              -22.6220015
+            ],
+            [
+              -70.6495157,
+              -18.4781864
+            ],
+            [
+              -71.7745123,
+              -17.3914765
+            ],
+            [
+              -75.4496748,
+              -15.2733014
+            ],
+            [
+              -75.262608,
+              -14.6595094
+            ]
+          ]
+        ]
+      },
+      "regla_permanencia_min": 0,
+      "meta": {
+        "origen": "REPORTE_NOCHE",
+        "nombre_original": "Filtro_Macro_Sur",
+        "es_filtro_macro": true,
+        "itinerario": "TURNO AMANECIDA"
+      }
+    },
+    {
+      "id": "ZGTN02",
+      "name": "Planta_Yura_TN",
+      "kind": "geocerca",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -71.6816691,
+              -16.2542979
+            ],
+            [
+              -71.6826554,
+              -16.2494372
+            ],
+            [
+              -71.6861403,
+              -16.2460915
+            ],
+            [
+              -71.6962007,
+              -16.247354
+            ],
+            [
+              -71.7459126,
+              -16.1689619
+            ],
+            [
+              -71.8022551,
+              -16.1453245
+            ],
+            [
+              -71.8746007,
+              -16.1614515
+            ],
+            [
+              -71.8939586,
+              -16.214449
+            ],
+            [
+              -71.8529981,
+              -16.303743
+            ],
+            [
+              -71.7676879,
+              -16.3323451
+            ],
+            [
+              -71.6857065,
+              -16.2762082
+            ],
+            [
+              -71.6727578,
+              -16.2666248
+            ],
+            [
+              -71.6757231,
+              -16.2605518
+            ],
+            [
+              -71.6816691,
+              -16.2542979
+            ]
+          ]
+        ]
+      },
+      "regla_permanencia_min": 0,
+      "meta": {
+        "origen": "REPORTE_NOCHE",
+        "nombre_original": "Planta_Yura",
+        "es_filtro_macro": false,
+        "itinerario": "TURNO AMANECIDA"
+      }
+    },
+    {
+      "id": "ZGTN03",
+      "name": "Raciemsa_Aqp_TN",
+      "kind": "geocerca",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -71.61516754396283,
+              -16.396468046963633
+            ],
+            [
+              -71.56969988651454,
+              -16.396468046963633
+            ],
+            [
+              -71.56969988651454,
+              -16.414925542749543
+            ],
+            [
+              -71.61516754396283,
+              -16.414925542749543
+            ],
+            [
+              -71.61516754396283,
+              -16.396468046963633
+            ]
+          ]
+        ]
+      },
+      "regla_permanencia_min": 0,
+      "meta": {
+        "origen": "REPORTE_NOCHE",
+        "nombre_original": "Raciemsa_Aqp",
+        "es_filtro_macro": false,
+        "itinerario": "TURNO AMANECIDA"
+      }
+    },
+    {
+      "id": "ZGTN04",
+      "name": "Base_Mpquegua_TN",
+      "kind": "geocerca",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -70.9445746,
+              -17.2139847
+            ],
+            [
+              -70.9441254,
+              -17.2142004
+            ],
+            [
+              -70.9431211,
+              -17.2151593
+            ],
+            [
+              -70.9430496,
+              -17.2155216
+            ],
+            [
+              -70.9423227,
+              -17.2161972
+            ],
+            [
+              -70.9428325,
+              -17.2175937
+            ],
+            [
+              -70.9456278,
+              -17.2177559
+            ],
+            [
+              -70.9451718,
+              -17.2139984
+            ],
+            [
+              -70.9445746,
+              -17.2139847
+            ]
+          ]
+        ]
+      },
+      "regla_permanencia_min": 0,
+      "meta": {
+        "origen": "REPORTE_NOCHE",
+        "nombre_original": "Base_Mpquegua",
+        "es_filtro_macro": false,
+        "itinerario": "TURNO AMANECIDA"
+      }
+    },
+    {
+      "id": "ZGTN05",
+      "name": "Or_Tacna_TN",
+      "kind": "geocerca",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -70.3071866,
+              -18.0813277
+            ],
+            [
+              -70.3044889,
+              -18.0781725
+            ],
+            [
+              -70.3007786,
+              -18.081754
+            ],
+            [
+              -70.3032932,
+              -18.0853165
+            ],
+            [
+              -70.3071866,
+              -18.0813277
+            ]
+          ]
+        ]
+      },
+      "regla_permanencia_min": 0,
+      "meta": {
+        "origen": "REPORTE_NOCHE",
+        "nombre_original": "Or_Tacna",
+        "es_filtro_macro": false,
+        "itinerario": "TURNO AMANECIDA"
+      }
+    },
+    {
+      "id": "ZGTN06",
+      "name": "Cesur_Caracoto_TN",
+      "kind": "geocerca",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -70.1048662,
+              -15.5709948
+            ],
+            [
+              -70.1019241,
+              -15.5744157
+            ],
+            [
+              -70.1169635,
+              -15.6235112
+            ],
+            [
+              -70.140137,
+              -15.6529381
+            ],
+            [
+              -70.1685135,
+              -15.6260313
+            ],
+            [
+              -70.192352,
+              -15.6053547
+            ],
+            [
+              -70.1754464,
+              -15.5853178
+            ],
+            [
+              -70.1711405,
+              -15.5766432
+            ],
+            [
+              -70.1053468,
+              -15.5675399
+            ],
+            [
+              -70.1048662,
+              -15.5709948
+            ]
+          ]
+        ]
+      },
+      "regla_permanencia_min": 0,
+      "meta": {
+        "origen": "REPORTE_NOCHE",
+        "nombre_original": "Cesur_Caracoto",
+        "es_filtro_macro": false,
+        "itinerario": "TURNO AMANECIDA"
+      }
+    },
+    {
+      "id": "ZGTN07",
+      "name": "Aconstruir_Huasao_TN",
+      "kind": "geocerca",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -71.8116845,
+              -13.5770496
+            ],
+            [
+              -71.8052,
+              -13.5800091
+            ],
+            [
+              -71.8082452,
+              -13.583704
+            ],
+            [
+              -71.8133361,
+              -13.5800361
+            ],
+            [
+              -71.8133361,
+              -13.5800361
+            ],
+            [
+              -71.8116845,
+              -13.5770496
+            ]
+          ]
+        ]
+      },
+      "regla_permanencia_min": 0,
+      "meta": {
+        "origen": "REPORTE_NOCHE",
+        "nombre_original": "Aconstruir_Huasao",
+        "es_filtro_macro": false,
+        "itinerario": "TURNO AMANECIDA"
+      }
+    },
+    {
+      "id": "ZGTN08",
+      "name": "SMCV_SanJose_TN",
+      "kind": "geocerca",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -71.661306,
+              -16.4586537
+            ],
+            [
+              -71.5646188,
+              -16.4776895
+            ],
+            [
+              -71.5667959,
+              -16.5730026
+            ],
+            [
+              -71.6741902,
+              -16.5918802
+            ],
+            [
+              -71.7460086,
+              -16.5475271
+            ],
+            [
+              -71.661306,
+              -16.4586537
+            ]
+          ]
+        ]
+      },
+      "regla_permanencia_min": 0,
+      "meta": {
+        "origen": "REPORTE_NOCHE",
+        "nombre_original": "SMCV_SanJose",
+        "es_filtro_macro": false,
+        "itinerario": "TURNO AMANECIDA"
+      }
+    },
+    {
+      "id": "ZGTN09",
+      "name": "Planta_Gloria_TN",
+      "kind": "geocerca",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -71.5502589,
+              -16.4174883
+            ],
+            [
+              -71.5610697,
+              -16.430555
+            ],
+            [
+              -71.5646878,
+              -16.4278751
+            ],
+            [
+              -71.5519325,
+              -16.4158519
+            ],
+            [
+              -71.5502589,
+              -16.4174883
+            ]
+          ]
+        ]
+      },
+      "regla_permanencia_min": 0,
+      "meta": {
+        "origen": "REPORTE_NOCHE",
+        "nombre_original": "Planta_Gloria",
+        "es_filtro_macro": false,
+        "itinerario": "TURNO AMANECIDA"
+      }
+    },
+    {
+      "id": "ZGTN10",
+      "name": "Guardia_Civil_TN",
+      "kind": "geocerca",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -71.5113998,
+              -16.4241103
+            ],
+            [
+              -71.5075881,
+              -16.4222934
+            ],
+            [
+              -71.505259,
+              -16.4256231
+            ],
+            [
+              -71.5091656,
+              -16.4279599
+            ],
+            [
+              -71.5091656,
+              -16.4279599
+            ],
+            [
+              -71.5113998,
+              -16.4241103
+            ]
+          ]
+        ]
+      },
+      "regla_permanencia_min": 0,
+      "meta": {
+        "origen": "REPORTE_NOCHE",
+        "nombre_original": "Guardia_Civil",
+        "es_filtro_macro": false,
+        "itinerario": "TURNO AMANECIDA"
+      }
+    },
+    {
+      "id": "ZGTN11",
+      "name": "Gloria_Majes_TN",
+      "kind": "geocerca",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -72.1625737,
+              -16.3627136
+            ],
+            [
+              -72.1582452,
+              -16.3651669
+            ],
+            [
+              -72.1664653,
+              -16.3696094
+            ],
+            [
+              -72.1664653,
+              -16.3696094
+            ],
+            [
+              -72.1625737,
+              -16.3627136
+            ]
+          ]
+        ]
+      },
+      "regla_permanencia_min": 0,
+      "meta": {
+        "origen": "REPORTE_NOCHE",
+        "nombre_original": "Gloria_Majes",
+        "es_filtro_macro": false,
+        "itinerario": "TURNO AMANECIDA"
+      }
+    },
+    {
+      "id": "ZGTN12",
+      "name": "Volvo_Aqp_TN",
+      "kind": "geocerca",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -71.5776315,
+              -16.371409
+            ],
+            [
+              -71.5688328,
+              -16.3695758
+            ],
+            [
+              -71.5707443,
+              -16.375196
+            ],
+            [
+              -71.5738313,
+              -16.3779363
+            ],
+            [
+              -71.5759932,
+              -16.3783209
+            ],
+            [
+              -71.5776315,
+              -16.371409
+            ]
+          ]
+        ]
+      },
+      "regla_permanencia_min": 0,
+      "meta": {
+        "origen": "REPORTE_NOCHE",
+        "nombre_original": "Volvo_Aqp",
+        "es_filtro_macro": false,
+        "itinerario": "TURNO AMANECIDA"
+      }
+    },
+    {
+      "id": "ZGTN13",
+      "name": "Juliaca_TN",
+      "kind": "geocerca",
+      "geometry": {
+        "type": "Polygon",
+        "coordinates": [
+          [
+            [
+              -70.1632136,
+              -15.4918477
+            ],
+            [
+              -70.1252455,
+              -15.5466851
+            ],
+            [
+              -70.0842386,
+              -15.5345886
+            ],
+            [
+              -70.111728,
+              -15.4625047
+            ],
+            [
+              -70.155937,
+              -15.4595026
+            ],
+            [
+              -70.155937,
+              -15.4595026
+            ],
+            [
+              -70.1632136,
+              -15.4918477
+            ]
+          ]
+        ]
+      },
+      "regla_permanencia_min": 0,
+      "meta": {
+        "origen": "REPORTE_NOCHE",
+        "nombre_original": "Juliaca",
+        "es_filtro_macro": false,
+        "itinerario": "TURNO AMANECIDA"
+      }
+    }
+  ],
+  "asignaciones_turno_amanecida": [
+    {
+      "maestro_id": "ZGTN01",
+      "nombre_operativo": "Filtro_Macro_Sur_TN",
+      "tipo": "geocercas",
+      "activa": true
+    },
+    {
+      "maestro_id": "ZGTN02",
+      "nombre_operativo": "Planta_Yura_TN",
+      "tipo": "geocercas",
+      "activa": true
+    },
+    {
+      "maestro_id": "ZGTN03",
+      "nombre_operativo": "Raciemsa_Aqp_TN",
+      "tipo": "geocercas",
+      "activa": true
+    },
+    {
+      "maestro_id": "ZGTN04",
+      "nombre_operativo": "Base_Mpquegua_TN",
+      "tipo": "geocercas",
+      "activa": true
+    },
+    {
+      "maestro_id": "ZGTN05",
+      "nombre_operativo": "Or_Tacna_TN",
+      "tipo": "geocercas",
+      "activa": true
+    },
+    {
+      "maestro_id": "ZGTN06",
+      "nombre_operativo": "Cesur_Caracoto_TN",
+      "tipo": "geocercas",
+      "activa": true
+    },
+    {
+      "maestro_id": "ZGTN07",
+      "nombre_operativo": "Aconstruir_Huasao_TN",
+      "tipo": "geocercas",
+      "activa": true
+    },
+    {
+      "maestro_id": "ZGTN08",
+      "nombre_operativo": "SMCV_SanJose_TN",
+      "tipo": "geocercas",
+      "activa": true
+    },
+    {
+      "maestro_id": "ZGTN09",
+      "nombre_operativo": "Planta_Gloria_TN",
+      "tipo": "geocercas",
+      "activa": true
+    },
+    {
+      "maestro_id": "ZGTN10",
+      "nombre_operativo": "Guardia_Civil_TN",
+      "tipo": "geocercas",
+      "activa": true
+    },
+    {
+      "maestro_id": "ZGTN11",
+      "nombre_operativo": "Gloria_Majes_TN",
+      "tipo": "geocercas",
+      "activa": true
+    },
+    {
+      "maestro_id": "ZGTN12",
+      "nombre_operativo": "Volvo_Aqp_TN",
+      "tipo": "geocercas",
+      "activa": true
+    },
+    {
+      "maestro_id": "ZGTN13",
+      "nombre_operativo": "Juliaca_TN",
+      "tipo": "geocercas",
+      "activa": true
+    }
+  ]
+}

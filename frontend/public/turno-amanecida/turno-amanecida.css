@@ -1,0 +1,43 @@
+/* Estilos propios de TURNO AMANECIDA (no tocan Cemento/CV) */
+.tn-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+  gap: 14px;
+  margin: 18px 0;
+}
+.tn-card {
+  background: #0d1c2c;
+  border: 1px solid #ffffff18;
+  border-radius: 14px;
+  padding: 16px 18px;
+}
+.tn-card b { display: block; font-size: 22px; margin-top: 4px; }
+.tn-card small { color: #8aa0b8; letter-spacing: 1px; font-size: 11px; }
+.tn-card.warn { border-color: #f59e0b55; }
+.tn-card.ok { border-color: #22c55e55; }
+.tn-upload {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+  margin: 12px 0;
+}
+.tn-table-wrap { overflow: auto; max-height: 60vh; border: 1px solid #ffffff14; border-radius: 12px; }
+.tn-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+.tn-table th, .tn-table td { padding: 8px 10px; border-bottom: 1px solid #ffffff10; text-align: left; }
+.tn-table th { position: sticky; top: 0; background: #0c1a28; color: #9eb4c9; font-size: 11px; letter-spacing: 0.5px; }
+.tn-table tr:hover td { background: #ffffff08; }
+.tn-actions { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 12px; }
+.side-foot { margin-top: auto; padding: 16px 12px 4px; color: #7f93a8; }
+.side-foot b { display: block; color: #dce9f7; margin-top: 4px; }
+.tn-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 700;
+  background: #ffffff12;
+}
+.tn-badge.ok { background: #16653455; color: #86efac; }
+.tn-badge.warn { background: #854d0e55; color: #fde68a; }
+.tn-badge.err { background: #7f1d1d55; color: #fca5a5; }

@@ -55,3 +55,7 @@ body.auth-pending::after{
 .workspace > aside nav i{font-size:23px;width:28px}
 .itinerary-link{border:1px solid #ffffff20;background:#ffffff0c;color:#dce9f7;padding:9px 13px;border-radius:8px;text-decoration:none;font-size:12px;font-weight:700;white-space:nowrap}
 .itinerary-link:hover{background:#ffffff18}
+
+
+.itinerary-card.turno-amanecida{border-color:#38bdf855}
+.itinerary-card.turno-amanecida .itinerary-code{background:linear-gradient(135deg,#0ea5e9,#6366f1)}

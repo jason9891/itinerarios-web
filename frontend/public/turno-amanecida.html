@@ -1,0 +1,64 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1d30">
+  <title>Turno Amanecida · Itinerarios · RACIEMSA</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="turno-amanecida/turno-amanecida.css?v=tn02">
+</head>
+<body class="auth-pending" data-itinerary="turno-amanecida">
+
+<header class="top">
+  <div class="logo" id="platform-logo">R</div>
+  <div class="brand">
+    <b id="platform-brand">RACIEMSA</b>
+    <small id="platform-subtitle">TURNO AMANECIDA</small>
+  </div>
+  <div class="grow"></div>
+  <a class="itinerary-link" href="index.html">VOLVER A ITINERARIOS</a>
+</header>
+
+<main id="login" class="login">
+  <div class="login-icon">▰</div>
+  <p class="eyebrow">PLATAFORMA DE SEGUIMIENTO</p>
+  <h1>Turno Amanecida</h1>
+  <p>Control nocturno 22:00–04:00. Usa la misma cuenta autorizada de la plataforma.</p>
+  <div class="login-form">
+    <label><span>USUARIO</span><input id="login-user" type="text" autocomplete="username" placeholder="PRUEBA" autocapitalize="characters"></label>
+    <label><span>CONTRASEÑA</span><input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••"></label>
+    <button id="user-login" class="primary">INGRESAR</button>
+  </div>
+  <div class="login-separator"><span>o</span></div>
+  <button id="google-login" class="ghost login-google">CONTINUAR CON GOOGLE</button>
+  <p id="login-message" class="message"></p>
+</main>
+
+<div id="workspace" class="workspace hidden">
+  <aside>
+    <div class="side-title">
+      <span>TURNO AMANECIDA</span>
+      <b>Control nocturno</b>
+    </div>
+    <nav>
+      <button data-route="home"><i>⌂</i><span>INICIO<small>RESUMEN DEL TURNO</small></span></button>
+      <button data-route="maestros"><i>▣</i><span>MAESTROS<small>OC · ACOPLEs</small></span></button>
+      <button data-route="acoples"><i>◎</i><span>TIPO ACOPLE<small>EDITAR CATÁLOGO</small></span></button>
+      <button data-route="base"><i>↻</i><span>BASE DEL TURNO<small>SNAPSHOT · 20-R-</small></span></button>
+      <button data-route="monitoreo"><i>▰</i><span>MONITOREO<small>MAPA · 3 MIN</small></span></button>
+      <button data-route="clasificacion"><i>◉</i><span>CLASIFICACIÓN<small>STATUS · RIESGO</small></span></button>
+      <button data-route="historico"><i>▥</i><span>HISTÓRICO<small>TURNOS ANTERIORES</small></span></button>
+      <button data-route="reporte"><i>⇩</i><span>REPORTE<small>CERRAR · EXPORT</small></span></button>
+    </nav>
+    <div class="side-foot">
+      <small>Ventana operativa</small>
+      <b>22:00 → 04:00</b>
+    </div>
+  </aside>
+  <section id="content" class="content"></section>
+</div>
+
+<script type="module" src="turno-amanecida/main.js?v=tn02"></script>
+</body>
+</html>
