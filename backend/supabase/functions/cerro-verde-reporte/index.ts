@@ -589,6 +589,70 @@ Deno.serve(async(req)=>{
         items:faltantes,
       });
     }
+    if(action==="pernocte_registrar"){
+      // Registrar pernocte faltante sobre una entrega (DIARIO o HISTÓRICO).
+      const entrega=text(b.entrega_sap);
+      if(!entrega)throw Error("Falta entrega SAP");
+      const c=b.parada||{};
+      const tipo=text(c.tipo||"PERNOCTE").toUpperCase()||"PERNOCTE";
+      if(tipo!=="PERNOCTE")throw Error("Solo se registran PERNOCTE desde este módulo");
+      const ini=parseDate(c.inicio),fin=parseDate(c.fin);
+      if(!ini||!fin||fin<=ini)throw Error("Rango de pernocte inválido");
+      const min=Number(c.duracion_min||((fin.getTime()-ini.getTime())/60000));
+      if(!(min>240))throw Error("El pernocte debe ser mayor a 4 horas");
+      const dayIni=ini.toISOString().slice(0,10),dayFin=fin.toISOString().slice(0,10);
+      if(dayIni===dayFin)throw Error("El pernocte debe cambiar de fecha");
+      // Buscar despacho en DIARIO o HISTÓRICO
+      let row:any=null;
+      for(const origen of ["DIARIO","HISTORICO"]){
+        const{data,error}=await db.from("seguimiento_staging")
+          .select("id,orden_carga,payload,origen")
+          .eq("itinerario",IT).eq("origen",origen).eq("orden_carga",entrega).maybeSingle();
+        if(error)throw error;
+        if(data){row=data;break;}
+      }
+      if(!row)throw Error(`No se encontró la entrega ${entrega} en DIARIO/HISTÓRICO`);
+      const isoLocal=(v:any)=>{
+        const s=text(v);
+        const m=s.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/);
+        return m?`${m[3]}-${m[2]}-${m[1]} ${m[4]}:${m[5]}:${m[6]||"00"}`:s;
+      };
+      const inicioIso=isoLocal(c.inicio),finIso=isoLocal(c.fin);
+      const{data:existing,error:ee}=await db.from("cerro_verde_eventos_paradas")
+        .select("evento_origen_id,payload").eq("tipo","PERNOCTE").eq("entrega_sap",entrega).limit(200);
+      if(ee)throw ee;
+      const dup=(existing||[]).find((x:any)=>text(x.payload?.inicio)===inicioIso&&text(x.payload?.fin)===finIso);
+      if(dup)return responseJson(req,{ok:true,ya_registrado:true,id:dup.evento_origen_id,payload:dup.payload});
+      const eid=Date.now()*1000+crypto.getRandomValues(new Uint32Array(1))[0]%1000;
+      const p=row.payload||{};
+      const geocerca=text(c.geocerca)||"FUERA DE GEOCERCA";
+      const payload={
+        id:eid,
+        tipo_parada:"PERNOCTE",
+        motivo:text(c.descripcion)||`DESCANSO / PERNOCTE - ${geocerca}`,
+        entrega,
+        placa:text(p["PLACA TRACTO"]||p.PLACA||b.placa),
+        licencia:text(p.LICENCIA),
+        conductor:text(p.CONDUCTOR||b.conductor),
+        codigo_tracto:text(p["CODIGO TRACTO"]||b.codigo_tracto),
+        placa_completa:text(p.PLACA||p["PLACA TRACTO"]||b.placa),
+        codigo_carreta:text(p["CODIGO CARRETA"]),
+        fecha_carga:text(p["FECHA DE CARGA"]||b.fecha_carga),
+        inicio:inicioIso,
+        fin:finIso,
+        duracion_min:Math.round(min*10)/10,
+        lat:Number(c.lat)||null,
+        lng:Number(c.lng)||null,
+        geocerca,
+        fuente:"PARADAS_SIN_REGISTRO",
+      };
+      const{error:ie}=await db.from("cerro_verde_eventos_paradas").insert({
+        evento_origen_id:eid,tipo:"PERNOCTE",entrega_sap:entrega,payload,actualizado_en:new Date().toISOString()
+      });
+      if(ie)throw ie;
+      return responseJson(req,{ok:true,id:eid,payload,origen_despacho:row.origen});
+    }
+
     if(action==="convoy_datos"){
       const[masters,convoy]=await Promise.all([convoyMasters(db),convoyRows(db)]);
       return responseJson(req,{convoy,tractos:masters.tractos,carretas:masters.carretas,conductores:masters.conductores,fecha_operativa:localDatePE()});
