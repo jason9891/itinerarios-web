@@ -376,7 +376,16 @@ async function syncPernocteMaster(db:any){
 }
 async function pernocteMasterBook(db:any){
   const state=await syncPernocteMaster(db);
-  if(state.pendientes.length)throw Error(`Hay ${state.pendientes.length} ciclo(s) con una noche ya transcurrida pendientes de pernocte/validación. Las salidas de hoy permanecen EN PROCESO y no bloquean el ENVIABLE.`);
+  // Solo bloquean SI/NO pendientes (con evento). FALTA_PERNOCTE se gestiona en "Sin registro"
+  // y no impide exportar el maestro ya congelado desde 09/09/2026.
+  const bloqueanValidacion=(state.pendientes||[]).filter((r:any)=>
+    text(r.tipo_pendiente)!=="FALTA_PERNOCTE"
+    && !["SI","NO"].includes(norm(r.cum))
+    && !!(r.event_id||r.evento_origen_id)
+  );
+  if(bloqueanValidacion.length){
+    throw Error(`Hay ${bloqueanValidacion.length} pernocte(s) pendientes de validación SI/NO. Valídelos en la pestaña Validación antes de generar el ENVIABLE.`);
+  }
   const wb=new ExcelJS.Workbook(),ws=wb.addWorksheet("Resumen",{views:[{state:"frozen",ySplit:1,showGridLines:false}]});
   ws.addRow(PER_HEADERS_ENVIABLE);const header=ws.getRow(1);header.height=36;header.eachCell((c:any)=>{c.fill={type:"pattern",pattern:"solid",fgColor:{argb:`FF${COLORS.dark}`}};c.font={bold:true,color:{argb:`FF${COLORS.white}`},size:11};c.alignment={horizontal:"center",vertical:"middle",wrapText:true}});
   for(const r of state.master){

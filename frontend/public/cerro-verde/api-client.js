@@ -31,9 +31,19 @@ export async function apiPost(url, body, { signal, binary = false } = {}) {
     signal,
   });
   if (binary) {
+    const ct = (r.headers.get("content-type") || "").toLowerCase();
     if (!r.ok) {
+      if (ct.includes("application/json")) {
+        const d = await r.json().catch(() => ({}));
+        throw new Error(d.error || d.message || `HTTP ${r.status}`);
+      }
+      const t = await r.text().catch(() => "");
+      throw new Error(t.slice(0, 300) || `HTTP ${r.status}`);
+    }
+    // A veces el edge devuelve JSON de error con 200: detectar
+    if (ct.includes("application/json")) {
       const d = await r.json().catch(() => ({}));
-      throw new Error(d.error || `HTTP ${r.status}`);
+      throw new Error(d.error || d.message || "Respuesta JSON inesperada al pedir Excel");
     }
     const name =
       (r.headers.get("content-disposition") || "").match(/filename="([^"]+)/)?.[1] ||

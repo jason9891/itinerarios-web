@@ -500,13 +500,18 @@ async function registerPernocte(item, form) {
 
 async function downloadReport(action, filename) {
   const x = await apiPost(API.report, { action }, { binary: true });
+  if (!x?.blob || x.blob.size < 64) {
+    throw new Error("El servidor no devolvió un Excel válido. Revise pendientes SI/NO o reintente.");
+  }
   const a = document.createElement("a");
   a.href = URL.createObjectURL(x.blob);
   a.download = x.name || filename;
+  a.rel = "noopener";
   document.body.append(a);
   a.click();
   a.remove();
-  setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+  setTimeout(() => URL.revokeObjectURL(a.href), 2500);
+  return x.name || filename;
 }
 
 /* ───────── shell + tabs ───────── */
@@ -973,7 +978,7 @@ async function renderValidacion(panel) {
       </article>
       <article class="panel">
         <small>ENVIABLE CLIENTE</small><h1>${s.pernoctes_enviable || 0}</h1>
-        <p>Desde 09/09/2026 · código R</p>
+        <p>Desde 09/09/2026 · maestro congelado · código R</p>
         <button type="button" id="pernoctes-enviable" class="primary" ${pending.length ? "disabled" : ""}>DESCARGAR ENVIABLE</button>
       </article>
     </section>
@@ -1124,13 +1129,23 @@ async function renderValidacion(panel) {
     if (b.disabled) return;
     b.disabled = true;
     b.textContent = "GENERANDO…";
+    const msg = panel.querySelector("#cv-validacion-msg");
     try {
-      await downloadReport(
+      const name = await downloadReport(
         "pernoctes_enviable",
-        "ENVIABLE_PERNOCTES_CERRO_VERDE.xlsx",
+        "ENVIABLE_PERNOCTES_CERRO_VERDE_DESDE_09_09_2026.xlsx",
       );
+      if (msg) {
+        msg.textContent = `Descargado: ${name}`;
+        msg.style.color = "#86efac";
+      }
     } catch (e) {
-      alert(e.message || e);
+      const text = e.message || String(e);
+      if (msg) {
+        msg.textContent = text;
+        msg.style.color = "#fca5a5";
+      }
+      alert(text);
     } finally {
       if (b.isConnected) {
         b.disabled = pending.length > 0;
