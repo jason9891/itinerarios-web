@@ -111,8 +111,8 @@ async function render(container, runtime) {
     ) +
     `<section class="notice">
       <b>Vinculado con Seguimiento.</b> Puede iniciar la precarga y pasar a
-      <b>Seguimiento</b> con las unidades ya listas (COMPLETO / SIN MOVIMIENTO / SIN PUNTOS).
-      El resto sigue cargando en segundo plano; <b>no se detiene</b> al cambiar de módulo.
+      <b>Seguimiento</b> cuando haya <b>al menos 5 rutas con puntos GPS</b>
+      (mismo criterio que Cemento). El resto sigue en segundo plano; <b>no se detiene</b> al cambiar de módulo.
       ${fuente ? `<br><small class="muted">${esc(fuente)}</small>` : ""}
     </section>
     ${

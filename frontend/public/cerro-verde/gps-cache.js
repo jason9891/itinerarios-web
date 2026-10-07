@@ -55,3 +55,44 @@ export async function clearGPS() {
 export function gpsKey(runId, tracto, placa) {
   return `${runId || "norun"}|${tracto}|${placa}`;
 }
+
+
+/** Compat: mismo store que cerro-verde-tracking.js (c.one("gps", placa)). */
+const LEGACY_DB = "cerro-verde-temporal";
+const LEGACY_STORE = "gps";
+
+function openLegacyDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(LEGACY_DB, 1);
+    req.onupgradeneeded = () => {
+      const db = req.result;
+      if (!db.objectStoreNames.contains(LEGACY_STORE)) db.createObjectStore(LEGACY_STORE);
+      if (!db.objectStoreNames.contains("sap")) db.createObjectStore("sap");
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+export async function putLegacyGPS(placa, data) {
+  const key = String(placa || "").trim().toUpperCase().replace(/\s+/g, "");
+  if (!key || !data) return;
+  const db = await openLegacyDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(LEGACY_STORE, "readwrite");
+    tx.objectStore(LEGACY_STORE).put({ ...data, placa: key }, key);
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  });
+}
+
+export async function readLegacyGPS(placa) {
+  const key = String(placa || "").trim().toUpperCase().replace(/\s+/g, "");
+  if (!key) return null;
+  const db = await openLegacyDB();
+  return new Promise((resolve, reject) => {
+    const req = db.transaction(LEGACY_STORE).objectStore(LEGACY_STORE).get(key);
+    req.onsuccess = () => resolve(req.result || null);
+    req.onerror = () => reject(req.error);
+  });
+}

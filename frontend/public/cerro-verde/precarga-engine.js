@@ -19,7 +19,7 @@
 import { API } from "./registry.js";
 import { queryClocator } from "../shared/clocator-client.js";
 import { auth } from "../shared/auth.js";
-import { cacheGPS, gpsKey } from "./gps-cache.js";
+import { cacheGPS, gpsKey, putLegacyGPS } from "./gps-cache.js";
 
 const STORAGE_KEY = "cerro_verde_precarga_v1";
 const RANGO_KEY = "cerro_verde_rango_desde";
@@ -243,17 +243,16 @@ export async function startPreload(units, opts = {}) {
         meta.intentos[k] = (meta.intentos[k] || 0) + 1;
         meta.resultados[k] = classifyResult(data);
         try {
-          await cacheGPS(
-            {
+          const payload = {
               ...data,
               placa: u.placa,
               tracto: u.tracto,
               run_id: meta.id,
               desde: meta.desde,
               hasta: meta.hasta,
-            },
-            gpsKey(meta.id, u.tracto, u.placa),
-          );
+            };
+          await cacheGPS(payload, gpsKey(meta.id, u.tracto, u.placa));
+          await putLegacyGPS(u.placa, payload);
         } catch (_) {}
         emit("cerro-verde:precarga-unit", {
           placa: u.placa,

@@ -379,6 +379,11 @@ async function prepare(db: any, content: string) {
     // Bloqueantes: tracto / licencia / conductor.
     // La carreta NO es bloqueante: puede ser un acople recién incorporado.
     if (!tracto || !licencia || !conductor) {
+      const motivo = !tracto
+        ? `CODIGO INTERNO FALTANTE PARA TRACTO ${pt}`
+        : !licencia
+        ? "LICENCIA / DENOMINACION VACIA"
+        : `CONDUCTOR NO RESUELTO PARA LICENCIA ${licencia}`;
       unresolved.push({
         entrega: key(s.Entrega),
         placa: text(s.Placa),
@@ -389,11 +394,10 @@ async function prepare(db: any, content: string) {
         licencia,
         conductor,
         referencia_sap: text(s["Identif.Ext.1"]),
-        motivo: !tracto
-          ? `CODIGO INTERNO FALTANTE PARA TRACTO ${pt}`
-          : !licencia
-          ? "LICENCIA / DENOMINACION VACIA"
-          : `CONDUCTOR NO RESUELTO PARA LICENCIA ${licencia}`,
+        nombre_sap: text(s["Identif.Ext.1"]),
+        motivo,
+        tipo: !tracto ? "TRACTO" : !licencia ? "LICENCIA" : "CONDUCTOR",
+        sugerencias_conductor: (!conductor && licencia) ? suggestDrivers(licencia, drivers) : [],
       });
       continue;
     }
@@ -465,7 +469,11 @@ async function prepare(db: any, content: string) {
       pendientes_maestro: unresolved.length,
       pendientes_maestro_detalle: unresolved.slice(0, 100),
       acoples_sin_maestro: acoplesSinMaestro.length,
-      acoples_sin_maestro_detalle: acoplesSinMaestro.slice(0, 100),
+      acoples_sin_maestro_detalle: acoplesSinMaestro.slice(0, 100).map((x: any) => ({
+        ...x,
+        codigo_sugerido: nextAcopleCode(equipment),
+      })),
+      codigo_acople_sugerido: nextAcopleCode(equipment),
       por_fecha_nuevas_diario: byDate,
       descartadas: rows.length - currentValid.length,
       descartes: currentFiltered.discards.slice(0, 150),
@@ -485,6 +493,54 @@ function iso(v: any) {
   return `${m[3]}-${String(m[2]).padStart(2, "0")}-${String(m[1]).padStart(2, "0")}T${m[4]}:${m[5]}:${m[6]}-05:00`;
 }
 
+
+async function listDrivers(db: any) {
+  const rows = await allRows(db, "cerro_verde_maestro_conductores", "licencia,conductor,actualizado_en", (q: any) => q);
+  return rows.map((x: any) => ({
+    licencia: text(x.licencia),
+    conductor: text(x.conductor),
+    actualizado_en: x.actualizado_en,
+  }));
+}
+
+async function listEquipment(db: any) {
+  const rows = await allRows(db, "cerro_verde_maestro_equipos", "placa,codigo_sap,actualizado_en", (q: any) => q);
+  return rows.map((x: any) => ({
+    placa: plate(x.placa),
+    codigo_sap: text(x.codigo_sap),
+    actualizado_en: x.actualizado_en,
+  }));
+}
+
+function dniFromLicense(lic: string) {
+  const m = compact(lic).match(/(\d{7,9})$/);
+  return m ? m[1] : "";
+}
+
+function suggestDrivers(licencia: string, drivers: Map<string, string>) {
+  const dni = dniFromLicense(licencia);
+  if (!dni) return [] as any[];
+  const out: any[] = [];
+  for (const [lic, name] of drivers.entries()) {
+    if (lic === compact(licencia)) continue;
+    if (dniFromLicense(lic) === dni) {
+      out.push({ licencia: lic, conductor: name, motivo: "MISMO DNI EN LICENCIA" });
+    }
+  }
+  return out.slice(0, 8);
+}
+
+function nextAcopleCode(equipment: Map<string, string>) {
+  let max = 0;
+  for (const code of equipment.values()) {
+    const m = text(code).toUpperCase().match(/^20-C-(\d+)$/);
+    if (m) max = Math.max(max, Number(m[1]));
+  }
+  const n = String(max + 1).padStart(3, "0");
+  return `20-C-${n}`;
+}
+
+
 Deno.serve(async (req) => {
   if (req.method === "OPTIONS") return reply(req, { ok: true });
   if (req.method !== "POST") return reply(req, { error: "Método no permitido" }, 405);
@@ -499,6 +555,66 @@ Deno.serve(async (req) => {
       const { error } = await db.rpc("cerro_verde_actualizar_corte", { p_fecha: stamp });
       if (error) throw error;
       return reply(req, { ok: true, fecha_inicio_recorrido: stamp });
+    }
+
+    // Alta de conductor en maestro (licencia nueva o recategorizada).
+    if (action === "alta_conductor") {
+      const licencia = compact(b.licencia);
+      const conductor = text(b.conductor).toUpperCase();
+      if (!licencia) throw Error("Falta la licencia del conductor");
+      if (conductor.length < 3) throw Error("Indique el nombre completo del conductor");
+      const { error } = await db.from("cerro_verde_maestro_conductores").upsert(
+        { licencia, conductor, actualizado_en: new Date().toISOString() },
+        { onConflict: "licencia,conductor" },
+      );
+      if (error) throw error;
+      return reply(req, { ok: true, licencia, conductor });
+    }
+
+    // Alta de acople/carreta en maestro equipos (placa + código 20-C-xxx).
+    if (action === "alta_acople") {
+      const placaCarreta = plate(b.placa);
+      let codigo = text(b.codigo_sap).toUpperCase().replace(/\s+/g, "");
+      if (!placaCarreta) throw Error("Falta la placa de la carreta/acople");
+      const equipmentRows = await listEquipment(db);
+      const equipment = new Map<string, string>();
+      for (const x of equipmentRows) equipment.set(plate(x.placa), text(x.codigo_sap));
+      if (!codigo) codigo = nextAcopleCode(equipment);
+      if (!/^20-C-\d{2,4}$/i.test(codigo) && !/^20-[A-Z]-\d{2,4}$/i.test(codigo)) {
+        // Permite código informado manualmente, pero sugiere el patrón operativo.
+        if (!codigo) throw Error("Indique un código de acople (ej. 20-C-123)");
+      }
+      if (equipment.has(placaCarreta) && text(equipment.get(placaCarreta)) === codigo) {
+        return reply(req, { ok: true, placa: placaCarreta, codigo_sap: codigo, ya_existia: true });
+      }
+      const { error } = await db.from("cerro_verde_maestro_equipos").upsert(
+        { placa: placaCarreta, codigo_sap: codigo, actualizado_en: new Date().toISOString() },
+        { onConflict: "placa,codigo_sap" },
+      );
+      if (error) throw error;
+      return reply(req, { ok: true, placa: placaCarreta, codigo_sap: codigo, ya_existia: false });
+    }
+
+    if (action === "buscar_conductores") {
+      const q = compact(b.q || b.licencia || b.dni || "");
+      const drivers = await listDrivers(db);
+      const dni = dniFromLicense(q) || (q.match(/\d{7,9}/)?.[0] || "");
+      let hits = drivers;
+      if (q) {
+        hits = drivers.filter((d: any) => {
+          const lic = compact(d.licencia);
+          const name = ascii(d.conductor);
+          return lic.includes(q) || name.includes(ascii(q)) || (dni && dniFromLicense(lic) === dni);
+        });
+      }
+      return reply(req, { ok: true, total: hits.length, resultados: hits.slice(0, 50) });
+    }
+
+    if (action === "sugerir_codigo_acople") {
+      const equipmentRows = await listEquipment(db);
+      const equipment = new Map<string, string>();
+      for (const x of equipmentRows) equipment.set(plate(x.placa), text(x.codigo_sap));
+      return reply(req, { ok: true, codigo_sugerido: nextAcopleCode(equipment) });
     }
 
     if (!["validar_archivo", "aplicar_archivo"].includes(action)) {
