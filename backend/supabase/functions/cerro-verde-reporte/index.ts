@@ -1421,137 +1421,95 @@ Deno.serve(async(req)=>{
       await syncPernocteMaster(db);
       return responseJson(req,{ok:true,cumple_final:decision,evento_origen_id:eventId});
     }
+    if(action==="reporte_preview"){
+      // Previsualización del ENVIABLE de seguimiento (CAL VACÍO / CAL CARGADO).
+      const op=await operational(db);
+      const mapRow=(r:any,seccion:string)=>({
+        codigo_tracto:r.tracto,
+        placa:r.placa,
+        conductor:r.conductor,
+        carreta:r.carreta,
+        seccion,
+        h1:r.h1,h2:r.h2,h3:r.h3,h4:r.h4,
+        estado:r.estado,
+        monitoreo:r.monitoreo,
+        observacion:r.observacion,
+        alerta: seccion==="VACIO" && /CARGADO|DESCARGUIO|CARACOTO/i.test(String(r.estado||"")+String(r.h1||"")+String(r.h4||"")),
+      });
+      // Marcar alerta: en VACÍO con señales de cargado (salida caracoto / ingreso smcv en hitos)
+      const vacio=op.vacio.map((r:any)=>{
+        const row=mapRow(r,"VACIO");
+        const blob=`${r.estado} ${r.h1} ${r.h2} ${r.h3} ${r.h4}`.toUpperCase();
+        row.alerta=blob.includes("CARACOTO")||blob.includes("SMCV")||blob.includes("CARGADO")||blob.includes("DESCARGUIO");
+        row.alerta_motivo=row.alerta?"Posible CAL CARGADO (señales de carga en sección VACÍO)":"";
+        return row;
+      });
+      const cargado=op.cargado.map((r:any)=>mapRow(r,"CARGADO"));
+      return responseJson(req,{
+        ok:true,
+        unidades:op.rows.length,
+        vacio,
+        cargado,
+        alertas:vacio.filter((x:any)=>x.alerta).length,
+        cols_vacio:COLS_VACIO,
+        cols_cargado:COLS_CARGADO,
+      });
+    }
+    if(action==="reporte_actualizar_lote"){
+      // Corrige SECCION_REPORTE / ESTADO / hitos en cerro_verde_grupo_smcv (enviable seguimiento).
+      const items=Array.isArray(b.filas)?b.filas.slice(0,200):[];
+      if(!items.length)throw Error("No hay filas para actualizar");
+      const{data:groups,error:ge}=await db.from("cerro_verde_grupo_smcv")
+        .select("codigo_tracto,payload,activo").eq("activo",true);
+      if(ge)throw ge;
+      const byTracto=new Map((groups||[]).map((g:any)=>[norm(g.codigo_tracto),g]));
+      let actualizadas=0;
+      for(const item of items){
+        const tracto=norm(item.codigo_tracto||item.tracto);
+        if(!tracto)continue;
+        const g=byTracto.get(tracto);
+        if(!g)throw Error(`Tracto ${text(item.codigo_tracto)} no está activo en GRUPO_SMCV`);
+        const payload={...(g.payload||{})};
+        const seccion=norm(item.seccion||item.grupo);
+        if(seccion.includes("CARGADO"))payload.SECCION_REPORTE="CAL CARGADO";
+        else if(seccion.includes("VACIO")||seccion.includes("VACÍO"))payload.SECCION_REPORTE="CAL VACIO";
+        if(item.estado!==undefined)payload.ESTADO=text(item.estado);
+        if(item.monitoreo!==undefined)payload.MONITOREO=text(item.monitoreo);
+        if(item.observacion!==undefined)payload.OBSERVACION=text(item.observacion);
+        if(item.conductor!==undefined)payload.CONDUCTOR_REPORTE=text(item.conductor);
+        // Hitos según sección
+        const loaded=norm(payload.SECCION_REPORTE).includes("CARGADO");
+        const fields=loaded
+          ?["SALIDA DE CARACOTO","LLEGADA A BASE RACIEMSA","SALIDA DE BASE RACIEMSA CARGADO","INGRESO A SMCV"]
+          :["SALIDA DE BASE RACIEMSA","LLEGADA A CARACOTO","SALIDA DE SMCV","LLEGADA A BASE RACIEMSA VACIO"];
+        const hitos=[item.h1,item.h2,item.h3,item.h4];
+        hitos.forEach((h,i)=>{
+          if(h===undefined)return;
+          const val=text(h)||"-";
+          payload[`HITO_${i+1}_REPORTE`]=val;
+          // Si parece fecha, reflejar en snapshot del ciclo para re-derivar
+          if(val&&val!=="-"&&parseDate(val)){
+            const snap={...(payload.SNAPSHOT_CICLO||{})};
+            snap[fields[i]]=val;
+            // Campos canónicos del payload operativo si aplican
+            if(fields[i]==="INGRESO A SMCV")payload["INGRESO A SMCV"]=val;
+            if(fields[i]==="SALIDA DE CARACOTO")payload["SALIDA DE CARACOTO"]=val;
+            payload.SNAPSHOT_CICLO=snap;
+          }
+        });
+        const{error:ue}=await db.from("cerro_verde_grupo_smcv")
+          .update({payload,actualizado_en:new Date().toISOString()})
+          .eq("codigo_tracto",g.codigo_tracto)
+          .eq("activo",true);
+        if(ue)throw ue;
+        actualizadas++;
+      }
+      return responseJson(req,{ok:true,actualizadas});
+    }
     if(action==="excel"){
       const op=await operational(db),{data:ctl,error:ce}=await db.from("cemento_reporte_control").select("estado,total_placas,revisadas").eq("itinerario",IT).maybeSingle();if(ce)throw ce;
       if(!(ctl?.estado==="COMPLETO"&&Number(ctl.total_placas)===op.rows.length&&Number(ctl.revisadas)===op.rows.length))throw Error(`Seguimiento pendiente: ${ctl?.revisadas||0}/${op.rows.length} placas revisadas`);
       const r=await operationalBook(db);return sendXlsx(req,db,user,r.bytes,"REPORTE_DIARIO_CERRO_VERDE.xlsx","REPORTE_XLSX");
-    }
-    if(action==="enviable_preview"){
-      // Previsualización del maestro ENVIABLE (desde 09/09) con flags de inconsistencia.
-      await syncPernocteMaster(db);
-      const master=await pernocteMasterRows(db);
-      const rows=master
-        .slice()
-        .sort((a:any,b:any)=>(Number(a.numero)||0)-(Number(b.numero)||0))
-        .map((r:any)=>{
-          const sinLlegada=!parseDate(r.llegada_smcv)&&!text(r.llegada_texto);
-          const sinCumplimiento=!["SI","NO"].includes(norm(r.cumplimiento));
-          const inconsistencias:string[]=[];
-          if(sinLlegada&&parseDate(r.salida_caracoto))inconsistencias.push("SIN_LLEGADA_SMCV");
-          if(sinCumplimiento)inconsistencias.push("SIN_CUMPLIMIENTO");
-          if(!text(r.pernocto_en))inconsistencias.push("SIN_PERNOCTO_EN");
-          return{
-            id:r.id,
-            numero:r.numero,
-            conductor:r.conductor||"",
-            codigo_tracto:r.codigo_tracto||"",
-            fecha_carga:r.fecha_carga||"",
-            salida_caracoto:fmtLocal(r.salida_caracoto)||text(r.salida_caracoto),
-            llegada_smcv:r.llegada_smcv?(fmtLocal(r.llegada_smcv)||text(r.llegada_smcv)):(text(r.llegada_texto)||""),
-            destino_esperado:r.destino_esperado||"",
-            pernocto_en:r.pernocto_en||"",
-            cumplimiento:r.cumplimiento||"",
-            placa:r.placa||"",
-            inicio_pernocte:r.inicio_pernocte?(fmtLocal(r.inicio_pernocte)||text(r.inicio_pernocte)):"",
-            fin_pernocte:r.fin_pernocte?(fmtLocal(r.fin_pernocte)||text(r.fin_pernocte)):"",
-            entrega_sap:r.entrega_sap||"",
-            fuente:r.fuente||"",
-            bloqueado:!!r.bloqueado,
-            inconsistencias,
-            alerta:inconsistencias.length>0,
-          };
-        });
-      const alertas=rows.filter((x:any)=>x.alerta).length;
-      return responseJson(req,{
-        ok:true,
-        total:rows.length,
-        alertas,
-        desde:"2026-09-09",
-        rows,
-      });
-    }
-    if(action==="enviable_actualizar_lote"){
-      const items=Array.isArray(b.filas)?b.filas.slice(0,800):[];
-      if(!items.length)throw Error("No hay filas para actualizar");
-      let actualizadas=0;
-      for(const item of items){
-        const id=Number(item?.id);
-        if(!Number.isFinite(id)||id<=0)continue;
-        const patch:any={actualizado_en:new Date().toISOString()};
-        if(item.conductor!==undefined)patch.conductor=text(item.conductor).slice(0,120);
-        if(item.codigo_tracto!==undefined)patch.codigo_tracto=text(item.codigo_tracto).slice(0,40);
-        if(item.placa!==undefined)patch.placa=text(item.placa).slice(0,20);
-        if(item.destino_esperado!==undefined)patch.destino_esperado=text(item.destino_esperado).slice(0,80);
-        if(item.pernocto_en!==undefined)patch.pernocto_en=text(item.pernocto_en).slice(0,80);
-        if(item.cumplimiento!==undefined){
-          const c=norm(item.cumplimiento);
-          if(c&&!["SI","NO"].includes(c))throw Error(`Cumplimiento inválido en id ${id}: use SI o NO`);
-          patch.cumplimiento=c||text(item.cumplimiento);
-        }
-        if(item.fecha_carga!==undefined){
-          const fc=text(item.fecha_carga);
-          patch.fecha_carga=fc?(pernocteDateKey(fc)||fc.slice(0,10)):null;
-        }
-        if(item.salida_caracoto!==undefined){
-          const s=text(item.salida_caracoto);
-          patch.salida_caracoto=s?pernocteDbTs(s):null;
-        }
-        if(item.llegada_smcv!==undefined){
-          const L=text(item.llegada_smcv);
-          if(!L){
-            patch.llegada_smcv=null;
-            patch.llegada_texto=null;
-            patch.bloqueado=false;
-          }else if(parseDate(L)){
-            patch.llegada_smcv=pernocteDbTs(L);
-            patch.llegada_texto=null;
-            patch.bloqueado=true;
-          }else{
-            // texto libre (p.ej. nota operativa)
-            patch.llegada_texto=L.slice(0,80);
-          }
-        }
-        if(item.inicio_pernocte!==undefined){
-          const v=text(item.inicio_pernocte);
-          patch.inicio_pernocte=v?pernocteDbTs(v):null;
-        }
-        if(item.fin_pernocte!==undefined){
-          const v=text(item.fin_pernocte);
-          patch.fin_pernocte=v?pernocteDbTs(v):null;
-        }
-        // Mismo día tras editar: si salida y llegada mismo día → SIN PERNOCTE + SI
-        const{data:cur,error:ce}=await db.from(PERNOCTE_MASTER_TABLE)
-          .select("id,salida_caracoto,llegada_smcv,entrega_sap")
-          .eq("id",id).maybeSingle();
-        if(ce)throw ce;
-        if(!cur)continue;
-        const salidaFinal=patch.salida_caracoto!==undefined?patch.salida_caracoto:cur.salida_caracoto;
-        const llegadaFinal=patch.llegada_smcv!==undefined?patch.llegada_smcv:cur.llegada_smcv;
-        const ds=pernocteDateKey(salidaFinal),dl=pernocteDateKey(llegadaFinal);
-        if(ds&&dl&&ds===dl){
-          if(patch.pernocto_en===undefined)patch.pernocto_en="SIN PERNOCTE";
-          if(patch.cumplimiento===undefined)patch.cumplimiento="SI";
-        }
-        const{error:ue}=await db.from(PERNOCTE_MASTER_TABLE).update(patch).eq("id",id);
-        if(ue)throw ue;
-        actualizadas++;
-        // Reflejar llegada en staging si hay entrega
-        const ent=text(cur.entrega_sap);
-        if(ent&&patch.llegada_smcv){
-          for(const origen of ["DIARIO","HISTORICO"]){
-            const{data:st,error:se}=await db.from("seguimiento_staging")
-              .select("id,payload").eq("itinerario",IT).eq("origen",origen).eq("orden_carga",ent).maybeSingle();
-            if(se)throw se;
-            if(!st)continue;
-            const payload0={...(st.payload||{})};
-            payload0["INGRESO A SMCV"]=fmtLocal(patch.llegada_smcv)||text(item.llegada_smcv);
-            const{error:ue2}=await db.from("seguimiento_staging").update({payload:payload0}).eq("id",st.id);
-            if(ue2)throw ue2;
-            break;
-          }
-        }
-      }
-      return responseJson(req,{ok:true,actualizadas});
     }
     if(action==="pernoctes_revision"){
       const r=await pernocteBook(db,"revision");return sendXlsx(req,db,user,r.bytes,"REPORTE_INTERNO_PERNOCTES_CERRO_VERDE.xlsx","PERNOCTES_INTERNO_XLSX");
