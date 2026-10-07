@@ -2,7 +2,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import {createClient} from "npm:@supabase/supabase-js@2.57.4";
 import {createRemoteJWKSet,jwtVerify} from "npm:jose@6.1.0";
 import ExcelJS from "npm:exceljs@4.4.0";
-import {activeGroupRows,reportRowFromGroup,reportSort,text,norm,parseDate} from "../_shared/cv-operativa.js";
+import {activeGroupRows,reportRowFromGroup,reportSort,text,norm,parseDate,fmtLocal} from "../_shared/cv-operativa.js";
 
 const PROJECT="itinerarios-2fa6f",IT="CERRO VERDE",ORIGINS = new Set([
  "https://itinerarios-2fa6f.web.app","https://itinerarios-2fa6f.firebaseapp.com","https://itinerarios-2fa6f--prueba-fin-ciclo-t0s1424a.web.app","https://itinerarios-2fa6f--prueba-fin-ciclo-t0s1424a-dwhuohoz.web.app","http://localhost:5000","http://127.0.0.1:5000",
@@ -568,9 +568,10 @@ Deno.serve(async(req)=>{
           placa:r.placa,
           codigo_tracto:r.tracto,
           conductor:r.conductor,
-          fecha_carga:r.fecha,
-          salida_caracoto:r.salida,
-          llegada_smcv:r.llegada,
+          // Fechas siempre dd/mm/yyyy hh:mm:ss (UTC=hora Lima operativa)
+          fecha_carga:fmtLocal(r.fecha)||text(r.fecha),
+          salida_caracoto:fmtLocal(r.salida)||text(r.salida),
+          llegada_smcv:fmtLocal(r.llegada)||text(r.llegada),
           salida_fecha:salidaDate,
           llegada_fecha:llegadaDate,
           tiene_pernocte_registrado:false,
@@ -613,9 +614,11 @@ Deno.serve(async(req)=>{
       }
       if(!row)throw Error(`No se encontró la entrega ${entrega} en DIARIO/HISTÓRICO`);
       const isoLocal=(v:any)=>{
-        const s=text(v);
-        const m=s.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/);
-        return m?`${m[3]}-${m[2]}-${m[1]} ${m[4]}:${m[5]}:${m[6]||"00"}`:s;
+        // Canónico interno: yyyy-mm-dd hh:mm:ss (acepta dd/mm y yyyy-mm)
+        const d=parseDate(v);
+        if(!d)return text(v);
+        const z=(n:number)=>String(n).padStart(2,"0");
+        return `${d.getUTCFullYear()}-${z(d.getUTCMonth()+1)}-${z(d.getUTCDate())} ${z(d.getUTCHours())}:${z(d.getUTCMinutes())}:${z(d.getUTCSeconds())}`;
       };
       const inicioIso=isoLocal(c.inicio),finIso=isoLocal(c.fin);
       const{data:existing,error:ee}=await db.from("cerro_verde_eventos_paradas")

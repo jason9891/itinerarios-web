@@ -110,6 +110,18 @@ function parseAny(v) {
   return Number.isFinite(t) ? t : NaN;
 }
 
+
+/** Normaliza cualquier fecha a dd/mm/yyyy hh:mm:ss (canónico UI / registro). */
+function fmtPE(v) {
+  if (v == null || v === "" || v === "—") return "—";
+  const t = parseAny(v);
+  if (!Number.isFinite(t)) return String(v);
+  const d = new Date(t);
+  const z = (n) => String(n).padStart(2, "0");
+  // parseAny usa UTC components; mostrar mismos componentes
+  return `${z(d.getUTCDate())}/${z(d.getUTCMonth() + 1)}/${d.getUTCFullYear()} ${z(d.getUTCHours())}:${z(d.getUTCMinutes())}:${z(d.getUTCSeconds())}`;
+}
+
 function markerIcon(color, scale = 11) {
   return {
     path: google.maps.SymbolPath.CIRCLE,
@@ -441,8 +453,10 @@ async function loadRouteForItem(item) {
 
 async function registerPernocte(item, form) {
   const fd = new FormData(form);
-  const inicio = String(fd.get("inicio") || "").trim();
-  const fin = String(fd.get("fin") || "").trim();
+  const inicio = fmtPE(String(fd.get("inicio") || "").trim()).replace(/^—$/, "");
+  const fin = fmtPE(String(fd.get("fin") || "").trim()).replace(/^—$/, "");
+  if (!inicio || !fin || inicio === "—" || fin === "—")
+    throw new Error("Indique inicio y fin válidos (dd/mm/yyyy hh:mm:ss)");
   const geocerca = String(fd.get("geocerca") || "").trim();
   const descripcion = String(fd.get("descripcion") || "").trim();
   const lat = Number(fd.get("lat"));
@@ -573,8 +587,8 @@ function rowHtml(it, selected) {
   return `<button type="button" class="cv-pernocte-row ${selected ? "selected" : ""}" data-key="${esc(itemKey(it))}">
     <div class="cv-pernocte-row-top"><b>${esc(it.codigo_tracto || "—")}</b><span>${esc(it.placa || "—")}</span></div>
     <div class="cv-pernocte-row-mid">
-      <small>SALIDA CARACOTO</small><span>${esc(it.salida_caracoto || "—")}</span>
-      <small>LLEGADA SMCV</small><span>${esc(it.llegada_smcv || "—")}</span>
+      <small>SALIDA CARACOTO</small><span>${esc(fmtPE(it.salida_caracoto))}</span>
+      <small>LLEGADA SMCV</small><span>${esc(fmtPE(it.llegada_smcv))}</span>
     </div>
     <div class="cv-pernocte-row-bot">
       <span class="badge warn">SIN PERNOCTE REGISTRADO</span>
@@ -600,8 +614,8 @@ function candidatesHtml(list) {
 
 function fillFormFromStop(form, stop) {
   if (!form || !stop) return;
-  form.querySelector('[name="inicio"]').value = stop.inicio || "";
-  form.querySelector('[name="fin"]').value = stop.fin || "";
+  form.querySelector('[name="inicio"]').value = fmtPE(stop.inicio).replace(/^—$/, "") || stop.inicio || "";
+  form.querySelector('[name="fin"]').value = fmtPE(stop.fin).replace(/^—$/, "") || stop.fin || "";
   form.querySelector('[name="geocerca"]').value = stop.geocerca || "";
   form.querySelector('[name="descripcion"]').value = stop.motivo || stop.descripcion || "";
   form.querySelector('[name="lat"]').value = stop.lat ?? "";
@@ -855,14 +869,14 @@ function validationCard(x) {
         <span class="pernocte-proposal pendiente">REVISIÓN MANUAL</span>
       </header>
       <div class="pernocte-data">
-        <div><b>SALIDA CARACOTO</b><span>${esc(x.salida_caracoto || "—")}</span></div>
-        <div><b>LLEGADA SMCV</b><span>${esc(x.llegada_smcv || "—")}</span></div>
+        <div><b>SALIDA CARACOTO</b><span>${esc(fmtPE(x.salida_caracoto))}</span></div>
+        <div><b>LLEGADA SMCV</b><span>${esc(fmtPE(x.llegada_smcv))}</span></div>
         <div><b>LÍMITE PERMITIDO</b><span>${esc(x.limite_permitido || "—")}</span></div>
         <div class="editable-zone">
           <b>PERNOCTÓ EN</b>
           <input type="text" data-zone value="${esc(x.zona_detectada || "")}" spellcheck="false">
         </div>
-        <div><b>PERNOCTE</b><span>${esc(x.inicio || "—")} → ${esc(x.fin || "—")}</span></div>
+        <div><b>PERNOCTE</b><span>${esc(fmtPE(x.inicio))} → ${esc(fmtPE(x.fin))}</span></div>
       </div>
       <textarea data-obs placeholder="Observación opcional">${esc(x.observacion || "")}</textarea>
       <div class="pernocte-decision batch-decision">
