@@ -645,9 +645,9 @@ async function renderSinRegistro(panel, root) {
 
   panel.innerHTML = `
     <section class="notice">
-      <b>Sin registro:</b> pernocte <b>exigible desde las 06:30 del día siguiente</b> a la salida de Caracoto (hora Lima),
-      con o sin llegada a SMCV. Antes de ese umbral el viaje sigue en tránsito y no se lista.
-      <b>Llegada SMCV es editable</b> (evita conflicto si cerraron el despacho sin registrarla).
+      <b>Sin registro:</b> pernocte <b>exigible desde las 06:30 del día siguiente</b> a la salida de Caracoto (hora Lima).
+      <b>Salida y llegada el mismo día = no requiere pernocte</b> (no se lista).
+      Sin llegada a SMCV, tras el umbral sí puede listar. <b>Llegada SMCV es editable</b>.
       Ventana GPS: ${esc(data.ventana || "20:00 → 08:00")}. Tras registrar → pestaña <b>Validación</b> SI/NO.
     </section>
     <section class="cv-paradas-layout">

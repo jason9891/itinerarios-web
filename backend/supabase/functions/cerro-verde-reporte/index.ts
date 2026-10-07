@@ -572,9 +572,11 @@ Deno.serve(async(req)=>{
         if(!salidaDate)continue;
         const umbral=pernocteExigibleDesde(r.salida);
         if(umbral==null||nowMs<umbral)continue; // aún no evaluable
+        const llegadaDate=pernocteDateKey(r.llegada);
+        // Mismo día salida+llegada: no requiere pernocte (nunca listar)
+        if(llegadaDate&&llegadaDate===salidaDate)continue;
         const tienePernocte=!!(r.event_id&&parseDate(r.inicio)&&parseDate(r.fin));
         if(tienePernocte)continue;
-        const llegadaDate=pernocteDateKey(r.llegada);
         // Ventana GPS: 20:00 día salida → 08:00 día llegada (si hay) o 08:00 día siguiente a salida
         const [ys,ms,ds]=salidaDate.split("-");
         const z=(n:string)=>String(n).padStart(2,"0");
@@ -617,7 +619,7 @@ Deno.serve(async(req)=>{
       return responseJson(req,{
         ok:true,
         total:faltantes.length,
-        regla:"Exigible desde 06:30 del día siguiente a SALIDA DE CARACOTO (Lima), con o sin INGRESO A SMCV",
+        regla:"Exigible desde 06:30 del día siguiente a SALIDA DE CARACOTO (Lima). Mismo día salida+llegada SMCV = no requiere pernocte. Sin llegada aún sí puede listar tras el umbral",
         ventana:"20:00 día salida → 08:00 día llegada (o día siguiente si aún no hay llegada)",
         items:faltantes,
       });
