@@ -140,13 +140,13 @@ async function ensureMap(host, center, zoom = 9) {
     clickableIcons: false,
     gestureHandling: "greedy",
   };
+  // Una sola instancia por sesión del módulo: solo se recrea si cambió el host DOM.
   if (!mapRuntime.map || mapRuntime.host !== host) {
     mapRuntime.host = host;
     mapRuntime.map = new google.maps.Map(host, options);
   } else {
+    // Host intacto: no recrear el Map; el tramo se redibuja con clear + layers.
     mapRuntime.map.setOptions(options);
-    mapRuntime.map.setCenter(center);
-    mapRuntime.map.setZoom(zoom);
   }
   return mapRuntime.map;
 }
@@ -723,9 +723,14 @@ async function render(container, runtime) {
     try {
       if (statusEl)
         statusEl.textContent = `Consultando ${it.placa} · ${it.ventana_gps_desde} → ${it.ventana_gps_hasta}`;
-      mapHost.innerHTML = "";
+      // Mapa persistente: no destruir el host ni el Map de Google
+      // (solo se limpian capas al redibujar el tramo).
+      if (mapHost.dataset.placeholder !== "0") {
+        mapHost.textContent = "";
+        mapHost.dataset.placeholder = "0";
+      }
       const map = await ensureMap(mapHost, { lat: -16.4, lng: -71.55 }, 9);
-      // reset hours button
+      // reset hours UI (capas de inspección se limpian en drawRoute)
       mapRuntime.hoursOn = false;
       if (hoursBtn) {
         hoursBtn.classList.remove("active");
@@ -751,7 +756,6 @@ async function render(container, runtime) {
           });
         });
       }
-      // auto-pick first pernocte candidate
       if (pernoctes[0]) selectStop(pernoctes[0]);
       if (statusEl) {
         statusEl.textContent = drawn.empty
@@ -760,7 +764,8 @@ async function render(container, runtime) {
       }
     } catch (e) {
       if (statusEl) statusEl.textContent = e.message || String(e);
-      mapHost.innerHTML = `<div style="display:grid;place-items:center;height:100%;color:#fca5a5;padding:16px;text-align:center">${esc(e.message || e)}</div>`;
+      // No reemplazar el host del mapa: solo capas + mensaje de estado
+      clearAllMap();
       if (candHost)
         candHost.innerHTML = `<p class="muted">No se pudo cargar el análisis GPS.</p>`;
     }
@@ -793,15 +798,26 @@ async function render(container, runtime) {
           : `Pernocte registrado · id ${out.id}`;
         formMsg.style.color = "#86efac";
       }
-      // quitar de la lista local
-      itemsCache = itemsCache.filter((x) => itemKey(x) !== selectedKey);
+      // Quitar de la lista; mapa persistente → dibujar el siguiente (o limpiar capas)
+      const prevKey = selectedKey;
+      itemsCache = itemsCache.filter((x) => itemKey(x) !== prevKey);
       if (rowsHost) {
         rowsHost.innerHTML = itemsCache.length
           ? itemsCache.map((it) => rowHtml(it, false)).join("")
           : `<p class="muted">No hay viajes multi-día sin pernocte registrado.</p>`;
       }
-      currentItem = null;
       form.reset();
+      selectedStop = null;
+      if (itemsCache[0]) {
+        await selectItem(itemsCache[0]);
+      } else {
+        currentItem = null;
+        currentRoute = null;
+        clearAllMap();
+        if (statusEl) statusEl.textContent = "Sin pendientes · mapa listo";
+        if (candHost)
+          candHost.innerHTML = `<p class="muted">No quedan viajes sin pernocte registrado.</p>`;
+      }
     } catch (e) {
       if (formMsg) {
         formMsg.textContent = e.message || String(e);
