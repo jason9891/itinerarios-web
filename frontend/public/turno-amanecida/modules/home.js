@@ -14,7 +14,7 @@ export async function mount(container) {
         <li>Filtro espacial: geocercas publicadas del itinerario <b>TURNO AMANECIDA</b> (sufijo <b>_TN</b>).</li>
         <li>De cada equipo se usa la <b>última OC</b> (por FecIniReal).</li>
         <li>Tipo de acople se resuelve desde el maestro editable en Supabase.</li>
-        <li>Monitoreo: recarga de posiciones cada <b>3 minutos</b> (ajustable).</li>
+        <li>Monitoreo: pantalla única mapa + lista + clasificación; poll cada <b>3 minutos</b>.</li>
       </ul>
     </section>
     <section class="panel">

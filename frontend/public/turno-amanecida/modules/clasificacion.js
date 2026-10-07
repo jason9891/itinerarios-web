@@ -1,12 +1,21 @@
-import { moduleHead } from "../api-client.js";
-
-export async function mount(container) {
+/**
+ * Alias: la clasificación vive dentro de Monitoreo (mapa + lista + formulario).
+ * Redirige para no fragmentar el flujo del controlador.
+ */
+export async function mount(container, runtime) {
   container.innerHTML = `
-    ${moduleHead("Clasificación", "Status · riesgo · punto autorizado · pernocte")}
     <section class="panel">
-      <p class="muted">Scaffold listo. Siguiente: conectar snapshot CLocator + geocercas _TN + última OC + tipo acople.</p>
+      <p class="eyebrow">TURNO AMANECIDA</p>
+      <h1>Clasificación</h1>
+      <p class="muted">La validación se hace en la pantalla de <b>Monitoreo</b>: mapa, lista y formulario juntos (como la ventana del desktop).</p>
+      <p style="margin-top:14px">
+        <button type="button" class="primary" id="tn-go-mon">IR A MONITOREO</button>
+      </p>
     </section>
   `;
+  container.querySelector("#tn-go-mon").addEventListener("click", () => {
+    document.querySelector('nav button[data-route="monitoreo"]')?.click();
+  });
 }
 
 export function unmount() {}
