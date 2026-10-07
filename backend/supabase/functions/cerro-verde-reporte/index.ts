@@ -206,12 +206,32 @@ async function syncPernocteMaster(db:any){
   const nuevos:any[]=[],pendientes:any[]=[],enProceso:any[]=[];
   const nowIso=()=>new Date().toISOString();
 
+  const enviableFromKey="2026-09-09";
   for(const r of all){
     const salidaDt=parseDate(r.salida),salidaDate=pernocteDateKey(r.salida);
-    if(!salidaDt||!salidaDate||salidaDate<PERNOCTE_NEW_FROM_DATE)continue;
+    if(!salidaDt||!salidaDate)continue;
 
     const key=pernocteCycleKey(r.placa,r.salida),ent=text(r.ent);
     const existing=(ent&&masterByEnt.get(ent))||(key&&masterByKey.get(key))||null;
+    const llegadaDateEarly=pernocteDateKey(r.llegada);
+    const mismoDiaEarly=!!llegadaDateEarly&&llegadaDateEarly===salidaDate;
+
+    // Mismo día desde 09/09: SIN PERNOCTE + SI → entra al ENVIABLE (aunque sea anterior al corte operativo 21/09).
+    if(salidaDate<PERNOCTE_NEW_FROM_DATE){
+      if(!(mismoDiaEarly&&salidaDate>=enviableFromKey))continue;
+      if(existing)continue;
+      nextNumero++;
+      const row={
+        numero:nextNumero,conductor:r.conductor||"",codigo_tracto:r.tracto||"",
+        fecha_carga:pernocteDateKey(r.fecha)||null,
+        salida_caracoto:pernocteDbTs(r.salida),llegada_smcv:pernocteDbTs(r.llegada),llegada_texto:null,
+        destino_esperado:"AREQUIPA",pernocto_en:"SIN PERNOCTE",cumplimiento:"SI",placa:r.placa||"",
+        inicio_pernocte:null,fin_pernocte:null,entrega_sap:ent||null,evento_origen_id:null,
+        fuente:"OPERATIVO_MISMO_DIA",clave_registro:"CICLO|"+(ent||key),bloqueado:true,actualizado_en:nowIso()
+      };
+      nuevos.push(row);if(key)masterByKey.set(key,row);if(ent)masterByEnt.set(ent,row);
+      continue;
+    }
 
     // Una salida del día actual todavía no ha atravesado una noche completa.
     if(salidaDate>=today){
@@ -219,8 +239,8 @@ async function syncPernocteMaster(db:any){
       continue;
     }
 
-    const llegadaDate=pernocteDateKey(r.llegada);
-    const mismoDia=!!llegadaDate&&llegadaDate===salidaDate;
+    const llegadaDate=llegadaDateEarly;
+    const mismoDia=mismoDiaEarly;
     const tienePernocte=!!(r.event_id&&parseDate(r.inicio)&&parseDate(r.fin));
     const decision=norm(r.cum);
     const eventStartDate=pernocteDateKey(r.inicio);
@@ -239,6 +259,29 @@ async function syncPernocteMaster(db:any){
 
     if(existing){
       if(text(existing.fuente)==="CHECKPOINT_21_09_2026")continue;
+
+      // Mismo día: forzar SIN PERNOCTE + SI en maestro (regla operativa ENVIABLE).
+      if(mismoDia){
+        const patch:any={actualizado_en:nowIso()};
+        let changed=false;
+        if(norm(existing.cumplimiento)!=="SI"||norm(existing.pernocto_en)!=="SIN PERNOCTE"){
+          patch.pernocto_en="SIN PERNOCTE";
+          patch.cumplimiento="SI";
+          patch.destino_esperado=text(existing.destino_esperado)||"AREQUIPA";
+          patch.inicio_pernocte=null;
+          patch.fin_pernocte=null;
+          patch.fuente="OPERATIVO_MISMO_DIA";
+          changed=true;
+        }
+        const llegada=pernocteDbTs(r.llegada);
+        if(llegada&&!existing.llegada_smcv){patch.llegada_smcv=llegada;patch.bloqueado=true;changed=true;}
+        if(changed){
+          const{error}=await db.from(PERNOCTE_MASTER_TABLE).update(patch).eq("id",existing.id);
+          if(error)throw error;
+          Object.assign(existing,patch);
+        }
+        continue;
+      }
 
       // Resolución provisional por pérdida de información GPS.
       // No vuelve a bloquear hasta que el operador pulse REABRIR VALIDACIÓN.
@@ -338,7 +381,7 @@ async function syncPernocteMaster(db:any){
         salida_caracoto:pernocteDbTs(r.salida),llegada_smcv:pernocteDbTs(r.llegada),llegada_texto:null,
         destino_esperado:"AREQUIPA",pernocto_en:"SIN PERNOCTE",cumplimiento:"SI",placa:r.placa||"",
         inicio_pernocte:null,fin_pernocte:null,entrega_sap:ent||null,evento_origen_id:null,
-        fuente:"OPERATIVO_DIARIO",clave_registro:"CICLO|"+(ent||key),bloqueado:true,actualizado_en:nowIso()
+        fuente:"OPERATIVO_MISMO_DIA",clave_registro:"CICLO|"+(ent||key),bloqueado:true,actualizado_en:nowIso()
       };
       nuevos.push(row);if(key)masterByKey.set(key,row);if(ent)masterByEnt.set(ent,row);
       continue;
