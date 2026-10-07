@@ -1,20 +1,12 @@
 /**
  * Motor de precarga de CERRO VERDE (singleton por pestaña).
  *
- * Vive fuera de modules/precarga.js para que la descarga GPS
- * continúe en segundo plano mientras el operador trabaja en Seguimiento.
- *
- * Independiente de Cemento: storage, eventos y endpoints propios.
- *
- * Contrato (solo lectura para otros módulos):
- *   getMeta() → { id, desde, hasta, resultados, completo, total }
- *   isRunning() → boolean
- *   getStatus(placa) → resultado | null
- *
- * Eventos de bus (runtime.bus):
- *   cerro-verde:precarga-unit   { placa, tracto, estado, puntos, visitas }
- *   cerro-verde:precarga-batch  { completo, done, ok, errors, total, running }
- *   cerro-verde:precarga-progress { running, done, total, currentPlaca? }
+ * Contrato alineado con Cemento (solo lectura de patrón; sin imports de cemento/):
+ *   - Storage: cerro_verde_precarga_v1
+ *   - TIMEOUT 45s · CONCURRENCY 2
+ *   - Eventos cerro-verde:precarga-*
+ *   - unmount de la UI NO detiene este motor
+ *   - meta.orden para que Seguimiento use la misma cola
  */
 import { API } from "./registry.js";
 import { queryClocator } from "../shared/clocator-client.js";
@@ -23,13 +15,21 @@ import { cacheGPS, gpsKey, putLegacyGPS } from "./gps-cache.js";
 
 const STORAGE_KEY = "cerro_verde_precarga_v1";
 const RANGO_KEY = "cerro_verde_rango_desde";
-const TIMEOUT_MS = 120000;
-const DONE_STATES = new Set(["COMPLETO", "SIN MOVIMIENTO", "SIN PUNTOS", "ERROR FINAL"]);
+const TIMEOUT_MS = 45000;
+const CONCURRENCY = 2;
+const DONE_STATES = new Set([
+  "COMPLETO",
+  "SIN MOVIMIENTO",
+  "SIN PUNTOS",
+  "ERROR FINAL",
+]);
 
 let runtimeRef = null;
 let running = false;
 let stopFlag = false;
 let controller = null;
+/** @type {Set<AbortController>} */
+const activeControllers = new Set();
 let currentPlaca = null;
 /** @type {Array<{placa:string,tracto:string}>} */
 let unitsSnapshot = [];
@@ -90,6 +90,12 @@ export function getCurrentPlaca() {
   return currentPlaca;
 }
 
+/** Orden de placas de la precarga (Seguimiento debe usar el mismo). */
+export function getOrdenPlacas() {
+  const m = loadMeta();
+  return Array.isArray(m?.orden) ? m.orden.map(nplate) : [];
+}
+
 export function getStatus(placa) {
   const m = loadMeta();
   if (!m?.resultados) return null;
@@ -124,7 +130,11 @@ function emit(event, payload) {
 
 function classifyResult(data) {
   const puntos = data?.puntos_gps?.length ?? data?.puntos ?? 0;
-  const visitas = data?.analisis?.visitas_confirmadas?.length ?? 0;
+  const visitas =
+    data?.analisis?.visitas_confirmadas?.length ??
+    data?.visitas_confirmadas?.length ??
+    data?.visitas ??
+    0;
   if (!puntos) return { estado: "SIN PUNTOS", puntos: 0, visitas: 0 };
   if (puntos < 2) return { estado: "SIN MOVIMIENTO", puntos, visitas };
   return { estado: "COMPLETO", puntos, visitas };
@@ -166,31 +176,40 @@ export async function startPreload(units, opts = {}) {
     tracto: String(u.tracto || u.placa || "").trim(),
   }));
 
-  let meta = loadMeta();
-  const corteCambio = meta && meta.desde && meta.desde !== desde;
-  if (opts.forceNew || corteCambio || !meta || meta.completo || !meta.id) {
+  let meta = !opts.forceNew ? loadMeta() : null;
+  const sameRun =
+    meta &&
+    meta.desde === desde &&
+    !meta.completo &&
+    Array.isArray(meta.orden) &&
+    meta.orden.length === unitsSnapshot.length;
+
+  if (!sameRun || opts.forceNew) {
     meta = {
       id: crypto.randomUUID(),
       desde,
       hasta,
       total: unitsSnapshot.length,
       completo: false,
+      orden: unitsSnapshot.map((u) => nplate(u.placa)),
       resultados: {},
       intentos: {},
       started_at: Date.now(),
     };
   } else {
     meta.hasta = hasta;
-    meta.desde = meta.desde || desde;
     meta.total = unitsSnapshot.length;
-    meta.resultados ||= {};
-    meta.intentos ||= {};
+    if (!Array.isArray(meta.orden) || !meta.orden.length) {
+      meta.orden = unitsSnapshot.map((u) => nplate(u.placa));
+    }
+    meta.resultados = meta.resultados || {};
+    meta.intentos = meta.intentos || {};
   }
-  localStorage.setItem(RANGO_KEY, meta.desde);
-  saveMeta(meta);
 
+  localStorage.setItem(RANGO_KEY, desde);
   running = true;
   stopFlag = false;
+  saveMeta(meta);
   emit("cerro-verde:precarga-progress", {
     running: true,
     done: counts(meta).done,
@@ -199,109 +218,153 @@ export async function startPreload(units, opts = {}) {
 
   const token = await auth.currentUser.getIdToken(true);
 
-  const process = async (list, second) => {
-    for (const u of list) {
-      if (stopFlag) break;
-      const k = nplate(u.placa);
-      const prev = meta.resultados[k]?.estado;
-      if (DONE_STATES.has(prev) && prev !== "ERROR FINAL") continue;
-      if (second && prev === "ERROR FINAL") continue;
+  const processOne = async (u, second) => {
+    if (stopFlag) return;
+    const k = nplate(u.placa);
+    const prev = meta.resultados[k]?.estado;
+    if (DONE_STATES.has(prev) && prev !== "ERROR FINAL") return;
+    if (second && prev === "ERROR FINAL") return;
 
-      currentPlaca = u.placa;
-      meta.resultados[k] = {
-        estado: second ? "SEGUNDO INTENTO" : "PROCESANDO",
-        puntos: meta.resultados[k]?.puntos,
-        visitas: meta.resultados[k]?.visitas,
-      };
-      saveMeta(meta);
+    currentPlaca = u.placa;
+    meta.resultados[k] = {
+      estado: second ? "SEGUNDO INTENTO" : "PROCESANDO",
+      puntos: meta.resultados[k]?.puntos,
+      visitas: meta.resultados[k]?.visitas,
+    };
+    saveMeta(meta);
+    emit("cerro-verde:precarga-unit", {
+      placa: u.placa,
+      tracto: u.tracto,
+      ...meta.resultados[k],
+    });
+    emit("cerro-verde:precarga-progress", {
+      running: true,
+      done: counts(meta).done,
+      total: unitsSnapshot.length,
+      currentPlaca: u.placa,
+    });
+
+    const ac = new AbortController();
+    activeControllers.add(ac);
+    controller = ac;
+    const timer = setTimeout(() => ac.abort("timeout"), TIMEOUT_MS);
+    try {
+      const data = await queryClocator({
+        endpoint: API.clocator,
+        token,
+        placa: u.placa,
+        tracto: u.tracto,
+        desde: meta.desde,
+        hasta: meta.hasta,
+        includeMap: false,
+        signal: ac.signal,
+      });
+      clearTimeout(timer);
+      meta.intentos[k] = (meta.intentos[k] || 0) + 1;
+      meta.resultados[k] = classifyResult(data);
+      try {
+        const payload = {
+          ...data,
+          placa: u.placa,
+          tracto: u.tracto,
+          run_id: meta.id,
+          desde: meta.desde,
+          hasta: meta.hasta,
+        };
+        await cacheGPS(payload, gpsKey(meta.id, u.tracto, u.placa));
+        await putLegacyGPS(u.placa, payload);
+      } catch (_) {}
       emit("cerro-verde:precarga-unit", {
         placa: u.placa,
         tracto: u.tracto,
         ...meta.resultados[k],
       });
+    } catch (e) {
+      clearTimeout(timer);
+      meta.intentos[k] = (meta.intentos[k] || 0) + 1;
+      if (stopFlag) {
+        meta.resultados[k] = {
+          estado: "PENDIENTE",
+          mensaje: "Detenido por el operador",
+        };
+        saveMeta(meta);
+        emit("cerro-verde:precarga-unit", {
+          placa: u.placa,
+          tracto: u.tracto,
+          ...meta.resultados[k],
+        });
+        return;
+      }
+      const msg = ac.signal.aborted
+        ? "Tiempo de respuesta agotado"
+        : String(e.message || e);
+      const networky = /networkerror|failed to fetch|load failed|abort/i.test(
+        msg,
+      );
+      if (!second && ((meta.intentos[k] || 0) <= 2 || networky)) {
+        meta.resultados[k] = { estado: "REINTENTO", mensaje: msg };
+      } else {
+        meta.resultados[k] = { estado: "ERROR FINAL", mensaje: msg };
+      }
+      emit("cerro-verde:precarga-unit", {
+        placa: u.placa,
+        tracto: u.tracto,
+        ...meta.resultados[k],
+      });
+      if (networky && !stopFlag) {
+        await new Promise((r) => setTimeout(r, 400));
+      }
+    } finally {
+      activeControllers.delete(ac);
+      if (controller === ac) controller = null;
+      if (currentPlaca === u.placa) currentPlaca = null;
+      saveMeta(meta);
       emit("cerro-verde:precarga-progress", {
         running: true,
         done: counts(meta).done,
         total: unitsSnapshot.length,
-        currentPlaca: u.placa,
       });
-
-      controller = new AbortController();
-      const timer = setTimeout(() => controller.abort("timeout"), TIMEOUT_MS);
-      try {
-        const data = await queryClocator({
-          endpoint: API.clocator,
-          token,
-          placa: u.placa,
-          tracto: u.tracto,
-          desde: meta.desde,
-          hasta: meta.hasta,
-          includeMap: false,
-          signal: controller.signal,
-        });
-        clearTimeout(timer);
-        meta.intentos[k] = (meta.intentos[k] || 0) + 1;
-        meta.resultados[k] = classifyResult(data);
-        try {
-          const payload = {
-              ...data,
-              placa: u.placa,
-              tracto: u.tracto,
-              run_id: meta.id,
-              desde: meta.desde,
-              hasta: meta.hasta,
-            };
-          await cacheGPS(payload, gpsKey(meta.id, u.tracto, u.placa));
-          await putLegacyGPS(u.placa, payload);
-        } catch (_) {}
-        emit("cerro-verde:precarga-unit", {
-          placa: u.placa,
-          tracto: u.tracto,
-          ...meta.resultados[k],
-        });
-      } catch (e) {
-        clearTimeout(timer);
-        meta.intentos[k] = (meta.intentos[k] || 0) + 1;
-        if (stopFlag) {
-          meta.resultados[k] = {
-            estado: "PENDIENTE",
-            mensaje: "Detenido por el operador",
-          };
-          saveMeta(meta);
-          emit("cerro-verde:precarga-unit", {
-            placa: u.placa,
-            tracto: u.tracto,
-            ...meta.resultados[k],
-          });
-          break;
-        }
-        const msg = controller?.signal?.aborted
-          ? "Tiempo de respuesta agotado"
-          : String(e.message || e);
-        if (!second && (meta.intentos[k] || 0) <= 1) {
-          meta.resultados[k] = { estado: "REINTENTO", mensaje: msg };
-        } else {
-          meta.resultados[k] = { estado: "ERROR FINAL", mensaje: msg };
-        }
-        emit("cerro-verde:precarga-unit", {
-          placa: u.placa,
-          tracto: u.tracto,
-          ...meta.resultados[k],
-        });
-      } finally {
-        controller = null;
-        currentPlaca = null;
-        saveMeta(meta);
-        emit("cerro-verde:precarga-progress", {
-          running: true,
-          done: counts(meta).done,
-          total: unitsSnapshot.length,
-        });
-      }
     }
   };
 
+  const process = async (list, second) => {
+    const queue = list.filter((u) => {
+      const prev = meta.resultados[nplate(u.placa)]?.estado;
+      if (DONE_STATES.has(prev) && prev !== "ERROR FINAL") return false;
+      if (second && prev === "ERROR FINAL") return false;
+      return true;
+    });
+    let i = 0;
+    const workers = Array.from(
+      { length: Math.min(CONCURRENCY, queue.length || 1) },
+      async () => {
+        while (!stopFlag && i < queue.length) {
+          const idx = i++;
+          const u = queue[idx];
+          if (!u) break;
+          await processOne(u, second);
+          if (!stopFlag) await new Promise((r) => setTimeout(r, 60));
+        }
+      },
+    );
+    await Promise.all(workers);
+  };
+
   try {
+    // Destrabar estados a medias de una corrida anterior
+    for (const u of unitsSnapshot) {
+      const k = nplate(u.placa);
+      const s = String(meta.resultados[k]?.estado || "");
+      if (s === "PROCESANDO" || s === "SEGUNDO INTENTO") {
+        meta.resultados[k] = {
+          ...meta.resultados[k],
+          estado: "PENDIENTE",
+          mensaje: "Reanudado",
+        };
+      }
+    }
+    saveMeta(meta);
+
     const first = unitsSnapshot.filter((u) => {
       const s = meta.resultados[nplate(u.placa)]?.estado;
       return !DONE_STATES.has(s);
@@ -343,6 +406,12 @@ export function stopPreload() {
   try {
     controller?.abort("operator");
   } catch (_) {}
+  for (const ac of activeControllers) {
+    try {
+      ac.abort("operator");
+    } catch (_) {}
+  }
+  activeControllers.clear();
 }
 
-export { DONE_STATES, STORAGE_KEY };
+export { DONE_STATES, STORAGE_KEY, RANGO_KEY, TIMEOUT_MS, CONCURRENCY };

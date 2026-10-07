@@ -218,26 +218,165 @@ async function login(user: string, password: string) {
     throw new Error("CLocator rechazó el acceso o no devolvió ViewState");
   return { fetcher, main, view: viewHtml(main) };
 }
-function rowData(html: string, plate: string, tracto: string) {
-  const $ = load(html),
-    targets = new Set([norm(plate), norm(tracto)].filter(Boolean));
-  let found: any = null;
-  $("tr").each((_: number, tr: any) => {
-    if (found) return;
-    const vals = $(tr)
-      .find("td")
-      .map((_: number, td: any) => norm($(td).text()))
-      .get();
-    if (vals.some((v: string) => targets.has(v))) found = tr;
+
+function inPeruBBox(lat: number, lng: number) {
+  return lat >= -18.5 && lat <= -0.01 && lng >= -81.5 && lng <= -68.5;
+}
+function esParGeoValido(a: number, b: number) {
+  const x = Number(a), y = Number(b);
+  if (!Number.isFinite(x) || !Number.isFinite(y)) return false;
+  const ok = (la: number, lo: number) =>
+    Math.abs(la) <= 90 && Math.abs(lo) <= 180 && Math.abs(la) > 0.1 && Math.abs(lo) > 0.1;
+  return ok(x, y) || ok(y, x);
+}
+function normalizeLatLngSimple(a: unknown, b: unknown) {
+  const x = Number(a), y = Number(b);
+  if (!esParGeoValido(x, y)) return null;
+  if (inPeruBBox(x, y)) return { lat: x, lng: y };
+  if (inPeruBBox(y, x)) return { lat: y, lng: x };
+  if (Math.abs(x) <= 90 && Math.abs(y) <= 180) return { lat: x, lng: y };
+  if (Math.abs(y) <= 90 && Math.abs(x) <= 180) return { lat: y, lng: x };
+  return null;
+}
+function parseFechaMonitoreo(text: string) {
+  const s = String(text || "").replace(/\s+/g, " ").trim();
+  let m = s.match(/(\d{2}\/\d{2}\/\d{4})\s+(\d{2}:\d{2})(?::(\d{2}))?/);
+  if (m) return `${m[1]} ${m[2]}:${m[3] || "00"}`;
+  m = s.match(/(\d{2})-(\d{2})-(\d{4})\s+(\d{2}:\d{2})(?::(\d{2}))?/);
+  if (m) return `${m[1]}/${m[2]}/${m[3]} ${m[4]}:${m[5] || "00"}`;
+  m = s.match(/(\d{4})-(\d{2})-(\d{2})[T\s](\d{2}:\d{2})(?::(\d{2}))?/);
+  if (m) return `${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5] || "00"}`;
+  return "";
+}
+function decodeHtmlEntities(s: string) {
+  return String(s || "")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+/** Lat/lng solo desde irAMonitoreo en la fila — nunca celdas de texto. */
+function obtenerLatLonDesdeFila($: any, row: any) {
+  const chunks: string[] = [];
+  chunks.push($.html(row) || "");
+  row.find("*").addBack().each((_: number, el: any) => {
+    const node = $(el);
+    for (const attr of [
+      "onclick", "ondblclick", "href", "data-href", "data-url",
+      "data-lat", "data-lon", "data-longitude", "data-latitude",
+      "title", "data-geocode", "data-pos",
+    ]) {
+      const v = node.attr(attr);
+      if (v) chunks.push(String(v));
+    }
+    const attribs = el.attribs || {};
+    for (const [, v] of Object.entries(attribs)) {
+      if (v) chunks.push(String(v));
+    }
   });
+  chunks.push(row.html() || "");
+  const src = decodeHtmlEntities(chunks.join("\n"));
+  // irAMonitoreo(id,'lat','lng',...)
+  const reIdLatLng =
+    /irAMonitoreo\s*\(\s*['"]?\d+['"]?\s*,\s*['"]?(-?\d+[.,]\d+)['"]?\s*,\s*['"]?(-?\d+[.,]\d+)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = reIdLatLng.exec(src))) {
+    const a = m[1].replace(",", ".");
+    const b = m[2].replace(",", ".");
+    const fixed = normalizeLatLngSimple(a, b);
+    if (fixed) return { ...fixed, raw_a: a, raw_b: b };
+  }
+  const reLatLng =
+    /irAMonitoreo\s*\(\s*['"]?(-?\d+[.,]\d+)['"]?\s*,\s*['"]?(-?\d+[.,]\d+)/gi;
+  while ((m = reLatLng.exec(src))) {
+    const a = m[1].replace(",", ".");
+    const b = m[2].replace(",", ".");
+    const fixed = normalizeLatLngSimple(a, b);
+    if (fixed) return { ...fixed, raw_a: a, raw_b: b };
+  }
+  return null;
+}
+
+function rowData(html: string, plate: string, tracto: string) {
+  return rowInfo(html, plate, tracto).rk;
+}
+/** Fila de monitoreo: data-rk + último punto del main (irAMonitoreo + T. Parada). */
+function rowInfo(html: string, plate: string, tracto: string) {
+  const $ = load(html);
+  const targets = new Set([norm(plate), norm(tracto)].filter(Boolean));
+  let found: any = null;
+  const tryFind = (scope: any) => {
+    scope.find("tr").each((_: number, tr: any) => {
+      if (found) return;
+      const vals = $(tr).find("td").map((__: number, td: any) => norm($(td).text())).get();
+      if (vals.some((v: string) => targets.has(v))) found = tr;
+    });
+  };
+  let $scope = $("#frmMonitoreo\\:dtTablaMonitoreo_data");
+  if (!$scope.length) {
+    $scope = $("tbody").filter((_: number, el: any) =>
+      String($(el).attr("id") || "").endsWith("dtTablaMonitoreo_data")
+    ).first();
+  }
+  if ($scope.length) tryFind($scope);
+  if (!found) tryFind($.root());
   if (!found)
     throw new Error(
       `No se encontró ${plate} / ${tracto} en el monitoreo CLocator`,
     );
-  const row = $(found),
-    rk = row.attr("data-rk");
+  const row = $(found);
+  const rk = row.attr("data-rk");
   if (!rk) throw new Error("La unidad encontrada no contiene data-rk");
-  return rk;
+
+  const textos = row.find("td").map((_: number, td: any) =>
+    $(td).text().replace(/\s+/g, " ").trim()
+  ).get();
+  // Hora del último reporte: columna T. Parada (idx 5), fallback otras
+  let fecha = parseFechaMonitoreo(textos[5] || "");
+  if (!fecha) fecha = parseFechaMonitoreo(textos[4] || "");
+  if (!fecha) {
+    for (const tx of textos) {
+      fecha = parseFechaMonitoreo(tx);
+      if (fecha) break;
+    }
+  }
+
+  let coords = obtenerLatLonDesdeFila($, row);
+  if (!coords) {
+    const mainHtml = String(html || "");
+    for (const key of [plate, tracto].filter(Boolean)) {
+      if (!key || key.length < 3) continue;
+      const idx = mainHtml.toUpperCase().indexOf(key.toUpperCase());
+      if (idx < 0) continue;
+      const slice = mainHtml.slice(Math.max(0, idx - 500), Math.min(mainHtml.length, idx + 2500));
+      const re = /irAMonitoreo\s*\(\s*['"]?\d+['"]?\s*,\s*['"]?(-?\d+[.,]\d+)['"]?\s*,\s*['"]?(-?\d+[.,]\d+)/gi;
+      let m: RegExpExecArray | null;
+      while ((m = re.exec(slice))) {
+        const fixed = normalizeLatLngSimple(m[1].replace(",", "."), m[2].replace(",", "."));
+        if (fixed) {
+          coords = { ...fixed, raw_a: m[1], raw_b: m[2] };
+          break;
+        }
+      }
+      if (coords) break;
+    }
+  }
+
+  const ultimo_monitoreo = coords
+    ? {
+        lat: coords.lat,
+        lng: coords.lng,
+        fecha: fecha || null,
+        fuente: "irAMonitoreo",
+      }
+    : null;
+
+  return { rk, ultimo_monitoreo, fecha };
 }
 function showSource(html: string) {
   const $ = load(html);
@@ -817,7 +956,7 @@ function analyze(points: Pt[], fences: Fence[], eventFences: Fence[]) {
 async function recorrido(plate: string, tracto: string, from: string, to: string, fences: Fence[], eventFences: Fence[]) {
   const user = Deno.env.get("CLOCATOR_USER"), password = Deno.env.get("CLOCATOR_PASSWORD");
   if (!user || !password) throw new Error("No existen CLOCATOR_USER y CLOCATOR_PASSWORD en los secretos de Supabase");
-  const s = await login(user, password), rk = rowData(s.main, plate, tracto), common = {
+  const s = await login(user, password), info = rowInfo(s.main, plate, tracto), rk = info.rk, ultimoMonitoreo = info.ultimo_monitoreo, common = {
     frmMonitoreo: "frmMonitoreo",
     "frmMonitoreo:cmbBuscarMonitoreo_input": "Placa",
     "frmMonitoreo:cmbBuscarMonitoreo_focus": "",
@@ -879,11 +1018,23 @@ async function recorrido(plate: string, tracto: string, from: string, to: string
     const p = item?.map ?? item;
     if (Number.isFinite(Number(p?.latitud)) && Number.isFinite(Number(p?.longitud))) points.push({ lat: Number(p.latitud), lng: Number(p.longitud), fecha: p.fechaFinToString || p.fechaInicioToString || null });
   }
+  const last = points.at(-1) || null;
+  // Preferir punto válido en Perú; si el del rango es basura, usar irAMonitoreo del main
+  let ultimo: Pt | null = null;
+  if (last && inPeruBBox(last.lat, last.lng)) ultimo = last;
+  else if (ultimoMonitoreo && inPeruBBox(ultimoMonitoreo.lat, ultimoMonitoreo.lng)) {
+    ultimo = { lat: ultimoMonitoreo.lat, lng: ultimoMonitoreo.lng, fecha: ultimoMonitoreo.fecha || null };
+  } else if (last && esParGeoValido(last.lat, last.lng)) ultimo = last;
+  else if (ultimoMonitoreo && esParGeoValido(ultimoMonitoreo.lat, ultimoMonitoreo.lng)) {
+    ultimo = { lat: ultimoMonitoreo.lat, lng: ultimoMonitoreo.lng, fecha: ultimoMonitoreo.fecha || null };
+  }
   return {
     puntos: points.length,
     total_original: list.length,
     primero: points[0] || null,
-    ultimo: points.at(-1) || null,
+    ultimo,
+    ultimo_monitoreo: ultimoMonitoreo,
+    sin_movimiento: points.length < 2,
     puntos_gps: points,
     analisis: analyze(points, fences, eventFences),
     geocercas: fences,
