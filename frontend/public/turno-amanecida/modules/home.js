@@ -2,7 +2,7 @@ import { moduleHead, esc, maestrosApi, fechaPE } from "../api-client.js";
 
 export async function mount(container) {
   container.innerHTML = `
-    ${moduleHead("Inicio", "Control nocturno de pernocta · 22:00 a 04:00")}
+    ${moduleHead("Inicio", "Identificar tránsitos después de las 22:00 · clasificar pernocte y riesgo")}
     <section class="panel">
       <div class="panel-title"><div><h2>Estado de maestros</h2><p class="muted">Carga única de OC y catálogo de acoples. Requeridos para generar la base.</p></div></div>
       <div id="tn-home-status" class="tn-grid"><div class="tn-card"><small>CARGANDO…</small><b>—</b></div></div>
@@ -10,11 +10,12 @@ export async function mount(container) {
     <section class="panel">
       <div class="panel-title"><div><h2>Reglas del itinerario</h2></div></div>
       <ul class="muted" style="line-height:1.7">
-        <li>Solo unidades con código <b>20-R-</b>.</li>
-        <li>Filtro espacial: geocercas publicadas del itinerario <b>TURNO AMANECIDA</b> (sufijo <b>_TN</b>).</li>
-        <li>De cada equipo se usa la <b>última OC</b> (por FecIniReal).</li>
-        <li>Tipo de acople se resuelve desde el maestro editable en Supabase.</li>
-        <li>Monitoreo: pantalla única mapa + lista + clasificación; poll cada <b>3 minutos</b>.</li>
+        <li><b>Objetivo:</b> detectar unidades que siguen en tránsito o detenidas <b>pasadas las 22:00</b>.</li>
+        <li>Universo: solo tractos <b>20-R-</b> dentro de <b>Filtro_Macro_Sur_TN</b>.</li>
+        <li>En geocerca, “Transito” = dentro del macro pero <b>fuera de un punto conocido</b> (planta, base, etc.).</li>
+        <li>Prioridad en pantalla: <b>en movimiento</b> → detenidas con más tiempo de parada → GPS perdido.</li>
+        <li>Última OC por equipo + tipo de acople alimentan la ficha de cada unidad.</li>
+        <li>Poll de posiciones cada <b>3 minutos</b> durante el turno (22:00–04:00).</li>
       </ul>
     </section>
     <section class="panel">

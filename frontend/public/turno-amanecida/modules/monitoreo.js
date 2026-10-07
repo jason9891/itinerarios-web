@@ -1,5 +1,5 @@
 /**
- * MONITOREO + CLASIFICACIÓN — pantalla única de validación nocturna.
+ * MONITOREO + CLASIFICACIÓN — identificar tránsitos después de las 22:00.
  * Layout (como VentanaMapa del desktop):
  *   cabecera (fecha, contadores, filtros, poll)
  *   mapa (izq) + lista unidades (der)
@@ -199,17 +199,44 @@ function markerHtml(u) {
   return `<div class="tn-marker" style="--c:${c};--ring:${ring}" title="${esc(u.codigo)}"><span></span></div>`;
 }
 
+/** Prioridad operativa: en movimiento → detenida (más tiempo) → GPS perdido → resto. */
+function prioridadTransit(u) {
+  const est = u.estado_monitoreo || "";
+  if (est === "MOVIMIENTO") return 0;
+  if (est === "DETENIDA") return 1;
+  if (est === "PERDIDA_GPS") return 2;
+  return 3;
+}
+
+function parseParadaMin(t) {
+  if (!t) return 0;
+  const m = String(t).match(/(\d+):(\d+)/);
+  if (!m) return 0;
+  return Number(m[1]) * 60 + Number(m[2]);
+}
+
 function unidadesFiltradas() {
   const q = busqueda.trim().toUpperCase();
-  return unidades.filter((u) => {
+  const rows = unidades.filter((u) => {
     if (filtro === "Pendientes" && u.estado_clasificacion !== "PENDIENTE") return false;
     if (filtro === "Calificadas" && u.estado_clasificacion !== "CALIFICADA") return false;
     if (filtro === "Revisar" && u.estado_clasificacion !== "REVISAR") return false;
+    if (filtro === "En transito" && u.estado_monitoreo !== "MOVIMIENTO") return false;
+    if (filtro === "Detenidas" && u.estado_monitoreo !== "DETENIDA") return false;
+    if (filtro === "Fuera zona" && String(u.zona || "") !== "Transito") return false;
     if (!q) return true;
     return [u.codigo, u.placa, u.piloto, u.ruta, u.zona]
       .join(" ")
       .toUpperCase()
       .includes(q);
+  });
+  return rows.sort((a, b) => {
+    const pa = prioridadTransit(a);
+    const pb = prioridadTransit(b);
+    if (pa !== pb) return pa - pb;
+    // Detenidas: más tiempo de parada primero
+    if (pa === 1) return parseParadaMin(b.t_parada) - parseParadaMin(a.t_parada);
+    return String(a.codigo).localeCompare(String(b.codigo));
   });
 }
 
@@ -241,9 +268,9 @@ export async function mount(container, runtime) {
     <div class="tn-track">
       <header class="tn-track-head">
         <div class="tn-track-title">
-          <p class="eyebrow">TURNO AMANECIDA · SEGUIMIENTO</p>
-          <h1>Validación nocturna</h1>
-          <p class="muted">Mapa + lista + clasificación · ventana 22:00–04:00 · solo 20-R-</p>
+          <p class="eyebrow">TURNO AMANECIDA · DESDE LAS 22:00</p>
+          <h1>Tránsitos de la noche</h1>
+          <p class="muted">Identificar unidades 20-R- en tránsito o detenidas fuera de punto conocido · clasificar riesgo y pernocte</p>
         </div>
         <div class="tn-track-meta">
           <label class="tn-field">
@@ -261,7 +288,10 @@ export async function mount(container, runtime) {
 
       <div class="tn-track-toolbar">
         <div class="tn-filters" id="tn-filters">
-          <button type="button" data-f="Pendientes" class="active">PENDIENTES</button>
+          <button type="button" data-f="Pendientes" class="active">POR CLASIFICAR</button>
+          <button type="button" data-f="En transito">EN TRÁNSITO</button>
+          <button type="button" data-f="Detenidas">DETENIDAS</button>
+          <button type="button" data-f="Fuera zona">ZONA TRÁNSITO</button>
           <button type="button" data-f="Calificadas">CALIFICADAS</button>
           <button type="button" data-f="Revisar">REVISAR</button>
           <button type="button" data-f="Todas">TODAS</button>
