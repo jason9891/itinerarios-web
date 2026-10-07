@@ -545,6 +545,50 @@ Deno.serve(async(req)=>{
         }
       );
     }
+    if(action==="pernoctes_sin_registro"){
+      // Viajes con cambio de día Caracoto→SMCV y sin pernocte registrado (evento).
+      // No incluye mismo día. Validación pendiente se trata en otro módulo.
+      const all=await pernocteDataset(db);
+      const faltantes:any[]=[];
+      for(const r of all){
+        const salidaDate=pernocteDateKey(r.salida);
+        const llegadaDate=pernocteDateKey(r.llegada);
+        if(!salidaDate||!llegadaDate)continue;
+        if(salidaDate===llegadaDate)continue; // mismo día: aún no evaluamos
+        const tienePernocte=!!(r.event_id&&parseDate(r.inicio)&&parseDate(r.fin));
+        if(tienePernocte)continue;
+        // Ventana fija de análisis GPS: 20:00 día salida → 08:00 día llegada (hora Lima)
+        const [ys,ms,ds]=salidaDate.split("-");
+        const [yl,ml,dl]=llegadaDate.split("-");
+        const z=(n:string)=>String(n).padStart(2,"0");
+        const desdeGps=`${z(ds)}/${z(ms)}/${ys} 20:00:00`;
+        const hastaGps=`${z(dl)}/${z(ml)}/${yl} 08:00:00`;
+        faltantes.push({
+          entrega_sap:r.ent,
+          placa:r.placa,
+          codigo_tracto:r.tracto,
+          conductor:r.conductor,
+          fecha_carga:r.fecha,
+          salida_caracoto:r.salida,
+          llegada_smcv:r.llegada,
+          salida_fecha:salidaDate,
+          llegada_fecha:llegadaDate,
+          tiene_pernocte_registrado:false,
+          tiene_pernocte_validado:!!r.validado_en,
+          ventana_gps_desde:desdeGps,
+          ventana_gps_hasta:hastaGps,
+          motivo:"CAMBIO_DE_DIA_SIN_PERNOCTE_REGISTRADO",
+        });
+      }
+      faltantes.sort((a,b)=>(parseDate(b.salida_caracoto)?.getTime()||0)-(parseDate(a.salida_caracoto)?.getTime()||0));
+      return responseJson(req,{
+        ok:true,
+        total:faltantes.length,
+        regla:"salida_caracoto y llegada_smcv en fechas distintas + sin evento PERNOCTE registrado",
+        ventana:"20:00 día salida → 08:00 día llegada (America/Lima)",
+        items:faltantes,
+      });
+    }
     if(action==="convoy_datos"){
       const[masters,convoy]=await Promise.all([convoyMasters(db),convoyRows(db)]);
       return responseJson(req,{convoy,tractos:masters.tractos,carretas:masters.carretas,conductores:masters.conductores,fecha_operativa:localDatePE()});
