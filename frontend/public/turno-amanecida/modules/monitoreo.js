@@ -8,7 +8,8 @@
  * Persistencia local de clasificaciones mientras no exista backend de snapshot.
  * Cuando exista base/snapshot, runtime.state / API alimentarán `unidades`.
  */
-import { moduleHead, esc, fechaPE } from "../api-client.js";
+import { moduleHead, esc, fechaPE, apiPost } from "../api-client.js";
+import { API } from "../registry.js";
 import { queryClocator, clocatorEndpoint } from "../../shared/clocator-client.js";
 import { auth } from "../../shared/auth.js";
 import { startPrecarga, loadMeta, currentRunId, getProgress, cacheIsFresh, tickPrecargaSiToca, TICK_MS } from "../precarga-engine.js";
@@ -37,24 +38,34 @@ let routeLayers = [];
 let routeLoading = false;
 let clipboard = null;
 let leafletReady = null;
-/** null = hora real Lima; number 0-23 fuerza umbral nocturno (pruebas). */
+let mapsKey = "";
+let mapsPromise = null;
 
-function loadLeaflet() {
-  if (window.L) return Promise.resolve(window.L);
-  if (leafletReady) return leafletReady;
-  leafletReady = new Promise((resolve, reject) => {
-    const css = document.createElement("link");
-    css.rel = "stylesheet";
-    css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
-    document.head.appendChild(css);
+async function loadGoogleMaps(key) {
+  if (window.google?.maps) return;
+  if (!key) throw new Error("Falta GOOGLE_MAPS_API_KEY (Supabase secret)");
+  mapsKey = key;
+  mapsPromise ||= new Promise((ok, no) => {
     const s = document.createElement("script");
-    s.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
-    s.onload = () => resolve(window.L);
-    s.onerror = () => reject(new Error("No se pudo cargar Leaflet"));
+    s.src = `https://maps.googleapis.com/maps/api/js?key=${encodeURIComponent(key)}&v=weekly`;
+    s.onload = ok;
+    s.onerror = () => no(new Error("No se pudo cargar Google Maps"));
     document.head.appendChild(s);
   });
-  return leafletReady;
+  return mapsPromise;
 }
+
+function gMarkerIcon(color, scale = 7) {
+  return {
+    path: google.maps.SymbolPath.CIRCLE,
+    scale,
+    fillColor: color,
+    fillOpacity: 1,
+    strokeColor: "#0b1928",
+    strokeWeight: 2,
+  };
+}
+
 
 function loadClasificaciones() {
   try {
@@ -469,7 +480,7 @@ function partirRecorrido(puntos, fechaTurno) {
 function clearRouteLayers() {
   for (const layer of routeLayers) {
     try {
-      map?.removeLayer(layer);
+      if (layer.setMap) layer.setMap(null);
     } catch {
       /* ignore */
     }
@@ -477,53 +488,38 @@ function clearRouteLayers() {
   routeLayers = [];
 }
 
+/** Recorrido sin fitBounds ni pan (no redimensiona el mapa). */
 function drawSplitRoute(azul, rojo) {
-  if (!map || !window.L) return;
+  if (!map || !window.google?.maps) return;
   clearRouteLayers();
-  const bounds = [];
   if (azul.length >= 2) {
-    const line = L.polyline(
-      azul.map((p) => [p.lat, p.lng]),
-      { color: "#2563EB", weight: 4, opacity: 0.9 },
-    ).addTo(map);
-    routeLayers.push(line);
-    azul.forEach((p) => bounds.push([p.lat, p.lng]));
-    const start = L.circleMarker([azul[0].lat, azul[0].lng], {
-      radius: 7,
-      color: "#1e40af",
-      fillColor: "#2563EB",
-      fillOpacity: 1,
-      weight: 2,
-    }).bindTooltip("Inicio 16:00–22:00");
-    start.addTo(map);
-    routeLayers.push(start);
+    routeLayers.push(
+      new google.maps.Polyline({
+        path: azul.map((p) => ({ lat: p.lat, lng: p.lng })),
+        geodesic: true,
+        strokeColor: "#2563EB",
+        strokeOpacity: 0.9,
+        strokeWeight: 4,
+        map,
+        zIndex: 200,
+      }),
+    );
   }
   if (rojo.length >= 2) {
-    const line = L.polyline(
-      rojo.map((p) => [p.lat, p.lng]),
-      { color: "#DC2626", weight: 4, opacity: 0.9 },
-    ).addTo(map);
-    routeLayers.push(line);
-    rojo.forEach((p) => bounds.push([p.lat, p.lng]));
-  } else if (rojo.length === 1) {
-    const m = L.circleMarker([rojo[0].lat, rojo[0].lng], {
-      radius: 6,
-      color: "#991b1b",
-      fillColor: "#DC2626",
-      fillOpacity: 1,
-    }).bindTooltip("Post 22:00");
-    m.addTo(map);
-    routeLayers.push(m);
-    bounds.push([rojo[0].lat, rojo[0].lng]);
-  }
-  if (bounds.length) {
-    try {
-      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
-    } catch {
-      /* ignore */
-    }
+    routeLayers.push(
+      new google.maps.Polyline({
+        path: rojo.map((p) => ({ lat: p.lat, lng: p.lng })),
+        geodesic: true,
+        strokeColor: "#DC2626",
+        strokeOpacity: 0.9,
+        strokeWeight: 4,
+        map,
+        zIndex: 210,
+      }),
+    );
   }
 }
+
 
 
 export async function mount(container, runtime) {
@@ -647,12 +643,20 @@ export async function mount(container, runtime) {
                 <button type="button" data-r="ALTO" class="r-alto">ALTO</button>
               </div>
             </div>
-            <label>PUNTO AUT.
-              <select id="tn-aut"><option value="">—</option><option>SI</option><option>NO</option><option>-</option></select>
-            </label>
-            <label>COB. GPS
-              <select id="tn-gps"><option value="">—</option><option>SI</option><option>NO</option><option>-</option></select>
-            </label>
+            <div class="tn-sino-field">
+              <span>PUNTO AUTORIZADO</span>
+              <div class="tn-sino" id="tn-aut">
+                <button type="button" data-v="SI">SI</button>
+                <button type="button" data-v="NO">NO</button>
+              </div>
+            </div>
+            <div class="tn-sino-field">
+              <span>COBERTURA GPS</span>
+              <div class="tn-sino" id="tn-gps">
+                <button type="button" data-v="SI">SI</button>
+                <button type="button" data-v="NO">NO</button>
+              </div>
+            </div>
             <label>TIPO LUGAR
               <input id="tn-lugar" type="text" placeholder="Patio, grifo…">
             </label>
@@ -669,7 +673,6 @@ export async function mount(container, runtime) {
             <button type="button" class="ghost" id="tn-paste">PEGAR</button>
             <button type="button" class="ghost" id="tn-clear">LIMPIAR</button>
             <button type="button" class="tn-btn-nova" id="tn-nova">NO VA</button>
-            <button type="button" class="ghost" id="tn-track" disabled title="Recorrido 16:00→ahora">VER RECORRIDO</button>
             <span id="tn-save-msg" class="muted"></span>
           </div>
         </div>
@@ -725,40 +728,147 @@ export async function mount(container, runtime) {
       .join("");
   }
 
-  function syncMarkers() {
-    if (!map || !window.L) return;
-    markersLayer.clearLayers();
+  function clearMarkers() {
+    for (const mk of markersByCode.values()) {
+      try {
+        mk.setMap?.(null);
+        mk.__halo?.setMap?.(null);
+      } catch {
+        /* ignore */
+      }
+    }
     markersByCode.clear();
+  }
+
+  function syncMarkers({ fitOnce = false } = {}) {
+    if (!map || !window.google?.maps) return;
+    clearMarkers();
     const rows = unidadesFiltradas();
-    const bounds = [];
+    const bounds = new google.maps.LatLngBounds();
+    let any = false;
     for (const u of rows) {
       if (u.lat == null || u.lng == null) continue;
-      const icon = L.divIcon({
-        className: "tn-marker-wrap",
-        html: markerHtml(u),
-        iconSize: [36, 36],
-        iconAnchor: [18, 18],
+      const pos = { lat: Number(u.lat), lng: Number(u.lng) };
+      if (!Number.isFinite(pos.lat) || !Number.isFinite(pos.lng)) continue;
+      const color = colorHtmlHex(u.color_html);
+      const urg = urgenciaNocturna(u);
+      const marker = new google.maps.Marker({
+        map,
+        position: pos,
+        title: u.codigo,
+        icon: gMarkerIcon(color, 7),
+        zIndex: urg ? 300 : 200,
       });
-      const m = L.marker([u.lat, u.lng], { icon });
-      m.on("click", () => selectUnit(u.codigo));
-      m.bindTooltip(`${u.codigo} · ${u.placa || ""}`, { direction: "top", offset: [0, -8] });
-      markersLayer.addLayer(m);
-      markersByCode.set(u.codigo, m);
-      bounds.push([u.lat, u.lng]);
+      marker.addListener("click", () => selectUnit(u.codigo));
+      if (urg) {
+        marker.__halo = new google.maps.Circle({
+          map,
+          center: pos,
+          radius: 450,
+          fillColor: urg === "rojo" ? "#ef4444" : "#eab308",
+          fillOpacity: 0.28,
+          strokeColor: urg === "rojo" ? "#ef4444" : "#eab308",
+          strokeOpacity: 0.7,
+          strokeWeight: 2,
+          clickable: false,
+          zIndex: 100,
+        });
+      }
+      markersByCode.set(u.codigo, marker);
+      bounds.extend(pos);
+      any = true;
     }
-    if (bounds.length && !seleccion) {
+    if (fitOnce && any && !seleccion) {
       try {
-        map.fitBounds(bounds, { padding: [40, 40], maxZoom: 11 });
+        map.fitBounds(bounds, 48);
+        if (map.getZoom() > 11) map.setZoom(11);
       } catch {
         /* ignore */
       }
     }
   }
 
+  async function mostrarRecorridoUnidad(u) {
+    if (!u || routeLoading) return;
+    routeLoading = true;
+    try {
+      const fechaVal = container.querySelector("#tn-fecha")?.value || fechaTurnoDefault();
+      const placaU = String(u.placa || "").trim().toUpperCase();
+      const tractoU = String(u.codigo || "").trim().toUpperCase();
+      let pts = [];
+      const rid = currentRunId() || loadMeta()?.id;
+      if (rid) {
+        const cached = await readGPS(gpsKey(rid, tractoU, placaU));
+        if (cached?.puntos_gps?.length) pts = cached.puntos_gps;
+      }
+      if (!pts.length) {
+        clearRouteLayers();
+        return;
+      }
+      const { azul, rojo } = partirRecorrido(pts, fechaVal);
+      drawSplitRoute(azul, rojo);
+      const ev = evaluarHaloNocturno(pts, fechaVal);
+      u.movimiento_nocturno_m = ev.metros;
+      u.halo_nocturno = ev.halo;
+    } catch (err) {
+      console.warn("[TN] recorrido", err);
+    } finally {
+      routeLoading = false;
+    }
+  }
+
+  async function refrescarPosiciones() {
+    const data = await apiPost(API.snapshot, { action: "snapshot" });
+    if (!data?.ok || !Array.isArray(data.unidades)) throw new Error(data?.error || "Snapshot falló");
+    if (data.google_maps_api_key) mapsKey = data.google_maps_api_key;
+    const byCode = new Map(data.unidades.map((x) => [x.codigo, x]));
+    let moved = 0;
+    for (const u of unidades) {
+      const n = byCode.get(u.codigo);
+      if (!n) continue;
+      if (n.lat != null && n.lng != null) {
+        const d = haversineM(Number(u.lat), Number(u.lng), Number(n.lat), Number(n.lng));
+        if (d != null && d >= 1) moved += 1;
+        u.lat = n.lat;
+        u.lng = n.lng;
+      }
+      if (n.color_html) u.color_html = n.color_html;
+      if (n.clase_html) u.clase_html = n.clase_html;
+      if (n.reporte_gps) u.reporte_gps = n.reporte_gps;
+      if (n.t_parada != null) u.t_parada = n.t_parada;
+    }
+    try {
+      const raw = localStorage.getItem("tn_base_turno_v1");
+      if (raw) {
+        const base = JSON.parse(raw);
+        base.unidades = unidades;
+        base.generado_en = new Date().toISOString();
+        localStorage.setItem("tn_base_turno_v1", JSON.stringify(base));
+      }
+    } catch {
+      /* ignore */
+    }
+    syncMarkers();
+    msgEl.textContent = `Posiciones OK · ${moved} con cambio · snap ${data.unidades.length}`;
+    pulseLive();
+    return data;
+  }
+
+
+  function setSino(id, val) {
+    const v = String(val || "").toUpperCase();
+    container.querySelectorAll(`#${id} button`).forEach((b) => {
+      b.classList.toggle("active", b.dataset.v === v);
+    });
+  }
+  function readSino(id) {
+    return container.querySelector(`#${id} button.active`)?.dataset.v || "-";
+  }
+
   function fillForm(u, { includeRuta = true } = {}) {
     container.querySelector("#tn-status").value = u.status === "-" ? "" : u.status || "";
-    container.querySelector("#tn-aut").value = u.punto_autorizado === "-" ? "" : u.punto_autorizado || "";
-    container.querySelector("#tn-gps").value = u.cobertura_gps === "-" ? "" : u.cobertura_gps || "";
+    setSino("tn-aut", u.punto_autorizado);
+    setSino("tn-gps", u.cobertura_gps);
     container.querySelector("#tn-lugar").value = u.tipo_lugar || "";
     container.querySelector("#tn-pernocte").value = u.punto_pernocte || "";
     container.querySelector("#tn-obs").value = u.observaciones || "";
@@ -777,8 +887,8 @@ export async function mount(container, runtime) {
     return {
       status: container.querySelector("#tn-status").value || "-",
       riesgo: riesgoBtn?.dataset.r || "-",
-      punto_autorizado: container.querySelector("#tn-aut").value || "-",
-      cobertura_gps: container.querySelector("#tn-gps").value || "-",
+      punto_autorizado: readSino("tn-aut"),
+      cobertura_gps: readSino("tn-gps"),
       tipo_lugar: container.querySelector("#tn-lugar").value.trim(),
       punto_pernocte: container.querySelector("#tn-pernocte").value.trim(),
       observaciones: container.querySelector("#tn-obs").value.trim(),
@@ -806,14 +916,7 @@ export async function mount(container, runtime) {
     fillForm(u);
     renderList();
     msgEl.textContent = "";
-    const trackBtn = container.querySelector("#tn-track");
-    if (trackBtn) trackBtn.disabled = !(u.placa || u.codigo);
-
-    const m = markersByCode.get(codigo);
-    if (m && map) {
-      map.panTo(m.getLatLng());
-      m.openTooltip();
-    }
+    mostrarRecorridoUnidad(u);
   }
 
   function applyToSelected(data, { advance = true } = {}) {
@@ -873,6 +976,13 @@ export async function mount(container, runtime) {
       b.classList.toggle("active", b === btn),
     );
   });
+  container.querySelectorAll(".tn-sino").forEach((group) => {
+    group.addEventListener("click", (e) => {
+      const btn = e.target.closest("button[data-v]");
+      if (!btn) return;
+      group.querySelectorAll("button").forEach((b) => b.classList.toggle("active", b === btn));
+    });
+  });
 
   container.querySelector("#tn-save").addEventListener("click", () => {
     if (!seleccion) return;
@@ -930,21 +1040,13 @@ export async function mount(container, runtime) {
     msgEl.textContent = "Marcado NO VA";
   });
 
-  container.querySelector("#tn-refresh").addEventListener("click", () => {
-    // Futuro: snapshot/monitor API. Hoy re-sincroniza clasificaciones locales.
-    const saved = loadClasificaciones();
-    unidades = unidades.map((u) => {
-      const s = saved[u.codigo];
-      if (!s) return u;
-      const m = { ...u, ...s };
-      m.estado_clasificacion = estadoClasificacion(m);
-      return m;
-    });
-    renderCounters();
-    renderList();
-    syncMarkers();
-    msgEl.textContent = "Lista actualizada";
-    pulseLive();
+  container.querySelector("#tn-refresh").addEventListener("click", async () => {
+    msgEl.textContent = "Actualizando posiciones…";
+    try {
+      await refrescarPosiciones();
+    } catch (e) {
+      msgEl.textContent = `Refresh: ${e.message || e}`;
+    }
   });
 
   function pulseLive() {
@@ -956,101 +1058,46 @@ export async function mount(container, runtime) {
     setTimeout(() => dot.classList.remove("pulse"), 800);
   }
 
-  // Map
+  // Google Maps — key desde secret GOOGLE_MAPS_API_KEY vía snapshot
   try {
-    await loadLeaflet();
+    let key = mapsKey;
+    if (!key) {
+      try {
+        const boot = await apiPost(API.snapshot, { action: "snapshot" });
+        key = boot.google_maps_api_key || "";
+        if (boot?.ok && Array.isArray(boot.unidades)) {
+          const byCode = new Map(boot.unidades.map((x) => [x.codigo, x]));
+          for (const u of unidades) {
+            const n = byCode.get(u.codigo);
+            if (!n) continue;
+            if (n.lat != null) u.lat = n.lat;
+            if (n.lng != null) u.lng = n.lng;
+            if (n.color_html) u.color_html = n.color_html;
+            if (n.clase_html) u.clase_html = n.clase_html;
+            if (n.t_parada != null) u.t_parada = n.t_parada;
+          }
+        }
+      } catch (e) {
+        console.warn("[TN] boot snapshot", e);
+      }
+    }
+    await loadGoogleMaps(key);
     if (disposed) return;
-    map = L.map(container.querySelector("#tn-map"), {
-      zoomControl: true,
-      attributionControl: true,
-    }).setView([-16.4, -71.5], 7);
-    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
-      maxZoom: 18,
-      attribution: "&copy; OpenStreetMap",
-    }).addTo(map);
-    markersLayer = L.layerGroup().addTo(map);
-    setTimeout(() => map.invalidateSize(), 80);
+    map = new google.maps.Map(container.querySelector("#tn-map"), {
+      center: { lat: -16.4, lng: -71.5 },
+      zoom: 8,
+      mapTypeId: "hybrid",
+      fullscreenControl: true,
+      streetViewControl: false,
+      mapTypeControl: true,
+      gestureHandling: "greedy",
+    });
   } catch (e) {
     container.querySelector("#tn-map").innerHTML =
       `<div class="tn-map-error">Mapa no disponible: ${esc(e.message)}</div>`;
   }
 
 
-  container.querySelector("#tn-track")?.addEventListener("click", async () => {
-    if (!seleccion || routeLoading) return;
-    const placa = String(seleccion.placa || "").trim();
-    const tracto = String(seleccion.codigo || "").trim();
-    if (!placa && !tracto) {
-      msgEl.textContent = "Unidad sin placa/código";
-      return;
-    }
-    routeLoading = true;
-    const btn = container.querySelector("#tn-track");
-    if (btn) {
-      btn.disabled = true;
-      btn.textContent = "CARGANDO…";
-    }
-    msgEl.textContent = "Consultando recorrido CLocator…";
-    try {
-      const fechaVal = container.querySelector("#tn-fecha")?.value || fechaTurnoDefault();
-      const placaU = placa.toUpperCase();
-      const tractoU = tracto.toUpperCase();
-      let pts = [];
-      let fuente = "live";
-
-      // 1) Caché de precarga
-      const rid = currentRunId() || loadMeta()?.id;
-      if (rid) {
-        const cached = await readGPS(gpsKey(rid, tractoU, placaU));
-        if (cached?.puntos_gps?.length) {
-          pts = cached.puntos_gps;
-          fuente = "caché";
-        }
-      }
-
-      // 2) Fallback consulta puntual
-      if (!pts.length) {
-        const dia = parseFechaTurno(fechaVal);
-        const desdeDt = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), 16, 0, 0);
-        const hastaDt = new Date();
-        const limite = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate() + 1, 4, 0, 0);
-        const hasta = hastaDt > limite ? limite : hastaDt;
-        const user = auth.currentUser;
-        if (!user) throw new Error("Sin sesión");
-        const token = await user.getIdToken(true);
-        const data = await queryClocator({
-          endpoint: clocatorEndpoint("cemento"),
-          token,
-          placa: placa || tracto,
-          tracto,
-          desde: formatPE(desdeDt),
-          hasta: formatPE(hasta),
-          includeMap: false,
-          timeoutMs: 60000,
-        });
-        pts = data.puntos_gps || data.puntos || [];
-        fuente = "live";
-      }
-
-      const { azul, rojo } = partirRecorrido(pts, fechaVal);
-      drawSplitRoute(azul, rojo);
-      const ev = evaluarHaloNocturno(pts, fechaVal);
-      seleccion.movimiento_nocturno_m = ev.metros;
-      seleccion.halo_nocturno = ev.halo;
-      syncMarkers();
-      renderList();
-      msgEl.textContent = `Recorrido (${fuente}): ${azul.length} pts ≤22h · ${rojo.length} pts >22h · mov22=${ev.metros22}m mov23=${ev.metros23}m → halo ${ev.halo || "ninguno"}`;
-    } catch (e) {
-      msgEl.textContent = `Recorrido: ${e.message || e}`;
-      clearRouteLayers();
-    } finally {
-      routeLoading = false;
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = "VER RECORRIDO";
-      }
-    }
-  });
 
 
   // Precarga de rutas en caché (16:00→ahora) — no bloquea la UI
@@ -1123,13 +1170,12 @@ export async function mount(container, runtime) {
 
   renderCounters();
   renderList();
-  syncMarkers();
+  syncMarkers({ fitOnce: true });
   pulseLive();
 
   // Poll placeholder (3 min) — refresca “vivo” cuando exista monitor API
     pollTimer = setInterval(() => {
-    pulseLive();
-    // Tramos nuevos solo cada TICK_MS (~5 min) y solo lo faltante / fresco
+    refrescarPosiciones().catch(() => pulseLive());
     tickPrecargaSiToca(unitList, fechaVal)
       .then((meta) => {
         if (meta) {
@@ -1153,11 +1199,17 @@ export function unmount() {
     pollTimer = null;
   }
   clearRouteLayers();
-  if (map) {
-    map.remove();
-    map = null;
+  clearRouteLayers();
+  for (const mk of markersByCode.values()) {
+    try {
+      mk.setMap?.(null);
+      mk.__halo?.setMap?.(null);
+    } catch {
+      /* ignore */
+    }
   }
-  markersLayer = null;
   markersByCode.clear();
+  markersLayer = null;
+  map = null;
   seleccion = null;
 }

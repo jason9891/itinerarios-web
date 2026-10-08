@@ -494,6 +494,7 @@ Deno.serve(async (req) => {
         muestras_irAMonitoreo: raw.muestras_irAMonitoreo || [],
       },
       unidades,
+      google_maps_api_key: Deno.env.get("GOOGLE_MAPS_API_KEY") || "",
       nota:
         "Filtro: (1) Filtro_Macro_Sur_TN (2) excluir plantas/bases _TN (3) 20-R-. Match OC local en navegador.",
     });

@@ -587,3 +587,29 @@ body.tn-fs-monitoreo .content {
   .tn-list-panel { border-left: 0; border-top: 1px solid #ffffff14; }
   .tn-detail { max-height: 40vh; }
 }
+
+.tn-sino-field {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  color: #8aa0b8;
+}
+.tn-sino { display: flex; gap: 6px; }
+.tn-sino button {
+  border: 1px solid #ffffff25;
+  background: #0c1a28;
+  color: #cbd5e1;
+  border-radius: 6px;
+  padding: 7px 14px;
+  font-weight: 800;
+  font-size: 11px;
+  cursor: pointer;
+  min-width: 52px;
+}
+.tn-sino button.active {
+  background: #1d4ed8;
+  border-color: #3b82f6;
+  color: #fff;
+}
