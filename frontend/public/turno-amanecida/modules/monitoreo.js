@@ -31,6 +31,8 @@ let busqueda = "";
 let pollTimer = null;
 let clipboard = null;
 let leafletReady = null;
+/** null = hora real Lima; number 0-23 fuerza umbral nocturno (pruebas). */
+let simHora = null;
 
 function loadLeaflet() {
   if (window.L) return Promise.resolve(window.L);
@@ -188,15 +190,62 @@ function colorMonitor(est) {
   return "#64748b";
 }
 
+/** Hora actual en Perú (0–23). */
+function horaLima() {
+  if (simHora != null && Number.isFinite(simHora)) return simHora;
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Lima",
+      hour: "numeric",
+      hour12: false,
+    }).formatToParts(new Date());
+    return Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+  } catch {
+    return new Date().getHours();
+  }
+}
+
+/**
+ * Halo de urgencia nocturna para tránsitos:
+ *  - 22:00–22:59 → amarillo (tránsito pasadas las 22h)
+ *  - 23:00–03:59 → rojo (ya pasó de las 23h)
+ *  - resto del día → sin halo nocturno
+ * Aplica a unidades en movimiento, detenidas o en zona Transito.
+ */
+function urgenciaNocturna(u) {
+  const est = u.estado_monitoreo || "";
+  const zona = String(u.zona || "");
+  const enJuego =
+    est === "MOVIMIENTO" || est === "DETENIDA" || est === "PERDIDA_GPS" || zona === "Transito";
+  if (!enJuego) return null;
+  const h = horaLima();
+  if (h >= 23 || h < 4) return "rojo";
+  if (h >= 22) return "amarillo";
+  return null;
+}
+
 function markerHtml(u) {
   const c = colorMonitor(u.estado_monitoreo);
+  const urg = urgenciaNocturna(u);
   const ring =
-    u.estado_clasificacion === "CALIFICADA"
-      ? "#22c55e"
-      : u.estado_clasificacion === "REVISAR"
-        ? "#f59e0b"
-        : "#38bdf8";
-  return `<div class="tn-marker" style="--c:${c};--ring:${ring}" title="${esc(u.codigo)}"><span></span></div>`;
+    urg === "rojo"
+      ? "#ef4444"
+      : urg === "amarillo"
+        ? "#eab308"
+        : u.estado_clasificacion === "CALIFICADA"
+          ? "#22c55e"
+          : u.estado_clasificacion === "REVISAR"
+            ? "#f59e0b"
+            : "#38bdf8";
+  const haloClass =
+    urg === "rojo" ? "halo-rojo" : urg === "amarillo" ? "halo-amarillo" : "";
+  const title = urg
+    ? `${u.codigo} · tránsito nocturno (${urg === "rojo" ? ">23:00" : ">22:00"})`
+    : u.codigo;
+  return `<div class="tn-marker ${haloClass}" style="--c:${c};--ring:${ring}" title="${esc(title)}">
+    <i class="tn-halo" aria-hidden="true"></i>
+    <span class="tn-dot"></span>
+  </div>`;
 }
 
 /** Prioridad operativa: en movimiento → detenida (más tiempo) → GPS perdido → resto. */
@@ -282,6 +331,16 @@ export async function mount(container, runtime) {
             <span class="tn-live-dot" id="tn-live-dot"></span>
             <span id="tn-live-txt">Poll 3 min</span>
           </div>
+          <label class="tn-field">
+            <span>HALO NOCTURNO</span>
+            <select id="tn-sim-hora" title="Hora para umbral 22h/23h (pruebas o revisión diurna)">
+              <option value="">Hora real (Lima)</option>
+              <option value="21">21:00 · sin halo</option>
+              <option value="22">22:30 · amarillo</option>
+              <option value="23">23:30 · rojo</option>
+              <option value="1">01:00 · rojo</option>
+            </select>
+          </label>
           <button type="button" class="ghost" id="tn-refresh">REFRESCAR</button>
         </div>
       </header>
@@ -306,8 +365,8 @@ export async function mount(container, runtime) {
             <span><i style="background:#22c55e"></i> Movimiento</span>
             <span><i style="background:#ef4444"></i> Detenida</span>
             <span><i style="background:#94a3b8"></i> GPS perdido</span>
-            <span><i class="ring" style="border-color:#22c55e"></i> Calificada</span>
-            <span><i class="ring" style="border-color:#38bdf8"></i> Pendiente</span>
+            <span><i class="halo-leg am"></i> Tránsito ≥22:00</span>
+            <span><i class="halo-leg ro"></i> Tránsito ≥23:00</span>
           </div>
         </div>
         <aside class="tn-list-panel">
@@ -435,8 +494,8 @@ export async function mount(container, runtime) {
       const icon = L.divIcon({
         className: "tn-marker-wrap",
         html: markerHtml(u),
-        iconSize: [18, 18],
-        iconAnchor: [9, 9],
+        iconSize: [36, 36],
+        iconAnchor: [18, 18],
       });
       const m = L.marker([u.lat, u.lng], { icon });
       m.on("click", () => selectUnit(u.codigo));
@@ -627,6 +686,17 @@ export async function mount(container, runtime) {
       observaciones: "NO VA",
     });
     msgEl.textContent = "Marcado NO VA";
+  });
+
+
+  container.querySelector("#tn-sim-hora")?.addEventListener("change", (e) => {
+    const v = e.target.value;
+    simHora = v === "" ? null : Number(v);
+    syncMarkers();
+    pulseLive();
+    const h = horaLima();
+    const urg = h >= 23 || h < 4 ? "rojo ≥23:00" : h >= 22 ? "amarillo ≥22:00" : "sin halo (<22:00)";
+    msgEl.textContent = `Umbral nocturno: ${urg}`;
   });
 
   container.querySelector("#tn-refresh").addEventListener("click", () => {
