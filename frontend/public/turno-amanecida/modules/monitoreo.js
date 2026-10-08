@@ -287,9 +287,10 @@ function calcularMovimientoNocturno(puntos, fechaTurno) {
 }
 
 function urgenciaNocturna(u) {
-  // Halo solo si hubo desplazamiento real ≥100 m después de las 22:00
-  if (!u.movimiento_nocturno_m || u.movimiento_nocturno_m < 100) return null;
+  const mov = Number(u.movimiento_nocturno_m) || 0;
+  if (mov < 100) return null; // sin desplazamiento real post-22h → sin halo
   const h = horaLima();
+  // 22:00–22:59 amarillo · ≥23:00 (o madrugada <4) rojo
   if (h >= 23 || h < 4) return "rojo";
   if (h >= 22) return "amarillo";
   return null;
@@ -503,6 +504,7 @@ function drawSplitRoute(azul, rojo) {
 
 export async function mount(container, runtime) {
   disposed = false;
+  document.body.classList.add("tn-fs-monitoreo");
   // Preferir base real del turno (snapshot + match OC local)
   try {
     const base = JSON.parse(localStorage.getItem("tn_base_turno_v1") || "null");
@@ -536,10 +538,12 @@ export async function mount(container, runtime) {
   container.innerHTML = `
     <div class="tn-track">
       <header class="tn-track-head">
-        <div class="tn-track-title">
-          <p class="eyebrow">TURNO AMANECIDA · DESDE LAS 22:00</p>
-          <h1>Tránsitos de la noche</h1>
-          <p class="muted">Base del turno (snapshot real + OC local) · tránsitos fuera de punto conocido · clasificar riesgo/pernocte</p>
+        <div class="tn-track-title" style="display:flex;align-items:center;gap:12px">
+          <button type="button" class="tn-btn-back" id="tn-back">← VOLVER</button>
+          <div>
+            <p class="eyebrow">MAPA · UNIDADES MONITOREADAS</p>
+            <h1>TURNO AMANECIDA</h1>
+          </div>
         </div>
         <div class="tn-track-meta">
           <label class="tn-field">
@@ -556,10 +560,10 @@ export async function mount(container, runtime) {
             <span>HALO NOCTURNO</span>
             <select id="tn-sim-hora" title="Hora para umbral 22h/23h (pruebas o revisión diurna)">
               <option value="">Hora real (Lima)</option>
-              <option value="21">21:00 · sin halo</option>
-              <option value="22">22:30 · amarillo</option>
-              <option value="23">23:30 · rojo</option>
-              <option value="1">01:00 · rojo</option>
+              <option value="21">21:00 · sin halo (≥100m)</option>
+              <option value="22">22:30 · amarillo si ≥100m</option>
+              <option value="23">23:30 · rojo si ≥100m</option>
+              <option value="1">01:00 · rojo si ≥100m</option>
             </select>
           </label>
           <button type="button" class="ghost" id="tn-refresh">REFRESCAR</button>
@@ -674,6 +678,16 @@ export async function mount(container, runtime) {
   const emptyEl = container.querySelector("#tn-detail-empty");
   const bodyEl = container.querySelector("#tn-detail-body");
   const msgEl = container.querySelector("#tn-save-msg");
+
+  container.querySelector("#tn-back")?.addEventListener("click", () => {
+    document.body.classList.remove("tn-fs-monitoreo");
+    // Volver a Base del turno (flujo natural) o home
+    const btn =
+      document.querySelector('nav button[data-route="base"]') ||
+      document.querySelector('nav button[data-route="home"]');
+    btn?.click();
+  });
+
 
   function renderCounters() {
     const { p, c, r, t } = contadores();
@@ -1126,6 +1140,7 @@ export async function mount(container, runtime) {
 
 export function unmount() {
   disposed = true;
+  document.body.classList.remove("tn-fs-monitoreo");
   if (pollTimer) {
     clearInterval(pollTimer);
     pollTimer = null;
