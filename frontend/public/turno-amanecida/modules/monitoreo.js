@@ -609,77 +609,85 @@ export async function mount(container, runtime) {
           </div>
         </div>
         <div class="tn-right">
-        <aside class="tn-list-panel">
-          <div class="tn-list-head">
-            <b>UNIDADES</b>
-            <small id="tn-list-count">0</small>
-          </div>
-          <div class="tn-list" id="tn-list"></div>
-        </aside>
-      <section class="tn-detail" id="tn-detail">
-        <div class="tn-detail-empty" id="tn-detail-empty">
-          Selecciona una unidad en la lista o en el mapa para clasificarla.
-        </div>
-        <div class="tn-detail-body hidden" id="tn-detail-body">
-          <div class="tn-detail-top">
-            <div class="tn-id-line">
-              <b id="tn-sel-code">—</b>
-              <span id="tn-sel-title">—</span>
-              <label class="tn-ruta-inline">RUTA
-                <input id="tn-ruta" type="text" placeholder="Editable · no se copia">
-              </label>
+          <aside class="tn-list-panel">
+            <div class="tn-list-head">
+              <b>UNIDADES</b>
+              <small id="tn-list-count">0</small>
             </div>
-          </div>
-          <div class="tn-class-form tn-class-horizontal">
-            <label>STATUS
-              <select id="tn-status">${STATUS_OPTS.map((o) => `<option value="${esc(o)}">${esc(o || "—")}</option>`).join("")}</select>
-            </label>
-            <div class="tn-riesgo">
-              <span>RIESGO</span>
-              <div class="tn-riesgo-btns">
-                <button type="button" data-r="BAJO" class="r-bajo">BAJO</button>
-                <button type="button" data-r="MEDIO" class="r-medio">MEDIO</button>
-                <button type="button" data-r="ALTO" class="r-alto">ALTO</button>
+            <div class="tn-list" id="tn-list"></div>
+          </aside>
+          <section class="tn-detail" id="tn-detail">
+            <div class="tn-detail-empty" id="tn-detail-empty">
+              Selecciona una unidad en la lista o en el mapa para clasificarla.
+            </div>
+            <div class="tn-detail-body hidden" id="tn-detail-body">
+              <div class="tn-detail-top">
+                <div class="tn-id-line">
+                  <b id="tn-sel-code">—</b>
+                  <span id="tn-sel-title">—</span>
+                  <label class="tn-ruta-inline">RUTA
+                    <input id="tn-ruta" type="text" placeholder="Editable · no se copia">
+                  </label>
+                </div>
+              </div>
+              <div class="tn-class-form tn-class-horizontal">
+                <label>STATUS
+                  <select id="tn-status"></select>
+                </label>
+                <div class="tn-riesgo">
+                  <span>RIESGO</span>
+                  <div class="tn-riesgo-btns">
+                    <button type="button" data-r="BAJO" class="r-bajo">BAJO</button>
+                    <button type="button" data-r="MEDIO" class="r-medio">MEDIO</button>
+                    <button type="button" data-r="ALTO" class="r-alto">ALTO</button>
+                  </div>
+                </div>
+                <div class="tn-sino-field">
+                  <span>PUNTO AUTORIZADO</span>
+                  <div class="tn-sino" id="tn-aut">
+                    <button type="button" data-v="SI">SI</button>
+                    <button type="button" data-v="NO">NO</button>
+                  </div>
+                </div>
+                <div class="tn-sino-field">
+                  <span>COBERTURA GPS</span>
+                  <div class="tn-sino" id="tn-gps">
+                    <button type="button" data-v="SI">SI</button>
+                    <button type="button" data-v="NO">NO</button>
+                  </div>
+                </div>
+                <label>TIPO LUGAR
+                  <input id="tn-lugar" type="text" placeholder="Patio, grifo…">
+                </label>
+                <label class="grow">PUNTO PERNOCTE
+                  <input id="tn-pernocte" type="text" placeholder="Referencia">
+                </label>
+                <label class="grow">OBSERVACIONES
+                  <input id="tn-obs" type="text" placeholder="Notas">
+                </label>
+              </div>
+              <div class="tn-class-actions tn-class-actions-bottom">
+                <button type="button" class="primary" id="tn-save">GUARDAR</button>
+                <button type="button" class="ghost" id="tn-copy">COPIAR</button>
+                <button type="button" class="ghost" id="tn-paste">PEGAR</button>
+                <button type="button" class="ghost" id="tn-clear">LIMPIAR</button>
+                <button type="button" class="tn-btn-nova" id="tn-nova">NO VA</button>
+                <span id="tn-save-msg" class="muted"></span>
               </div>
             </div>
-            <div class="tn-sino-field">
-              <span>PUNTO AUTORIZADO</span>
-              <div class="tn-sino" id="tn-aut">
-                <button type="button" data-v="SI">SI</button>
-                <button type="button" data-v="NO">NO</button>
-              </div>
-            </div>
-            <div class="tn-sino-field">
-              <span>COBERTURA GPS</span>
-              <div class="tn-sino" id="tn-gps">
-                <button type="button" data-v="SI">SI</button>
-                <button type="button" data-v="NO">NO</button>
-              </div>
-            </div>
-            <label>TIPO LUGAR
-              <input id="tn-lugar" type="text" placeholder="Patio, grifo…">
-            </label>
-            <label class="grow">PUNTO PERNOCTE
-              <input id="tn-pernocte" type="text" placeholder="Referencia">
-            </label>
-            <label class="grow">OBSERVACIONES
-              <input id="tn-obs" type="text" placeholder="Notas">
-            </label>
-          </div>
-          <div class="tn-class-actions tn-class-actions-bottom">
-            <button type="button" class="primary" id="tn-save">GUARDAR</button>
-            <button type="button" class="ghost" id="tn-copy">COPIAR</button>
-            <button type="button" class="ghost" id="tn-paste">PEGAR</button>
-            <button type="button" class="ghost" id="tn-clear">LIMPIAR</button>
-            <button type="button" class="tn-btn-nova" id="tn-nova">NO VA</button>
-            <span id="tn-save-msg" class="muted"></span>
-          </div>
-        </div>
-      </section>
+          </section>
         </div>
       </div>
     </div>
   `;
+
+  // Status options (evitar template anidado frágil)
+  const statusSel = container.querySelector("#tn-status");
+  if (statusSel) {
+    statusSel.innerHTML = STATUS_OPTS.map(
+      (o) => `<option value="${esc(o)}">${esc(o || "—")}</option>`,
+    ).join("");
+  }
 
   const listEl = container.querySelector("#tn-list");
   const countersEl = container.querySelector("#tn-counters");
@@ -699,18 +707,20 @@ export async function mount(container, runtime) {
 
 
   function renderCounters() {
-    const { p, c, r, t } = contadores();
+    if (!countersEl) return;
+    const { p, c, r, t: tot } = contadores();
     countersEl.innerHTML = `
       <span class="tn-chip pend"><b>${p}</b> pend</span>
       <span class="tn-chip ok"><b>${c}</b> calif</span>
       <span class="tn-chip rev"><b>${r}</b> revisar</span>
-      <span class="tn-chip"><b>${t}</b> total</span>
+      <span class="tn-chip"><b>${tot}</b> total</span>
     `;
   }
 
   function renderList() {
+    if (!listEl) return;
     const rows = unidadesFiltradas();
-    listCount.textContent = String(rows.length);
+    if (listCount) listCount.textContent = String(rows.length);
     listEl.innerHTML = rows
       .map((u) => {
         const active = seleccion?.codigo === u.codigo ? "active" : "";
@@ -948,7 +958,7 @@ export async function mount(container, runtime) {
   }
 
   // Filters
-  container.querySelector("#tn-filters").addEventListener("click", (e) => {
+  container.querySelector("#tn-filters")?.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-f]");
     if (!btn) return;
     filtro = btn.dataset.f;
@@ -959,7 +969,7 @@ export async function mount(container, runtime) {
     syncMarkers();
   });
 
-  container.querySelector("#tn-search").addEventListener("input", (e) => {
+  container.querySelector("#tn-search")?.addEventListener("input", (e) => {
     busqueda = e.target.value || "";
     renderList();
     syncMarkers();
@@ -970,7 +980,7 @@ export async function mount(container, runtime) {
     if (btn) selectUnit(btn.dataset.code);
   });
 
-  container.querySelector(".tn-riesgo-btns").addEventListener("click", (e) => {
+  container.querySelector(".tn-riesgo-btns")?.addEventListener("click", (e) => {
     const btn = e.target.closest("button[data-r]");
     if (!btn) return;
     container.querySelectorAll(".tn-riesgo-btns button").forEach((b) =>
@@ -985,20 +995,20 @@ export async function mount(container, runtime) {
     });
   });
 
-  container.querySelector("#tn-save").addEventListener("click", () => {
+  container.querySelector("#tn-save")?.addEventListener("click", () => {
     if (!seleccion) return;
     applyToSelected(readForm());
     clearRouteLayers(); // recorrido desaparece al guardar
     msgEl.textContent = "Guardado · recorrido limpiado";
   });
 
-  container.querySelector("#tn-copy").addEventListener("click", () => {
+  container.querySelector("#tn-copy")?.addEventListener("click", () => {
     // Solo clasificación — sin ruta
     clipboard = readClasificacion();
     msgEl.textContent = "Clasificación copiada (sin ruta)";
   });
 
-  container.querySelector("#tn-paste").addEventListener("click", () => {
+  container.querySelector("#tn-paste")?.addEventListener("click", () => {
     if (!clipboard || !seleccion) {
       msgEl.textContent = "Nada en portapapeles";
       return;
@@ -1008,7 +1018,7 @@ export async function mount(container, runtime) {
     msgEl.textContent = "Pegado (ruta no modificada)";
   });
 
-  container.querySelector("#tn-clear").addEventListener("click", () => {
+  container.querySelector("#tn-clear")?.addEventListener("click", () => {
     fillForm(
       {
         status: "",
@@ -1027,7 +1037,7 @@ export async function mount(container, runtime) {
     );
   });
 
-  container.querySelector("#tn-nova").addEventListener("click", () => {
+  container.querySelector("#tn-nova")?.addEventListener("click", () => {
     if (!seleccion) return;
     applyToSelected({
       status: "-",
@@ -1041,7 +1051,7 @@ export async function mount(container, runtime) {
     msgEl.textContent = "Marcado NO VA";
   });
 
-  container.querySelector("#tn-refresh").addEventListener("click", async () => {
+  container.querySelector("#tn-refresh")?.addEventListener("click", async () => {
     msgEl.textContent = "Actualizando posiciones…";
     try {
       await refrescarPosiciones();
@@ -1121,8 +1131,16 @@ export async function mount(container, runtime) {
       gestureHandling: "greedy",
     });
   } catch (e) {
-    container.querySelector("#tn-map").innerHTML =
-      `<div class="tn-map-error">Mapa no disponible: ${esc(e.message)}</div>`;
+    const mapEl = container.querySelector("#tn-map");
+    if (mapEl) {
+      mapEl.innerHTML = `<div class="tn-map-error">Mapa no disponible: ${esc(e.message || e)}</div>`;
+    } else {
+      console.error("[TN] #tn-map no existe", e);
+      container.insertAdjacentHTML(
+        "beforeend",
+        `<div class="tn-map-error" style="padding:24px">Mapa no disponible: ${esc(e.message || e)}</div>`,
+      );
+    }
   }
 
 
