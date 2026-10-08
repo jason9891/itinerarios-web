@@ -58,6 +58,36 @@ function findCol(row, name) {
   return keys.find((k) => k.trim().toLowerCase() === name.toLowerCase()) || null;
 }
 
+function parseFecTs(raw) {
+  if (raw == null || raw === "") return 0;
+  const s = String(raw).trim();
+  // Excel serial
+  if (/^\d+(\.\d+)?$/.test(s)) {
+    const n = Number(s);
+    const ms = Math.round((n - 25569) * 86400 * 1000);
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  // DD/MM/YYYY[ HH:MM[:SS]]
+  const m = s.match(
+    /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/,
+  );
+  if (m) {
+    let yy = Number(m[3]);
+    if (yy < 100) yy += 2000;
+    const d = new Date(
+      yy,
+      Number(m[2]) - 1,
+      Number(m[1]),
+      Number(m[4] || 0),
+      Number(m[5] || 0),
+      Number(m[6] || 0),
+    );
+    return d.getTime() || 0;
+  }
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : 0;
+}
+
 function validateOc(rows0, rows1) {
   const required = [
     "FecIniReal",
@@ -85,28 +115,46 @@ function validateOc(rows0, rows1) {
     const best = new Map();
     let total = 0;
     for (const r of attempt.rows) {
-      const eqKey = findCol(r, "Equipo");
-      const equipo = normalizarClave(eqKey ? r[eqKey] : "");
+      const eqKey = found["Equipo"];
+      const equipo = normalizarClave(r[eqKey]);
       if (!equipo) continue;
       total++;
-      const fecKey = findCol(r, "FecIniReal");
-      const fecRaw = fecKey ? r[fecKey] : "";
-      const ts = Date.parse(String(fecRaw)) || 0;
+      const fecRaw = r[found["FecIniReal"]];
+      const ts = parseFecTs(fecRaw);
       const prev = best.get(equipo);
-      if (prev && prev.ts >= ts) continue;
-      best.set(equipo, { ts, row: r, equipo });
+      if (prev && prev._ts >= ts) continue;
+      best.set(equipo, {
+        _ts: ts,
+        equipo,
+        equipo_raw: String(r[eqKey] ?? equipo).trim(),
+        fec_ini_real_raw: fecRaw != null ? String(fecRaw).trim() : "",
+        fec_ini_real: ts ? new Date(ts).toISOString() : null,
+        acoplado_1:
+          r[found["Acoplado 1"]] != null
+            ? String(r[found["Acoplado 1"]]).trim()
+            : "",
+        nombre_piloto:
+          r[found["Nombre Piloto"]] != null
+            ? String(r[found["Nombre Piloto"]]).trim()
+            : "",
+        descripcion_ruta:
+          r[found["Descripción Ruta"]] != null
+            ? String(r[found["Descripción Ruta"]]).trim()
+            : "",
+        material_servicio:
+          r[found["Material de Servicio"]] != null
+            ? String(r[found["Material de Servicio"]]).trim()
+            : "",
+      });
     }
-    const unicas = [...best.values()];
-    const sampleOut = unicas.slice(0, 8).map((u) => {
-      const r = u.row;
-      return {
-        equipo: u.equipo,
-        fec: r[findCol(r, "FecIniReal")] ?? "",
-        acoplado: r[findCol(r, "Acoplado 1")] ?? "",
-        piloto: r[findCol(r, "Nombre Piloto")] ?? "",
-        ruta: r[findCol(r, "Descripción Ruta")] ?? "",
-      };
-    });
+    const filas = [...best.values()].map(({ _ts, ...rest }) => rest);
+    const sampleOut = filas.slice(0, 8).map((u) => ({
+      equipo: u.equipo,
+      fec: u.fec_ini_real_raw,
+      acoplado: u.acoplado_1,
+      piloto: u.nombre_piloto,
+      ruta: u.descripcion_ruta,
+    }));
     return {
       ok: true,
       headerRow: attempt.header,
@@ -114,9 +162,10 @@ function validateOc(rows0, rows1) {
       found,
       missing: [],
       totalFilasConEquipo: total,
-      equiposUnicos: unicas.length,
-      descartadas: Math.max(0, total - unicas.length),
+      equiposUnicos: filas.length,
+      descartadas: Math.max(0, total - filas.length),
       sample: sampleOut,
+      filas, // ya deduplicadas: última OC por equipo (proceso LOCAL)
     };
   }
   const headers = rows0[0]
@@ -133,6 +182,7 @@ function validateOc(rows0, rows1) {
     equiposUnicos: 0,
     descartadas: 0,
     sample: [],
+    filas: [],
   };
 }
 
@@ -227,7 +277,7 @@ export async function mount(container) {
       <div class="panel-title">
         <div>
           <h2>1 · Archivo OC</h2>
-          <p class="muted">Columnas: FecIniReal, Equipo, Acoplado 1, Nombre Piloto, Descripción Ruta, Material de Servicio. Por cada Equipo solo se conserva la OC más reciente.</p>
+          <p class="muted">Columnas: FecIniReal, Equipo, Acoplado 1, Nombre Piloto, Descripción Ruta, Material de Servicio. Por cada Equipo solo se conserva la OC más reciente. La comparación se hace en el navegador; no se sube el archivo completo.</p>
         </div>
       </div>
       <div class="tn-upload">
@@ -235,7 +285,7 @@ export async function mount(container) {
           SELECCIONAR OC (.xlsx)
           <input id="tn-oc-file" type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
         </label>
-        <button type="button" id="tn-oc-upload" class="primary" disabled>SUBIR Y GUARDAR ÚLTIMA OC</button>
+        <button type="button" id="tn-oc-upload" class="primary" disabled>SINCRONIZAR RESUMEN A SUPABASE</button>
         <span id="tn-oc-name" class="muted"></span>
       </div>
       <div id="tn-oc-result"><p class="muted">Aún no hay archivo. Al elegirlo se validan las cabeceras automáticamente.</p></div>
@@ -280,6 +330,7 @@ export async function mount(container) {
   let acFile = null;
   let ocOk = false;
   let acOk = false;
+  let ocFilasLocal = []; // última OC por equipo (procesada en el navegador)
 
   async function onOcSelected(file) {
     ocFile = file || null;
@@ -298,18 +349,38 @@ export async function mount(container) {
       if (disposed) return;
       const v = validateOc(rows0, rows1);
       ocOk = v.ok;
+      ocFilasLocal = v.filas || [];
       ocBtn.disabled = !v.ok;
+      // Cache local inmediato (sin Supabase) para cruces en monitoreo/base
+      if (v.ok) {
+        try {
+          localStorage.setItem(
+            "tn_oc_ultima_v1",
+            JSON.stringify({
+              nombre_archivo: ocFile.name,
+              actualizado_en: new Date().toISOString(),
+              filas: ocFilasLocal,
+            }),
+          );
+        } catch (err) {
+          console.warn("[TN] no se pudo cachear OC local", err);
+        }
+      }
       ocRes.innerHTML = `
         <div class="tn-card ${v.ok ? "ok" : "warn"}" style="margin-top:10px">
-          <small>VALIDACIÓN OC</small>
-          <b>${v.ok ? "Listo para subir" : "Cabeceras incompletas"}</b>
-          <p class="muted" style="font-size:12px;margin:6px 0">Fila de encabezado: ${v.headerRow ?? "—"}</p>
+          <small>VALIDACIÓN OC · PROCESO LOCAL</small>
+          <b>${v.ok ? "Última OC por equipo lista" : "Cabeceras incompletas"}</b>
+          <p class="muted" style="font-size:12px;margin:6px 0">
+            Comparación y deduplicación en el navegador (no se sube el Excel completo).
+            Fila de encabezado: ${v.headerRow ?? "—"}
+          </p>
           ${renderHeaders(v.headers || [], v.found || {}, v.missing)}
           ${
             v.ok
-              ? `<p style="margin-top:8px">Filas con Equipo: <b>${v.totalFilasConEquipo}</b> ·
-                 Equipos únicos (última OC): <b>${v.equiposUnicos}</b> ·
-                 OC anteriores descartadas: <b>${v.descartadas}</b></p>
+              ? `<p style="margin-top:8px">Filas leídas: <b>${v.totalFilasConEquipo}</b> ·
+                 Equipos únicos: <b>${v.equiposUnicos}</b> ·
+                 Descartadas (OC anteriores): <b>${v.descartadas}</b></p>
+                 <p class="tn-badge ok">Cache local guardado · listo para sincronizar resumen</p>
                  ${renderSampleTable(["equipo", "fec", "acoplado", "piloto", "ruta"], v.sample)}`
               : ""
           }
@@ -396,26 +467,26 @@ export async function mount(container) {
   }
 
   ocBtn.addEventListener("click", async () => {
-    if (!ocFile || !ocOk) return;
+    if (!ocOk || !ocFilasLocal.length) return;
     ocBtn.disabled = true;
     const prev = ocBtn.textContent;
-    ocBtn.textContent = "SUBIENDO…";
+    ocBtn.textContent = "SINCRONIZANDO…";
     try {
-      const b64 = await fileToBase64(ocFile);
+      // Solo se envía el resumen ya deduplicado (1 fila por equipo). Sin Excel.
       const r = await maestrosApi({
-        action: "cargar_oc",
-        nombre_archivo: ocFile.name,
-        contenido_base64: b64,
+        action: "guardar_oc",
+        nombre_archivo: ocFile?.name || "oc_local.xlsx",
+        filas: ocFilasLocal,
       });
       ocRes.insertAdjacentHTML(
         "beforeend",
-        `<p class="tn-badge ok" style="margin-top:8px">Guardado · ${r.filas_unicas ?? r.filas ?? 0} equipos · descartadas ${r.filas_descartadas ?? 0}</p>`,
+        `<p class="tn-badge ok" style="margin-top:8px">Sync OK · ${r.filas ?? ocFilasLocal.length} equipos (payload liviano, proceso local)</p>`,
       );
       await refresh();
     } catch (e) {
       ocRes.insertAdjacentHTML(
         "beforeend",
-        `<p class="tn-badge err" style="margin-top:8px">${esc(e.message)}</p>`,
+        `<p class="tn-badge warn" style="margin-top:8px">Cache local OK · sync Supabase: ${esc(e.message)}</p>`,
       );
     } finally {
       ocBtn.textContent = prev;

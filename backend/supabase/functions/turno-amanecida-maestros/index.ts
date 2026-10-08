@@ -227,6 +227,55 @@ Deno.serve(async (req) => {
       return reply(req, { ok: true, filas: clean.length });
     }
 
+
+    if (action === "guardar_oc") {
+      // Filas YA deduplicadas en el cliente (última OC por equipo).
+      // No recibe Excel ni base64: payload liviano.
+      const filas = Array.isArray(body.filas) ? body.filas : [];
+      if (!filas.length) throw Error("No hay filas OC para guardar");
+      const clean = filas
+        .map((r: any) => {
+          const equipo = normalizarClave(r.equipo || r.equipo_raw);
+          if (!equipo) return null;
+          return {
+            equipo,
+            equipo_raw: String(r.equipo_raw || r.equipo || equipo).trim(),
+            fec_ini_real: r.fec_ini_real || null,
+            fec_ini_real_raw: r.fec_ini_real_raw != null ? String(r.fec_ini_real_raw) : "",
+            acoplado_1: r.acoplado_1 != null ? String(r.acoplado_1).trim() : null,
+            nombre_piloto: r.nombre_piloto != null ? String(r.nombre_piloto).trim() : null,
+            descripcion_ruta: r.descripcion_ruta != null ? String(r.descripcion_ruta).trim() : null,
+            material_servicio: r.material_servicio != null ? String(r.material_servicio).trim() : null,
+            payload: {},
+            actualizado_en: new Date().toISOString(),
+            actualizado_por: user.email,
+          };
+        })
+        .filter(Boolean) as any[];
+
+      const { error: delErr } = await db
+        .from("amanecida_oc_ultima")
+        .delete()
+        .neq("equipo", "");
+      if (delErr) throw delErr;
+
+      const chunk = 200;
+      for (let i = 0; i < clean.length; i += chunk) {
+        const slice = clean.slice(i, i + chunk);
+        const { error } = await db.from("amanecida_oc_ultima").insert(slice);
+        if (error) throw error;
+      }
+      await db.from("amanecida_maestros_meta").upsert({
+        tipo: "oc",
+        nombre_archivo: String(body.nombre_archivo || ""),
+        filas: clean.length,
+        actualizado_en: new Date().toISOString(),
+        actualizado_por: user.email,
+        nota: "guardar_oc_cliente_dedup",
+      });
+      return reply(req, { ok: true, filas: clean.length });
+    }
+
     if (action === "cargar_oc") {
       const b64 = String(body.contenido_base64 || "");
       if (!b64) throw Error("Falta contenido_base64");
