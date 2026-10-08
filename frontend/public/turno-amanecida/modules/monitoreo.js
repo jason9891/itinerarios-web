@@ -38,7 +38,6 @@ let routeLoading = false;
 let clipboard = null;
 let leafletReady = null;
 /** null = hora real Lima; number 0-23 fuerza umbral nocturno (pruebas). */
-let simHora = null;
 
 function loadLeaflet() {
   if (window.L) return Promise.resolve(window.L);
@@ -238,114 +237,110 @@ function aplicarRegla100m(u, prev) {
   return u;
 }
 
-/** Hora actual en Perú (0–23). */
-function horaLima() {
-  if (simHora != null && Number.isFinite(simHora)) return simHora;
-  try {
-    const parts = new Intl.DateTimeFormat("en-US", {
-      timeZone: "America/Lima",
-      hour: "numeric",
-      hour12: false,
-    }).formatToParts(new Date());
-    return Number(parts.find((p) => p.type === "hour")?.value ?? 0);
-  } catch {
-    return new Date().getHours();
-  }
-}
-
 /**
- * Halo nocturno SOLO para tránsito activo (MOVIMIENTO).
- * No aplica a detenidas / GPS perdido / toda la flota a la 1 AM.
- *  - 22:00–22:59 → amarillo
- *  - 23:00–03:59 → rojo
- * El punto central sigue siendo COLOR_HTML del snapshot (verde/amarillo/rojo/plomo).
- */
-/** Metros desplazados después de las 22:00 (ancla = última pos ≤22:00). */
-/**
- * Halo persistente según CUÁNDO hubo movimiento ≥100 m (no la hora actual):
- *  - tránsito entre 22:00 y 23:00 → amarillo (leve) y se mantiene
- *  - tránsito ≥ 23:00 → rojo (grave) y se mantiene
+ * Halo nocturno — SOLO dos estados, según movimiento REAL ≥100 m:
+ *
+ *   AMARILLO: se movió ≥100 m entre 22:00 y 23:00
+ *             (referencia = última posición ≤22:00)
+ *   ROJO:     se movió ≥100 m a partir de las 23:00
+ *             (referencia = última posición ≤23:00)
+ *
+ * Una unidad detenida desde antes de las 22:00 → sin halo.
+ * Si solo se movió hasta ~22:20 → solo amarillo (no rojo).
+ * No depende de la hora actual del reloj.
  */
 function evaluarHaloNocturno(puntos, fechaTurno) {
-  if (!puntos?.length) return { metros: 0, halo: null };
+  if (!puntos?.length) return { metros: 0, metros22: 0, metros23: 0, halo: null };
+
   const dia = parseFechaTurno(fechaTurno);
   const corte22 = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), 22, 0, 0);
   const corte23 = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), 23, 0, 0);
+  // Fin de ventana de análisis del turno (04:00 día siguiente)
+  const corteFin = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate() + 1, 4, 0, 0);
+
   const pts = [];
   for (const p of puntos) {
     const ll = puntoLatLng(p);
     if (!ll) continue;
-    pts.push({ ...ll, t: parsePuntoFecha(p) });
+    const ft = parsePuntoFecha(p);
+    if (!ft) continue; // sin hora no se puede clasificar ventana
+    pts.push({ lat: ll.lat, lng: ll.lng, t: ft });
   }
-  if (pts.length < 2) return { metros: 0, halo: null };
+  pts.sort((a, b) => a.t - b.t);
+  if (!pts.length) return { metros: 0, metros22: 0, metros23: 0, halo: null };
 
-  let ancla = null;
-  for (const p of pts) {
-    if (p.t && p.t <= corte22) ancla = p;
-  }
-  if (!ancla) ancla = pts[0];
-
-  let max22 = 0; // desplazamiento en ventana 22–23
-  let max23 = 0; // desplazamiento con puntos ≥23:00
-  let maxAll = 0;
-  for (const p of pts) {
-    if (p.t && p.t < corte22) continue;
-    const d = haversineM(ancla.lat, ancla.lng, p.lat, p.lng);
-    if (d == null) continue;
-    if (d > maxAll) maxAll = d;
-    if (p.t && p.t >= corte23) {
-      if (d > max23) max23 = d;
-    } else if (d > max22) {
-      max22 = d;
+  function maxDesplazamiento(ref, lista) {
+    if (!ref || !lista.length) return 0;
+    let maxD = 0;
+    for (const p of lista) {
+      const d = haversineM(ref.lat, ref.lng, p.lat, p.lng);
+      if (d != null && d > maxD) maxD = d;
     }
+    return maxD;
   }
-  const metros = Math.round(maxAll);
+
+  // Referencia a las 22:00 = último punto con t ≤ 22:00
+  let ref22 = null;
+  for (const p of pts) {
+    if (p.t <= corte22) ref22 = p;
+  }
+  // Puntos en [22:00, 23:00)
+  const en22 = pts.filter((p) => p.t >= corte22 && p.t < corte23);
+  // Si no hay ref22, usar el primer punto de la ventana 22–23 como base
+  if (!ref22 && en22.length) ref22 = en22[0];
+
+  const metros22 = maxDesplazamiento(ref22, en22);
+
+  // Referencia a las 23:00 = último punto con t ≤ 23:00
+  let ref23 = null;
+  for (const p of pts) {
+    if (p.t <= corte23) ref23 = p;
+  }
+  // Puntos en [23:00, 04:00)
+  const en23 = pts.filter((p) => p.t >= corte23 && p.t < corteFin);
+  if (!ref23 && en23.length) ref23 = en23[0];
+
+  const metros23 = maxDesplazamiento(ref23, en23);
+
   let halo = null;
-  if (max23 >= 100) halo = "rojo";
-  else if (max22 >= 100 || (maxAll >= 100 && max23 <= 0 && max22 >= 100)) halo = "amarillo";
-  else if (maxAll >= 100) {
-    // movimiento post-22h pero sin timestamp fino → amarillo por defecto si no hay pts ≥23
-    const hasPost23 = pts.some((p) => p.t && p.t >= corte23);
-    halo = hasPost23 ? "rojo" : "amarillo";
-  }
-  return { metros, halo };
+  if (metros23 >= 100) halo = "rojo";
+  else if (metros22 >= 100) halo = "amarillo";
+
+  return {
+    metros: Math.round(Math.max(metros22, metros23)),
+    metros22: Math.round(metros22),
+    metros23: Math.round(metros23),
+    halo,
+  };
 }
 
 function calcularMovimientoNocturno(puntos, fechaTurno) {
   return evaluarHaloNocturno(puntos, fechaTurno).metros;
 }
 
-/** Halo ya calculado y persistido en la unidad (no depende de la hora actual). */
+/** Solo usa halo_nocturno calculado; sin fallback por hora del reloj. */
 function urgenciaNocturna(u) {
-  if (u.halo_nocturno === "rojo" || u.halo_nocturno === "amarillo") return u.halo_nocturno;
-  const mov = Number(u.movimiento_nocturno_m) || 0;
-  if (mov < 100) return null;
-  // fallback legacy sin halo_nocturno
-  return "amarillo";
+  if (u.halo_nocturno === "rojo") return "rojo";
+  if (u.halo_nocturno === "amarillo") return "amarillo";
+  return null;
 }
+
 
 
 function markerHtml(u) {
   const c = colorHtmlHex(u.color_html);
   const urg = urgenciaNocturna(u);
-  const ring =
-    urg === "rojo"
-      ? "#ef4444"
-      : urg === "amarillo"
-        ? "#eab308"
-        : u.estado_clasificacion === "CALIFICADA"
-          ? "#22c55e"
-          : u.estado_clasificacion === "REVISAR"
-            ? "#f59e0b"
-            : "#38bdf8";
   const haloClass =
     urg === "rojo" ? "halo-rojo" : urg === "amarillo" ? "halo-amarillo" : "";
-  const title = urg
-    ? `${u.codigo} · tránsito nocturno (${urg === "rojo" ? ">23:00" : ">22:00"})`
-    : u.codigo;
-  return `<div class="tn-marker ${haloClass}" style="--c:${c};--ring:${ring}" title="${esc(title)}">
+  const title =
+    urg === "rojo"
+      ? `${u.codigo} · tránsito ≥23:00 (≥100m)`
+      : urg === "amarillo"
+        ? `${u.codigo} · tránsito 22:00–23:00 (≥100m)`
+        : `${u.codigo}`;
+  return `<div class="tn-marker ${haloClass}" style="--c:${c}" title="${esc(title)}">
     <i class="tn-halo" aria-hidden="true"></i>
-    <span class="tn-dot"></span>
+    <i class="tn-dot" aria-hidden="true"></i>
   </div>`;
 }
 
@@ -586,16 +581,6 @@ export async function mount(container, runtime) {
             <span id="tn-live-txt">Posiciones 1 min</span>
           </div>
           <span class="tn-chip" id="tn-precarga">Rutas: —</span>
-          <label class="tn-field">
-            <span>HALO NOCTURNO</span>
-            <select id="tn-sim-hora" title="Hora para umbral 22h/23h (pruebas o revisión diurna)">
-              <option value="">Hora real (Lima)</option>
-              <option value="21">21:00 · sin halo (≥100m)</option>
-              <option value="22">22:30 · amarillo si ≥100m</option>
-              <option value="23">23:30 · rojo si ≥100m</option>
-              <option value="1">01:00 · rojo si ≥100m</option>
-            </select>
-          </label>
           <button type="button" class="ghost" id="tn-refresh">REFRESCAR</button>
         </div>
       </header>
@@ -945,17 +930,6 @@ export async function mount(container, runtime) {
     msgEl.textContent = "Marcado NO VA";
   });
 
-
-  container.querySelector("#tn-sim-hora")?.addEventListener("change", (e) => {
-    const v = e.target.value;
-    simHora = v === "" ? null : Number(v);
-    syncMarkers();
-    pulseLive();
-    const h = horaLima();
-    const urg = h >= 23 || h < 4 ? "rojo ≥23:00" : h >= 22 ? "amarillo ≥22:00" : "sin halo (<22:00)";
-    msgEl.textContent = `Umbral nocturno: ${urg}`;
-  });
-
   container.querySelector("#tn-refresh").addEventListener("click", () => {
     // Futuro: snapshot/monitor API. Hoy re-sincroniza clasificaciones locales.
     const saved = loadClasificaciones();
@@ -1065,7 +1039,7 @@ export async function mount(container, runtime) {
       seleccion.halo_nocturno = ev.halo;
       syncMarkers();
       renderList();
-      msgEl.textContent = `Recorrido (${fuente}): ${azul.length} azules · ${rojo.length} post-22h · halo ${ev.halo || "—"} (${ev.metros} m)`;
+      msgEl.textContent = `Recorrido (${fuente}): ${azul.length} pts ≤22h · ${rojo.length} pts >22h · mov22=${ev.metros22}m mov23=${ev.metros23}m → halo ${ev.halo || "ninguno"}`;
     } catch (e) {
       msgEl.textContent = `Recorrido: ${e.message || e}`;
       clearRouteLayers();
