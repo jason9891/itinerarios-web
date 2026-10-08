@@ -93,20 +93,20 @@ button:disabled,
 }
 
 /* ===== SEGUIMIENTO / MONITOREO — pantalla completa tipo desktop ===== */
+body.tn-fs-monitoreo .top { display: none !important; }
 body.tn-fs-monitoreo .workspace {
   grid-template-columns: 1fr !important;
-  height: calc(100vh - var(--shell-header-h));
+  height: 100vh;
   min-height: 0;
 }
 body.tn-fs-monitoreo .workspace > aside { display: none !important; }
 body.tn-fs-monitoreo .content {
   padding: 0 !important;
-  height: calc(100vh - var(--shell-header-h));
+  height: 100vh;
   overflow: hidden;
   display: flex;
   flex-direction: column;
 }
-body.tn-fs-monitoreo .top .itinerary-link { display: none; }
 
 .tn-track {
   display: flex;
@@ -396,9 +396,9 @@ body.tn-fs-monitoreo .top .itinerary-link { display: none; }
   border-top: 1px solid #ffffff14;
   border-radius: 0;
   background: #0b1928;
-  padding: 10px 14px;
+  padding: 8px 12px;
   flex: 0 0 auto;
-  max-height: 34vh;
+  max-height: 28vh;
   overflow: auto;
 }
 .tn-detail-empty {
@@ -432,6 +432,54 @@ body.tn-fs-monitoreo .top .itinerary-link { display: none; }
 .tn-fact b { display: block; margin-top: 1px; font-size: 12px; font-weight: 600; }
 
 .tn-class-form { border-top: 1px solid #ffffff12; padding-top: 8px; }
+.tn-class-horizontal {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 10px;
+  align-items: flex-end;
+  border-top: 0;
+  padding-top: 4px;
+}
+.tn-class-horizontal > label {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  font-size: 9px;
+  letter-spacing: 0.5px;
+  color: #8aa0b8;
+  min-width: 110px;
+}
+.tn-class-horizontal > label.grow { flex: 1 1 160px; min-width: 140px; }
+.tn-class-horizontal select,
+.tn-class-horizontal input[type="text"] {
+  background: #06111d;
+  border: 1px solid #ffffff1d;
+  border-radius: 6px;
+  color: #eaf2ff;
+  padding: 7px 8px;
+  font-size: 12px;
+  min-width: 0;
+  width: 100%;
+}
+.tn-id-line {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+.tn-id-line b { font-size: 14px; color: #e2e8f0; }
+.tn-id-line span { font-size: 13px; color: #94a3b8; }
+.tn-class-actions-top { margin-left: auto; }
+.tn-detail-top {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
 .tn-class-title {
   font-size: 10px;
   font-weight: 800;

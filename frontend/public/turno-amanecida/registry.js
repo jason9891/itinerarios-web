@@ -2,7 +2,7 @@
  * Registry de módulos de TURNO AMANECIDA.
  * Independiente de Cemento y Cerro Verde.
  */
-const V = "tn14";
+const V = "tn15";
 
 export const modules = {
   home:          () => import(`./modules/home.js?v=${V}`),

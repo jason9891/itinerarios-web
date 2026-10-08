@@ -523,6 +523,7 @@ export async function mount(container, runtime) {
           tipo_lugar: s.tipo_lugar ?? u.tipo_lugar ?? "",
           punto_pernocte: s.punto_pernocte ?? u.punto_pernocte ?? "",
           observaciones: s.observaciones ?? u.observaciones ?? "",
+          ruta: s.ruta ?? u.ruta ?? "",
           timestamp_clasificacion: s.timestamp_clasificacion || "",
         };
         merged.estado_clasificacion = estadoClasificacion(merged);
@@ -612,60 +613,51 @@ export async function mount(container, runtime) {
         </div>
         <div class="tn-detail-body hidden" id="tn-detail-body">
           <div class="tn-detail-top">
-            <div>
-              <p class="eyebrow" id="tn-sel-code">—</p>
-              <h2 id="tn-sel-title">—</h2>
-              <p class="muted" id="tn-sel-sub">—</p>
+            <div class="tn-id-line">
+              <b id="tn-sel-code">—</b>
+              <span id="tn-sel-title">—</span>
+              <span class="tn-detail-badges" id="tn-sel-badges"></span>
             </div>
-            <div class="tn-detail-badges" id="tn-sel-badges"></div>
-          </div>
-          <div class="tn-detail-grid" id="tn-sel-facts"></div>
-
-          <div class="tn-class-form">
-            <div class="tn-class-title">CLASIFICACIÓN</div>
-            <div class="tn-class-row">
-              <label>STATUS
-                <select id="tn-status">${STATUS_OPTS.map((o) => `<option value="${esc(o)}">${esc(o || "—")}</option>`).join("")}</select>
-              </label>
-              <div class="tn-riesgo">
-                <span>RIESGO</span>
-                <div class="tn-riesgo-btns">
-                  <button type="button" data-r="BAJO" class="r-bajo">BAJO</button>
-                  <button type="button" data-r="MEDIO" class="r-medio">MEDIO</button>
-                  <button type="button" data-r="ALTO" class="r-alto">ALTO</button>
-                </div>
-              </div>
-            </div>
-            <div class="tn-class-row">
-              <label>PUNTO AUTORIZADO
-                <select id="tn-aut"><option value="">—</option><option>SI</option><option>NO</option><option>-</option></select>
-              </label>
-              <label>COBERTURA GPS
-                <select id="tn-gps"><option value="">—</option><option>SI</option><option>NO</option><option>-</option></select>
-              </label>
-              <label class="grow">TIPO DE LUGAR
-                <input id="tn-lugar" type="text" placeholder="Patio, grifo, vía…">
-              </label>
-            </div>
-            <div class="tn-class-row">
-              <label class="grow">PUNTO DE PERNOCTE
-                <input id="tn-pernocte" type="text" placeholder="Nombre o referencia del punto">
-              </label>
-            </div>
-            <div class="tn-class-row">
-              <label class="grow">OBSERVACIONES
-                <input id="tn-obs" type="text" placeholder="Notas del controlador">
-              </label>
-            </div>
-            <div class="tn-class-actions">
+            <div class="tn-class-actions tn-class-actions-top">
               <button type="button" class="primary" id="tn-save">GUARDAR</button>
               <button type="button" class="ghost" id="tn-copy">COPIAR</button>
               <button type="button" class="ghost" id="tn-paste">PEGAR</button>
               <button type="button" class="ghost" id="tn-clear">LIMPIAR</button>
               <button type="button" class="tn-btn-nova" id="tn-nova">NO VA</button>
-              <button type="button" class="ghost" id="tn-track" disabled title="Recorrido 16:00→ahora (azul hasta 22:00, rojo después)">VER RECORRIDO</button>
+              <button type="button" class="ghost" id="tn-track" disabled title="Recorrido 16:00→ahora">VER RECORRIDO</button>
               <span id="tn-save-msg" class="muted"></span>
             </div>
+          </div>
+          <div class="tn-class-form tn-class-horizontal">
+            <label>STATUS
+              <select id="tn-status">${STATUS_OPTS.map((o) => `<option value="${esc(o)}">${esc(o || "—")}</option>`).join("")}</select>
+            </label>
+            <div class="tn-riesgo">
+              <span>RIESGO</span>
+              <div class="tn-riesgo-btns">
+                <button type="button" data-r="BAJO" class="r-bajo">BAJO</button>
+                <button type="button" data-r="MEDIO" class="r-medio">MEDIO</button>
+                <button type="button" data-r="ALTO" class="r-alto">ALTO</button>
+              </div>
+            </div>
+            <label>PUNTO AUT.
+              <select id="tn-aut"><option value="">—</option><option>SI</option><option>NO</option><option>-</option></select>
+            </label>
+            <label>COB. GPS
+              <select id="tn-gps"><option value="">—</option><option>SI</option><option>NO</option><option>-</option></select>
+            </label>
+            <label>TIPO LUGAR
+              <input id="tn-lugar" type="text" placeholder="Patio, grifo…">
+            </label>
+            <label class="grow">PUNTO PERNOCTE
+              <input id="tn-pernocte" type="text" placeholder="Referencia">
+            </label>
+            <label class="grow">RUTA
+              <input id="tn-ruta" type="text" placeholder="Editable · no se copia">
+            </label>
+            <label class="grow">OBSERVACIONES
+              <input id="tn-obs" type="text" placeholder="Notas">
+            </label>
           </div>
         </div>
       </section>
@@ -752,16 +744,41 @@ export async function mount(container, runtime) {
     }
   }
 
-  function fillForm(u) {
+  function fillForm(u, { includeRuta = true } = {}) {
     container.querySelector("#tn-status").value = u.status === "-" ? "" : u.status || "";
     container.querySelector("#tn-aut").value = u.punto_autorizado === "-" ? "" : u.punto_autorizado || "";
     container.querySelector("#tn-gps").value = u.cobertura_gps === "-" ? "" : u.cobertura_gps || "";
     container.querySelector("#tn-lugar").value = u.tipo_lugar || "";
     container.querySelector("#tn-pernocte").value = u.punto_pernocte || "";
     container.querySelector("#tn-obs").value = u.observaciones || "";
+    if (includeRuta) {
+      const r = container.querySelector("#tn-ruta");
+      if (r) r.value = u.ruta || "";
+    }
     container.querySelectorAll(".tn-riesgo-btns button").forEach((b) => {
-      b.classList.toggle("active", b.dataset.r === u.riesgo);
+      b.classList.toggle("active", b.dataset.r === (u.riesgo === "-" ? "" : u.riesgo));
     });
+  }
+
+  /** Solo campos de clasificación (NO incluye ruta). */
+  function readClasificacion() {
+    const riesgoBtn = container.querySelector(".tn-riesgo-btns button.active");
+    return {
+      status: container.querySelector("#tn-status").value || "-",
+      riesgo: riesgoBtn?.dataset.r || "-",
+      punto_autorizado: container.querySelector("#tn-aut").value || "-",
+      cobertura_gps: container.querySelector("#tn-gps").value || "-",
+      tipo_lugar: container.querySelector("#tn-lugar").value.trim(),
+      punto_pernocte: container.querySelector("#tn-pernocte").value.trim(),
+      observaciones: container.querySelector("#tn-obs").value.trim(),
+    };
+  }
+
+  function readForm() {
+    return {
+      ...readClasificacion(),
+      ruta: (container.querySelector("#tn-ruta")?.value || "").trim(),
+    };
   }
 
   function selectUnit(codigo) {
@@ -774,28 +791,12 @@ export async function mount(container, runtime) {
     container.querySelector("#tn-sel-code").textContent = u.codigo;
     container.querySelector("#tn-sel-title").textContent =
       `${u.placa || "S/P"} · ${u.piloto || "Sin piloto"}`;
-    container.querySelector("#tn-sel-sub").textContent =
-      `${u.ruta || "Sin ruta"} · ${u.mercaderia || ""}`;
 
     container.querySelector("#tn-sel-badges").innerHTML = `
-      <span class="tn-badge" style="background:${colorClasif(u.estado_clasificacion)}33;color:#e2e8f0">${esc(u.estado_clasificacion)}</span>
-      <span class="tn-badge" style="background:${colorEstado(u.estado_monitoreo)}33;color:#e2e8f0">${esc(u.estado_monitoreo)}</span>
-      <span class="tn-badge">${esc(u.zona || "—")}</span>
+      <span class="tn-badge" style="background:${colorHtmlHex(u.color_html)}44;color:#e2e8f0" title="${esc(u.clase_html || "")}">${esc(u.color_html || "—")}</span>
+      <span class="tn-badge">${Number(u.movimiento_nocturno_m) >= 100 ? `↔${u.movimiento_nocturno_m}m` : ""}</span>
+      <span class="tn-badge">${esc(u.estado_clasificacion)}</span>
     `;
-
-    container.querySelector("#tn-sel-facts").innerHTML = [
-      ["Acople", u.acoplado],
-      ["Tipo", u.tipo_acople],
-      ["Gestor", u.gestor],
-      ["T. parada", u.t_parada || "—"],
-      ["GPS", u.lat != null ? `${Number(u.lat).toFixed(5)}, ${Number(u.lng).toFixed(5)}` : "—"],
-      ["Clasificado", u.timestamp_clasificacion ? fechaPE(u.timestamp_clasificacion) : "—"],
-    ]
-      .map(
-        ([k, v]) =>
-          `<div class="tn-fact"><small>${esc(k)}</small><b>${esc(v || "—")}</b></div>`,
-      )
-      .join("");
 
     fillForm(u);
     renderList();
@@ -810,19 +811,6 @@ export async function mount(container, runtime) {
     }
   }
 
-  function readForm() {
-    const riesgoBtn = container.querySelector(".tn-riesgo-btns button.active");
-    return {
-      status: container.querySelector("#tn-status").value || "-",
-      riesgo: riesgoBtn?.dataset.r || "-",
-      punto_autorizado: container.querySelector("#tn-aut").value || "-",
-      cobertura_gps: container.querySelector("#tn-gps").value || "-",
-      tipo_lugar: container.querySelector("#tn-lugar").value.trim(),
-      punto_pernocte: container.querySelector("#tn-pernocte").value.trim(),
-      observaciones: container.querySelector("#tn-obs").value.trim(),
-    };
-  }
-
   function applyToSelected(data, { advance = true } = {}) {
     if (!seleccion) return;
     Object.assign(seleccion, data);
@@ -835,6 +823,7 @@ export async function mount(container, runtime) {
       tipo_lugar: seleccion.tipo_lugar,
       punto_pernocte: seleccion.punto_pernocte,
       observaciones: seleccion.observaciones,
+      ruta: seleccion.ruta || "",
     });
     renderCounters();
     renderList();
@@ -883,12 +872,14 @@ export async function mount(container, runtime) {
   container.querySelector("#tn-save").addEventListener("click", () => {
     if (!seleccion) return;
     applyToSelected(readForm());
-    msgEl.textContent = "Guardado";
+    clearRouteLayers(); // recorrido desaparece al guardar
+    msgEl.textContent = "Guardado · recorrido limpiado";
   });
 
   container.querySelector("#tn-copy").addEventListener("click", () => {
-    clipboard = readForm();
-    msgEl.textContent = "Clasificación copiada";
+    // Solo clasificación — sin ruta
+    clipboard = readClasificacion();
+    msgEl.textContent = "Clasificación copiada (sin ruta)";
   });
 
   container.querySelector("#tn-paste").addEventListener("click", () => {
@@ -896,20 +887,25 @@ export async function mount(container, runtime) {
       msgEl.textContent = "Nada en portapapeles";
       return;
     }
-    fillForm({ ...seleccion, ...clipboard });
-    msgEl.textContent = "Pegado en formulario (guarda para aplicar)";
+    // No pisa la ruta de la unidad
+    fillForm({ ...seleccion, ...clipboard }, { includeRuta: false });
+    msgEl.textContent = "Pegado (ruta no modificada)";
   });
 
   container.querySelector("#tn-clear").addEventListener("click", () => {
-    fillForm({
-      status: "",
-      riesgo: "",
-      punto_autorizado: "",
-      cobertura_gps: "",
-      tipo_lugar: "",
-      punto_pernocte: "",
-      observaciones: "",
-    });
+    fillForm(
+      {
+        status: "",
+        riesgo: "",
+        punto_autorizado: "",
+        cobertura_gps: "",
+        tipo_lugar: "",
+        punto_pernocte: "",
+        observaciones: "",
+        ruta: seleccion?.ruta || "",
+      },
+      { includeRuta: true },
+    );
     container.querySelectorAll(".tn-riesgo-btns button").forEach((b) =>
       b.classList.remove("active"),
     );
