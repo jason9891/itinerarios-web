@@ -14,7 +14,7 @@ import { auth } from "../../shared/auth.js";
 import { startPrecarga, loadMeta, currentRunId, getProgress } from "../precarga-engine.js";
 import { readGPS, gpsKey } from "../gps-cache.js";
 
-const POLL_MS = 3 * 60 * 1000;
+const POLL_MS = 60 * 1000; // snapshot posiciones cada 1 min
 const STORAGE_KEY = "tn_clasificaciones_v1";
 const STATUS_OPTS = [
   "",
@@ -261,40 +261,69 @@ function horaLima() {
  * El punto central sigue siendo COLOR_HTML del snapshot (verde/amarillo/rojo/plomo).
  */
 /** Metros desplazados después de las 22:00 (ancla = última pos ≤22:00). */
-function calcularMovimientoNocturno(puntos, fechaTurno) {
-  if (!puntos?.length) return 0;
+/**
+ * Halo persistente según CUÁNDO hubo movimiento ≥100 m (no la hora actual):
+ *  - tránsito entre 22:00 y 23:00 → amarillo (leve) y se mantiene
+ *  - tránsito ≥ 23:00 → rojo (grave) y se mantiene
+ */
+function evaluarHaloNocturno(puntos, fechaTurno) {
+  if (!puntos?.length) return { metros: 0, halo: null };
   const dia = parseFechaTurno(fechaTurno);
-  const corte = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), 22, 0, 0);
+  const corte22 = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), 22, 0, 0);
+  const corte23 = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), 23, 0, 0);
   const pts = [];
   for (const p of puntos) {
     const ll = puntoLatLng(p);
     if (!ll) continue;
     pts.push({ ...ll, t: parsePuntoFecha(p) });
   }
-  if (pts.length < 2) return 0;
+  if (pts.length < 2) return { metros: 0, halo: null };
+
   let ancla = null;
   for (const p of pts) {
-    if (p.t && p.t <= corte) ancla = p;
+    if (p.t && p.t <= corte22) ancla = p;
   }
   if (!ancla) ancla = pts[0];
-  let maxD = 0;
+
+  let max22 = 0; // desplazamiento en ventana 22–23
+  let max23 = 0; // desplazamiento con puntos ≥23:00
+  let maxAll = 0;
   for (const p of pts) {
-    if (p.t && p.t < corte) continue;
+    if (p.t && p.t < corte22) continue;
     const d = haversineM(ancla.lat, ancla.lng, p.lat, p.lng);
-    if (d != null && d > maxD) maxD = d;
+    if (d == null) continue;
+    if (d > maxAll) maxAll = d;
+    if (p.t && p.t >= corte23) {
+      if (d > max23) max23 = d;
+    } else if (d > max22) {
+      max22 = d;
+    }
   }
-  return maxD;
+  const metros = Math.round(maxAll);
+  let halo = null;
+  if (max23 >= 100) halo = "rojo";
+  else if (max22 >= 100 || (maxAll >= 100 && max23 <= 0 && max22 >= 100)) halo = "amarillo";
+  else if (maxAll >= 100) {
+    // movimiento post-22h pero sin timestamp fino → amarillo por defecto si no hay pts ≥23
+    const hasPost23 = pts.some((p) => p.t && p.t >= corte23);
+    halo = hasPost23 ? "rojo" : "amarillo";
+  }
+  return { metros, halo };
 }
 
-function urgenciaNocturna(u) {
-  const mov = Number(u.movimiento_nocturno_m) || 0;
-  if (mov < 100) return null; // sin desplazamiento real post-22h → sin halo
-  const h = horaLima();
-  // 22:00–22:59 amarillo · ≥23:00 (o madrugada <4) rojo
-  if (h >= 23 || h < 4) return "rojo";
-  if (h >= 22) return "amarillo";
-  return null;
+function calcularMovimientoNocturno(puntos, fechaTurno) {
+  return evaluarHaloNocturno(puntos, fechaTurno).metros;
 }
+
+/** Halo ya calculado y persistido en la unidad (no depende de la hora actual). */
+function urgenciaNocturna(u) {
+  if (u.halo_nocturno === "rojo" || u.halo_nocturno === "amarillo") return u.halo_nocturno;
+  const mov = Number(u.movimiento_nocturno_m) || 0;
+  if (mov < 100) return null;
+  // fallback legacy sin halo_nocturno
+  return "amarillo";
+}
+
 
 function markerHtml(u) {
   const c = colorHtmlHex(u.color_html);
@@ -554,7 +583,7 @@ export async function mount(container, runtime) {
           <div class="tn-counters" id="tn-counters"></div>
           <div class="tn-live">
             <span class="tn-live-dot" id="tn-live-dot"></span>
-            <span id="tn-live-txt">Poll 3 min</span>
+            <span id="tn-live-txt">Posiciones 1 min</span>
           </div>
           <span class="tn-chip" id="tn-precarga">Rutas: —</span>
           <label class="tn-field">
@@ -592,8 +621,8 @@ export async function mount(container, runtime) {
             <span><i style="background:#eab308"></i> Alerta GPS</span>
             <span><i style="background:#ef4444"></i> No reporta</span>
             <span><i style="background:#94a3b8"></i> Plomo</span>
-            <span><i class="halo-leg am"></i> ≥100m post-22h</span>
-            <span><i class="halo-leg ro"></i> ≥100m post-23h</span>
+            <span><i class="halo-leg am"></i> Tránsito 22–23h</span>
+            <span><i class="halo-leg ro"></i> Tránsito ≥23h</span>
             <span><i style="background:#2563eb;width:14px;height:3px;border-radius:1px"></i> 16–22h</span>
             <span><i style="background:#dc2626;width:14px;height:3px;border-radius:1px"></i> post-22h</span>
           </div>
@@ -616,16 +645,9 @@ export async function mount(container, runtime) {
             <div class="tn-id-line">
               <b id="tn-sel-code">—</b>
               <span id="tn-sel-title">—</span>
-              <span class="tn-detail-badges" id="tn-sel-badges"></span>
-            </div>
-            <div class="tn-class-actions tn-class-actions-top">
-              <button type="button" class="primary" id="tn-save">GUARDAR</button>
-              <button type="button" class="ghost" id="tn-copy">COPIAR</button>
-              <button type="button" class="ghost" id="tn-paste">PEGAR</button>
-              <button type="button" class="ghost" id="tn-clear">LIMPIAR</button>
-              <button type="button" class="tn-btn-nova" id="tn-nova">NO VA</button>
-              <button type="button" class="ghost" id="tn-track" disabled title="Recorrido 16:00→ahora">VER RECORRIDO</button>
-              <span id="tn-save-msg" class="muted"></span>
+              <label class="tn-ruta-inline">RUTA
+                <input id="tn-ruta" type="text" placeholder="Editable · no se copia">
+              </label>
             </div>
           </div>
           <div class="tn-class-form tn-class-horizontal">
@@ -652,12 +674,18 @@ export async function mount(container, runtime) {
             <label class="grow">PUNTO PERNOCTE
               <input id="tn-pernocte" type="text" placeholder="Referencia">
             </label>
-            <label class="grow">RUTA
-              <input id="tn-ruta" type="text" placeholder="Editable · no se copia">
-            </label>
             <label class="grow">OBSERVACIONES
               <input id="tn-obs" type="text" placeholder="Notas">
             </label>
+          </div>
+          <div class="tn-class-actions tn-class-actions-bottom">
+            <button type="button" class="primary" id="tn-save">GUARDAR</button>
+            <button type="button" class="ghost" id="tn-copy">COPIAR</button>
+            <button type="button" class="ghost" id="tn-paste">PEGAR</button>
+            <button type="button" class="ghost" id="tn-clear">LIMPIAR</button>
+            <button type="button" class="tn-btn-nova" id="tn-nova">NO VA</button>
+            <button type="button" class="ghost" id="tn-track" disabled title="Recorrido 16:00→ahora">VER RECORRIDO</button>
+            <span id="tn-save-msg" class="muted"></span>
           </div>
         </div>
       </section>
@@ -705,9 +733,7 @@ export async function mount(container, runtime) {
             <small>${esc(u.placa || "—")} · ${esc(u.piloto || "—")}</small>
           </span>
           <span class="tn-li-meta">
-            <span class="tn-badge" style="background:${colorHtmlHex(u.color_html)}33;color:${colorHtmlHex(u.color_html)}" title="${esc(u.clase_html || u.reporte_gps || "")}">${esc(u.color_html || "—")}</span>
-            <small title="T.Parada / último reporte">${esc(u.t_parada || "—")}</small>
-            <small>${u.movimiento_nocturno_m >= 100 ? `↔${u.movimiento_nocturno_m}m` : ""}</small>
+            <small title="T.Parada">${esc(u.t_parada || "—")}</small>
           </span>
         </button>`;
       })
@@ -791,12 +817,6 @@ export async function mount(container, runtime) {
     container.querySelector("#tn-sel-code").textContent = u.codigo;
     container.querySelector("#tn-sel-title").textContent =
       `${u.placa || "S/P"} · ${u.piloto || "Sin piloto"}`;
-
-    container.querySelector("#tn-sel-badges").innerHTML = `
-      <span class="tn-badge" style="background:${colorHtmlHex(u.color_html)}44;color:#e2e8f0" title="${esc(u.clase_html || "")}">${esc(u.color_html || "—")}</span>
-      <span class="tn-badge">${Number(u.movimiento_nocturno_m) >= 100 ? `↔${u.movimiento_nocturno_m}m` : ""}</span>
-      <span class="tn-badge">${esc(u.estado_clasificacion)}</span>
-    `;
 
     fillForm(u);
     renderList();
@@ -1040,11 +1060,12 @@ export async function mount(container, runtime) {
 
       const { azul, rojo } = partirRecorrido(pts, fechaVal);
       drawSplitRoute(azul, rojo);
-      const mov = calcularMovimientoNocturno(pts, fechaVal);
-      seleccion.movimiento_nocturno_m = Math.round(mov);
+      const ev = evaluarHaloNocturno(pts, fechaVal);
+      seleccion.movimiento_nocturno_m = ev.metros;
+      seleccion.halo_nocturno = ev.halo;
       syncMarkers();
       renderList();
-      msgEl.textContent = `Recorrido (${fuente}): ${azul.length} azules · ${rojo.length} post-22h · mov noct. ${Math.round(mov)} m`;
+      msgEl.textContent = `Recorrido (${fuente}): ${azul.length} azules · ${rojo.length} post-22h · halo ${ev.halo || "—"} (${ev.metros} m)`;
     } catch (e) {
       msgEl.textContent = `Recorrido: ${e.message || e}`;
       clearRouteLayers();
@@ -1072,9 +1093,10 @@ export async function mount(container, runtime) {
           gpsKey(rid, String(u.codigo || "").toUpperCase(), String(u.placa || "").toUpperCase()),
         );
         if (!cached?.puntos_gps?.length) continue;
-        const m = Math.round(calcularMovimientoNocturno(cached.puntos_gps, fechaVal));
-        if (m !== (u.movimiento_nocturno_m || 0)) {
-          u.movimiento_nocturno_m = m;
+        const ev = evaluarHaloNocturno(cached.puntos_gps, fechaVal);
+        if (ev.metros !== (u.movimiento_nocturno_m || 0) || ev.halo !== (u.halo_nocturno || null)) {
+          u.movimiento_nocturno_m = ev.metros;
+          u.halo_nocturno = ev.halo;
           changed = true;
         }
       } catch {
@@ -1094,7 +1116,8 @@ export async function mount(container, runtime) {
     if (g.running || m?.running) {
       precargaEl.textContent = `Rutas: ${m?.done || g.done || 0}/${m?.total || g.total || unidades.length}`;
     } else if (m?.completo) {
-      precargaEl.textContent = `Rutas: ${m.ok || 0}/${m.total || 0} OK`;
+      const inc = m.incremental ? ` · +${m.incremental} incr.` : "";
+      precargaEl.textContent = `Rutas: ${m.ok || 0}/${m.total || 0} OK${inc}`;
       precargaEl.classList.add("ok");
     } else {
       precargaEl.textContent = "Rutas: en cola";
