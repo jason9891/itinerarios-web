@@ -1,9 +1,12 @@
 /**
  * Snapshot TURNO AMANECIDA
  * - Login CLocator → parsea tabla de monitoreo completa
- * - Filtra: dentro de Filtro_Macro_Sur_TN, zona = Transito (no punto conocido), código 20-R-
- * - NO cruza OC ni acoples (eso es local en el navegador)
- * - Respuesta liviana: ~70-80 unidades
+ * Filtro en 3 capas (como desktop REPORTE_NOCHE):
+ *   1) Dentro de Filtro_Macro_Sur_TN  → zona sur de interés
+ *   2) EXCLUIR si está en alguna planta/base (_TN específica) → tienen resguardo
+ *   3) Código contiene 20-R-
+ * Resultado esperado: ~70-80 unidades en macro sur pero fuera de planta.
+ * NO cruza OC ni acoples (match local en el navegador).
  */
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
@@ -169,21 +172,29 @@ function pointInRing(lng: number, lat: number, ring: number[][]) {
   return inside;
 }
 
+/**
+ * Capa 1: ¿está en Filtro_Macro_Sur_TN?
+ * Capa 2: si sí, ¿cae en alguna planta/base específica?
+ *   - en planta → zona = nombre planta (se DESCARTA del seguimiento nocturno)
+ *   - solo macro → zona = "Transito" (unidad de interés: sur sin resguardo)
+ * Sin coordenadas válidas → no se puede clasificar (se excluye).
+ */
 function evaluarZona(lat: number | null, lng: number | null) {
   if (lat == null || lng == null || !Number.isFinite(lat) || !Number.isFinite(lng)) {
-    return { zona: "Transito", en_macro: false };
+    return { zona: null as string | null, en_macro: false, en_planta: false, sin_coord: true };
   }
-  const macro = (geocercasTn as any)["Filtro_Macro_Sur_TN"];
+  const macro = (geocercasTn as Record<string, number[][]>)["Filtro_Macro_Sur_TN"];
   if (!macro || !pointInRing(lng, lat, macro)) {
-    return { zona: null as string | null, en_macro: false };
+    return { zona: null, en_macro: false, en_planta: false, sin_coord: false };
   }
   for (const [name, ring] of Object.entries(geocercasTn as Record<string, number[][]>)) {
     if (name === "Filtro_Macro_Sur_TN") continue;
     if (pointInRing(lng, lat, ring)) {
-      return { zona: name, en_macro: true };
+      return { zona: name, en_macro: true, en_planta: true, sin_coord: false };
     }
   }
-  return { zona: "Transito", en_macro: true };
+  // Dentro del macro, fuera de toda planta/base = tránsito de interés
+  return { zona: "Transito", en_macro: true, en_planta: false, sin_coord: false };
 }
 
 function esParGeoValido(a: number, b: number) {
@@ -251,22 +262,36 @@ function extraerSnapshot(mainHtml: string) {
     const tds = $(tr).find("td").toArray();
     if (tds.length < 3) continue;
     // Primer TD suele ser checkbox
-    const textos = tds.slice(1).map((td) => $(td).text().replace(/\s+/g, " ").trim());
+    const textos = tds.slice(1).map((td: any) => $(td).text().replace(/\s+/g, " ").trim());
     const placa = textos[0] || "";
     if (!placa) continue;
     conPlaca++;
-    const codigo = textos[1] || "";
-    // Layout desktop: [placa, codigo, rumbo, fecha, t.parada?, ...] — índices varían;
-    // usamos heurística estable del Python: tiempo parada / dirección renombrados.
+    // Código externo: buscar celda con 20-R- (más robusto que índice fijo)
+    let codigo = "";
+    for (const tx of textos) {
+      const m = String(tx).toUpperCase().match(/20-R-\d+/);
+      if (m) {
+        codigo = m[0];
+        // Si la celda es solo el código o lo contiene, preferir match completo tipo 20-R-799
+        const m2 = String(tx).toUpperCase().match(/20-R-\d+/);
+        if (m2) codigo = m2[0];
+        break;
+      }
+    }
+    if (!codigo) {
+      // fallback columna 2 como en desktop
+      const c2 = String(textos[1] || "").trim();
+      if (/20-R-/i.test(c2)) codigo = c2.toUpperCase();
+    }
     const tParada = textos[5] || textos[6] || "";
     const rowHtml = $.html(tr);
     const { lat, lng } = latLngFromHtml(rowHtml);
-    if (lat != null) conCoord++;
+    if (lat != null && lng != null) conCoord++;
     const color = colorFromTr($, tr);
     const geo = evaluarZona(lat, lng);
     registros.push({
       placa,
-      codigo: codigo || "",
+      codigo: codigo || String(textos[1] || "").trim(),
       t_parada: tParada,
       lat,
       lng,
@@ -274,6 +299,8 @@ function extraerSnapshot(mainHtml: string) {
       estado_monitoreo: estadoDesdeColor(color),
       zona: geo.zona,
       en_macro: geo.en_macro,
+      en_planta: geo.en_planta,
+      sin_coord: geo.sin_coord,
     });
   }
 
@@ -301,13 +328,39 @@ Deno.serve(async (req) => {
     const { main } = await login(user, password);
     const raw = extraerSnapshot(main);
 
-    // Filtro desktop: Transito + 20-R- + dedupe por placa
+    /**
+     * Filtro operativo:
+     *  A) en_macro = true  (dentro de Filtro_Macro_Sur_TN)
+     *  B) en_planta = false (NO está en Yura, Caracoto, Gloria, etc.)
+     *  C) codigo contiene 20-R-
+     *  D) tiene coordenadas (sin coord no se puede validar zona)
+     *  E) dedupe por placa
+     */
     const seen = new Set<string>();
     const unidades = [];
+    let n20r = 0, nMacro = 0, nPlanta = 0, nFueraMacro = 0, nSinCoord = 0, nTransito20r = 0;
+    const porPlanta: Record<string, number> = {};
+
     for (const r of raw.registros) {
       const codigo = String(r.codigo || "").toUpperCase();
-      if (!codigo.includes("20-R-")) continue;
-      if (r.zona !== "Transito") continue; // solo fuera de puntos conocidos, dentro del macro
+      const es20r = codigo.includes("20-R-");
+      if (es20r) n20r++;
+      if (r.sin_coord) nSinCoord++;
+      else if (!r.en_macro) nFueraMacro++;
+      else if (r.en_planta) {
+        nPlanta++;
+        const z = String(r.zona || "planta");
+        porPlanta[z] = (porPlanta[z] || 0) + 1;
+      } else {
+        nMacro++; // macro y no planta = Transito
+      }
+
+      if (!es20r) continue;
+      if (r.sin_coord) continue;
+      if (!r.en_macro) continue;
+      if (r.en_planta) continue;
+      // en_macro && !en_planta && 20-R-  → zona Transito
+      nTransito20r++;
       const key = String(r.placa || "").toUpperCase();
       if (!key || seen.has(key)) continue;
       seen.add(key);
@@ -319,7 +372,7 @@ Deno.serve(async (req) => {
         lng: r.lng,
         color_html: r.color_html,
         estado_monitoreo: r.estado_monitoreo,
-        zona: r.zona,
+        zona: "Transito",
       });
     }
 
@@ -330,11 +383,19 @@ Deno.serve(async (req) => {
         filas_tabla: raw.totalFilas,
         con_placa: raw.conPlaca,
         con_coord: raw.conCoord,
-        transito_20r: unidades.length,
+        con_20r: n20r,
+        sin_coord: nSinCoord,
+        fuera_macro: nFueraMacro,
+        en_planta: nPlanta,
+        por_planta: porPlanta,
+        macro_sin_planta: nMacro,
+        transito_20r: nTransito20r,
+        unidades_finales: unidades.length,
         geocercas_tn: Object.keys(geocercasTn).length,
       },
       unidades,
-      nota: "Sin cruce OC/acoples. El navegador hace match local con última OC 20-R- y tipo acople.",
+      nota:
+        "Filtro: (1) Filtro_Macro_Sur_TN (2) excluir plantas/bases _TN (3) 20-R-. Match OC local en navegador.",
     });
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);

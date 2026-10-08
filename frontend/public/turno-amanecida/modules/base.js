@@ -238,7 +238,13 @@ export async function mount(container) {
       const snap = await fetchSnapshot();
       if (disposed) return;
       const n = snap.unidades?.length ?? 0;
-      log(`Snapshot OK · filas tabla ${snap.stats?.filas_tabla ?? "—"} · con placa ${snap.stats?.con_placa ?? "—"} · Transito+20-R- = ${n}`);
+      const st = snap.stats || {};
+      log(`Snapshot OK · filas ${st.filas_tabla ?? "—"} · con placa ${st.con_placa ?? "—"} · con coord ${st.con_coord ?? "—"}`);
+      log(`  20-R-: ${st.con_20r ?? "—"} · fuera macro: ${st.fuera_macro ?? "—"} · en planta: ${st.en_planta ?? "—"} · macro sin planta: ${st.macro_sin_planta ?? "—"}`);
+      log(`  → unidades finales (macro − planta + 20-R-): ${n}`);
+      if (st.por_planta && Object.keys(st.por_planta).length) {
+        log(`  Plantas excluidas: ${JSON.stringify(st.por_planta)}`);
+      }
 
       if (!n) {
         throw new Error(

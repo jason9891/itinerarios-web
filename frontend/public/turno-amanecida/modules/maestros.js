@@ -1,6 +1,7 @@
 /**
- * Carga ÚNICA de OC y TIPO_ACOPLE.
- * Valida cabeceras en el navegador; procesa última OC por equipo.
+ * Maestros TURNO AMANECIDA
+ * - Solo se sube el Excel de OC (proceso LOCAL: última por equipo).
+ * - Acoples: catálogo editable con “Añadir acople” (sin archivo Excel).
  */
 import { moduleHead, esc, maestrosApi, fechaPE } from "../api-client.js";
 
@@ -23,17 +24,32 @@ function normalizarClave(valor) {
     .replace(/\s+/g, "");
 }
 
-function fileToBase64(file) {
-  return new Promise((resolve, reject) => {
-    const r = new FileReader();
-    r.onload = () => {
-      const s = String(r.result || "");
-      const i = s.indexOf(",");
-      resolve(i >= 0 ? s.slice(i + 1) : s);
-    };
-    r.onerror = () => reject(new Error("No se pudo leer el archivo"));
-    r.readAsDataURL(file);
-  });
+function parseFecTs(raw) {
+  if (raw == null || raw === "") return 0;
+  const s = String(raw).trim();
+  if (/^\d+(\.\d+)?$/.test(s)) {
+    const n = Number(s);
+    const ms = Math.round((n - 25569) * 86400 * 1000);
+    return Number.isFinite(ms) ? ms : 0;
+  }
+  const m = s.match(
+    /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/,
+  );
+  if (m) {
+    let yy = Number(m[3]);
+    if (yy < 100) yy += 2000;
+    const d = new Date(
+      yy,
+      Number(m[2]) - 1,
+      Number(m[1]),
+      Number(m[4] || 0),
+      Number(m[5] || 0),
+      Number(m[6] || 0),
+    );
+    return d.getTime() || 0;
+  }
+  const t = Date.parse(s);
+  return Number.isFinite(t) ? t : 0;
 }
 
 async function readSheetRows(file, headerRow = 0) {
@@ -56,36 +72,6 @@ async function readSheetRows(file, headerRow = 0) {
 function findCol(row, name) {
   const keys = Object.keys(row || {});
   return keys.find((k) => k.trim().toLowerCase() === name.toLowerCase()) || null;
-}
-
-function parseFecTs(raw) {
-  if (raw == null || raw === "") return 0;
-  const s = String(raw).trim();
-  // Excel serial
-  if (/^\d+(\.\d+)?$/.test(s)) {
-    const n = Number(s);
-    const ms = Math.round((n - 25569) * 86400 * 1000);
-    return Number.isFinite(ms) ? ms : 0;
-  }
-  // DD/MM/YYYY[ HH:MM[:SS]]
-  const m = s.match(
-    /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/,
-  );
-  if (m) {
-    let yy = Number(m[3]);
-    if (yy < 100) yy += 2000;
-    const d = new Date(
-      yy,
-      Number(m[2]) - 1,
-      Number(m[1]),
-      Number(m[4] || 0),
-      Number(m[5] || 0),
-      Number(m[6] || 0),
-    );
-    return d.getTime() || 0;
-  }
-  const t = Date.parse(s);
-  return Number.isFinite(t) ? t : 0;
 }
 
 function validateOc(rows0, rows1) {
@@ -130,9 +116,7 @@ function validateOc(rows0, rows1) {
         fec_ini_real_raw: fecRaw != null ? String(fecRaw).trim() : "",
         fec_ini_real: ts ? new Date(ts).toISOString() : null,
         acoplado_1:
-          r[found["Acoplado 1"]] != null
-            ? String(r[found["Acoplado 1"]]).trim()
-            : "",
+          r[found["Acoplado 1"]] != null ? String(r[found["Acoplado 1"]]).trim() : "",
         nombre_piloto:
           r[found["Nombre Piloto"]] != null
             ? String(r[found["Nombre Piloto"]]).trim()
@@ -165,7 +149,7 @@ function validateOc(rows0, rows1) {
       equiposUnicos: filas.length,
       descartadas: Math.max(0, total - filas.length),
       sample: sampleOut,
-      filas, // ya deduplicadas: última OC por equipo (proceso LOCAL)
+      filas,
     };
   }
   const headers = rows0[0]
@@ -183,44 +167,6 @@ function validateOc(rows0, rows1) {
     descartadas: 0,
     sample: [],
     filas: [],
-  };
-}
-
-function validateAcoples(rows) {
-  if (!rows.length) {
-    return {
-      ok: false,
-      headers: [],
-      missing: ["(archivo vacío)"],
-      firstCol: null,
-      sample: [],
-      unicos: 0,
-    };
-  }
-  const headers = Object.keys(rows[0]);
-  const firstCol = headers[0];
-  const hasCar = headers.some((h) => h.toUpperCase() === "CARROCERIA");
-  const hasGes = headers.some((h) => h.toUpperCase() === "GESTOR");
-  const missing = [];
-  if (!hasCar) missing.push("CARROCERIA");
-  if (!hasGes) missing.push("GESTOR");
-  const byCode = new Map();
-  for (const r of rows) {
-    const codigo = normalizarClave(r[firstCol]);
-    if (!codigo) continue;
-    byCode.set(codigo, {
-      codigo,
-      carroceria: r[headers.find((h) => h.toUpperCase() === "CARROCERIA")] ?? "",
-      gestor: r[headers.find((h) => h.toUpperCase() === "GESTOR")] ?? "",
-    });
-  }
-  return {
-    ok: missing.length === 0,
-    headers,
-    firstCol,
-    missing,
-    unicos: byCode.size,
-    sample: [...byCode.values()].slice(0, 8),
   };
 }
 
@@ -249,7 +195,7 @@ function renderHeaders(headers, foundMap, missing) {
 function renderSampleTable(cols, rows) {
   if (!rows?.length) return "";
   return `
-    <div class="tn-table-wrap" style="max-height:260px;margin-top:10px">
+    <div class="tn-table-wrap" style="max-height:220px;margin-top:10px">
       <table class="tn-table">
         <thead><tr>${cols.map((c) => `<th>${esc(c)}</th>`).join("")}</tr></thead>
         <tbody>
@@ -261,23 +207,42 @@ function renderSampleTable(cols, rows) {
             .join("")}
         </tbody>
       </table>
-    </div>
-    <p class="muted" style="font-size:12px;margin-top:6px">Vista previa de filas que se guardarán (ya deduplicadas).</p>
-  `;
+    </div>`;
+}
+
+function loadAcoplesLocal() {
+  try {
+    const raw = JSON.parse(localStorage.getItem("tn_acoples_v1") || "null");
+    return Array.isArray(raw?.filas) ? raw.filas : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveAcoplesLocal(filas) {
+  localStorage.setItem(
+    "tn_acoples_v1",
+    JSON.stringify({ actualizado_en: new Date().toISOString(), filas }),
+  );
 }
 
 export async function mount(container) {
   disposed = false;
+  let ocFile = null;
+  let ocOk = false;
+  let ocFilasLocal = [];
+  let acoples = loadAcoplesLocal();
+
   container.innerHTML = `
     ${moduleHead(
       "Maestros",
-      "Selecciona el Excel → se validan cabeceras al instante → sube para guardar en Supabase",
+      "Solo Excel de OC (proceso local). Acoples: catálogo manual con «Añadir acople».",
     )}
     <section class="panel">
       <div class="panel-title">
         <div>
           <h2>1 · Archivo OC</h2>
-          <p class="muted">Columnas: FecIniReal, Equipo, Acoplado 1, Nombre Piloto, Descripción Ruta, Material de Servicio. Por cada Equipo solo se conserva la OC más reciente. La comparación se hace en el navegador; no se sube el archivo completo.</p>
+          <p class="muted">Última OC por Equipo en el navegador. En el match con el snapshot solo se usan equipos <b>20-R-</b>.</p>
         </div>
       </div>
       <div class="tn-upload">
@@ -288,28 +253,34 @@ export async function mount(container) {
         <button type="button" id="tn-oc-upload" class="primary" disabled>SINCRONIZAR RESUMEN A SUPABASE</button>
         <span id="tn-oc-name" class="muted"></span>
       </div>
-      <div id="tn-oc-result"><p class="muted">Aún no hay archivo. Al elegirlo se validan las cabeceras automáticamente.</p></div>
+      <div id="tn-oc-result"><p class="muted">Al elegir el archivo se valida y se deja la última OC por equipo (local).</p></div>
     </section>
+
     <section class="panel">
       <div class="panel-title">
         <div>
-          <h2>2 · Tipo de acople</h2>
-          <p class="muted">1ª columna = código. Obligatorias: CARROCERIA y GESTOR. Luego editable en el menú Tipo Acople.</p>
+          <h2>2 · Catálogo de acoples</h2>
+          <p class="muted">Sin Excel. Solo cuando entre una unidad nueva: <b>Añadir acople</b>. Se usa al cruzar con el snapshot.</p>
         </div>
+        <button type="button" class="ghost" id="tn-ac-add">AÑADIR ACOPLE</button>
       </div>
-      <div class="tn-upload">
-        <label class="file-button">
-          SELECCIONAR TIPO_ACOPLE (.xlsx)
-          <input id="tn-ac-file" type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
-        </label>
-        <button type="button" id="tn-ac-upload" class="primary" disabled>SUBIR Y GUARDAR CATÁLOGO</button>
-        <span id="tn-ac-name" class="muted"></span>
+      <div id="tn-ac-form" class="hidden" style="margin:10px 0;display:none;gap:8px;flex-wrap:wrap;align-items:flex-end">
+        <label class="tn-field">CÓDIGO<input id="tn-ac-cod" type="text" placeholder="20-P-238" style="background:#06111d;border:1px solid #ffffff1d;border-radius:8px;color:#eaf2ff;padding:8px 10px"></label>
+        <label class="tn-field">CARROCERÍA<input id="tn-ac-car" type="text" placeholder="TOLVA HIDRAULICA" style="background:#06111d;border:1px solid #ffffff1d;border-radius:8px;color:#eaf2ff;padding:8px 10px"></label>
+        <label class="tn-field">GESTOR<input id="tn-ac-ges" type="text" placeholder="CARLOS YARI" style="background:#06111d;border:1px solid #ffffff1d;border-radius:8px;color:#eaf2ff;padding:8px 10px"></label>
+        <button type="button" class="primary" id="tn-ac-save-one">GUARDAR ACOPLE</button>
       </div>
-      <div id="tn-ac-result"><p class="muted">Aún no hay archivo. Al elegirlo se validan las cabeceras automáticamente.</p></div>
+      <div id="tn-ac-msg"></div>
+      <div class="tn-table-wrap" style="max-height:280px">
+        <table class="tn-table">
+          <thead><tr><th>CÓDIGO</th><th>CARROCERÍA</th><th>GESTOR</th><th></th></tr></thead>
+          <tbody id="tn-ac-body"></tbody>
+        </table>
+      </div>
     </section>
+
     <section class="panel">
-      <div class="panel-title">
-        <div><h2>Estado en Supabase</h2></div>
+      <div class="panel-title"><div><h2>Estado</h2></div>
         <button type="button" id="tn-refresh" class="ghost">ACTUALIZAR</button>
       </div>
       <div id="tn-estado" class="tn-grid"></div>
@@ -317,32 +288,84 @@ export async function mount(container) {
   `;
 
   const ocInput = container.querySelector("#tn-oc-file");
-  const acInput = container.querySelector("#tn-ac-file");
   const ocBtn = container.querySelector("#tn-oc-upload");
-  const acBtn = container.querySelector("#tn-ac-upload");
   const ocName = container.querySelector("#tn-oc-name");
-  const acName = container.querySelector("#tn-ac-name");
   const ocRes = container.querySelector("#tn-oc-result");
-  const acRes = container.querySelector("#tn-ac-result");
+  const acBody = container.querySelector("#tn-ac-body");
+  const acMsg = container.querySelector("#tn-ac-msg");
+  const acForm = container.querySelector("#tn-ac-form");
   const estado = container.querySelector("#tn-estado");
 
-  let ocFile = null;
-  let acFile = null;
-  let ocOk = false;
-  let acOk = false;
-  let ocFilasLocal = []; // última OC por equipo (procesada en el navegador)
+  function renderAcoples() {
+    acBody.innerHTML = acoples
+      .map(
+        (r, i) => `
+      <tr>
+        <td>${esc(r.codigo)}</td>
+        <td>${esc(r.carroceria)}</td>
+        <td>${esc(r.gestor)}</td>
+        <td><button type="button" class="ghost" data-del="${i}" style="padding:4px 8px">✕</button></td>
+      </tr>`,
+      )
+      .join("") || `<tr><td colspan="4" class="muted">Sin acoples. Usa «Añadir acople» cuando haga falta.</td></tr>`;
+  }
 
-  async function onOcSelected(file) {
-    ocFile = file || null;
+  async function persistAcoples() {
+    saveAcoplesLocal(acoples);
+    try {
+      await maestrosApi({ action: "guardar_acoples", filas: acoples });
+      acMsg.innerHTML = `<span class="tn-badge ok">Acoples guardados (${acoples.length})</span>`;
+    } catch (e) {
+      acMsg.innerHTML = `<span class="tn-badge warn">Local OK · sync: ${esc(e.message)}</span>`;
+    }
+  }
+
+  container.querySelector("#tn-ac-add").addEventListener("click", () => {
+    const show = acForm.style.display === "none" || !acForm.style.display;
+    acForm.style.display = show ? "flex" : "none";
+    acForm.classList.toggle("hidden", !show);
+  });
+
+  container.querySelector("#tn-ac-save-one").addEventListener("click", async () => {
+    const codigo = normalizarClave(container.querySelector("#tn-ac-cod").value);
+    const carroceria = String(container.querySelector("#tn-ac-car").value || "").trim();
+    const gestor = String(container.querySelector("#tn-ac-ges").value || "").trim();
+    if (!codigo) {
+      acMsg.innerHTML = `<span class="tn-badge err">Falta código de acople</span>`;
+      return;
+    }
+    const idx = acoples.findIndex((a) => normalizarClave(a.codigo) === codigo);
+    const row = { codigo, carroceria, gestor };
+    if (idx >= 0) acoples[idx] = row;
+    else acoples.push(row);
+    acoples.sort((a, b) => String(a.codigo).localeCompare(String(b.codigo)));
+    renderAcoples();
+    await persistAcoples();
+    container.querySelector("#tn-ac-cod").value = "";
+    container.querySelector("#tn-ac-car").value = "";
+    container.querySelector("#tn-ac-ges").value = "";
+  });
+
+  acBody.addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-del]");
+    if (!btn) return;
+    acoples.splice(Number(btn.dataset.del), 1);
+    renderAcoples();
+    await persistAcoples();
+  });
+
+  ocInput.addEventListener("change", async (e) => {
+    ocFile = e.target.files?.[0] || null;
     ocOk = false;
+    ocFilasLocal = [];
     ocBtn.disabled = true;
     if (!ocFile) {
       ocName.textContent = "";
-      ocRes.innerHTML = `<p class="muted">Aún no hay archivo.</p>`;
+      ocRes.innerHTML = `<p class="muted">Sin archivo.</p>`;
       return;
     }
     ocName.textContent = `${ocFile.name} · ${(ocFile.size / 1024).toFixed(1)} KB`;
-    ocRes.innerHTML = `<p class="muted">Leyendo y validando cabeceras…</p>`;
+    ocRes.innerHTML = `<p class="muted">Procesando en el navegador…</p>`;
     try {
       const rows0 = await readSheetRows(ocFile, 0);
       const rows1 = await readSheetRows(ocFile, 1);
@@ -351,93 +374,59 @@ export async function mount(container) {
       ocOk = v.ok;
       ocFilasLocal = v.filas || [];
       ocBtn.disabled = !v.ok;
-      // Cache local inmediato (sin Supabase) para cruces en monitoreo/base
       if (v.ok) {
-        try {
-          localStorage.setItem(
-            "tn_oc_ultima_v1",
-            JSON.stringify({
-              nombre_archivo: ocFile.name,
-              actualizado_en: new Date().toISOString(),
-              filas: ocFilasLocal,
-            }),
-          );
-        } catch (err) {
-          console.warn("[TN] no se pudo cachear OC local", err);
-        }
+        localStorage.setItem(
+          "tn_oc_ultima_v1",
+          JSON.stringify({
+            nombre_archivo: ocFile.name,
+            actualizado_en: new Date().toISOString(),
+            filas: ocFilasLocal,
+          }),
+        );
       }
       ocRes.innerHTML = `
         <div class="tn-card ${v.ok ? "ok" : "warn"}" style="margin-top:10px">
-          <small>VALIDACIÓN OC · PROCESO LOCAL</small>
+          <small>OC · PROCESO LOCAL</small>
           <b>${v.ok ? "Última OC por equipo lista" : "Cabeceras incompletas"}</b>
-          <p class="muted" style="font-size:12px;margin:6px 0">
-            Comparación y deduplicación en el navegador (no se sube el Excel completo).
-            Fila de encabezado: ${v.headerRow ?? "—"}
-          </p>
+          <p class="muted" style="font-size:12px;margin:6px 0">No se sube el Excel. Solo el resumen al sincronizar.</p>
           ${renderHeaders(v.headers || [], v.found || {}, v.missing)}
           ${
             v.ok
-              ? `<p style="margin-top:8px">Filas leídas: <b>${v.totalFilasConEquipo}</b> ·
-                 Equipos únicos: <b>${v.equiposUnicos}</b> ·
-                 Descartadas (OC anteriores): <b>${v.descartadas}</b></p>
-                 <p class="tn-badge ok">Cache local guardado · listo para sincronizar resumen</p>
+              ? `<p>Filas: <b>${v.totalFilasConEquipo}</b> · Únicas: <b>${v.equiposUnicos}</b> · Descartadas: <b>${v.descartadas}</b>
+                 · de ellas 20-R-: <b>${ocFilasLocal.filter((f) => String(f.equipo).includes("20-R-")).length}</b></p>
                  ${renderSampleTable(["equipo", "fec", "acoplado", "piloto", "ruta"], v.sample)}`
               : ""
           }
-        </div>
-      `;
-    } catch (e) {
-      ocOk = false;
-      ocBtn.disabled = true;
-      ocRes.innerHTML = `<p class="tn-badge err">${esc(e.message || e)}</p>`;
+        </div>`;
+    } catch (err) {
+      ocRes.innerHTML = `<p class="tn-badge err">${esc(err.message || err)}</p>`;
     }
-  }
-
-  async function onAcSelected(file) {
-    acFile = file || null;
-    acOk = false;
-    acBtn.disabled = true;
-    if (!acFile) {
-      acName.textContent = "";
-      acRes.innerHTML = `<p class="muted">Aún no hay archivo.</p>`;
-      return;
-    }
-    acName.textContent = `${acFile.name} · ${(acFile.size / 1024).toFixed(1)} KB`;
-    acRes.innerHTML = `<p class="muted">Leyendo y validando cabeceras…</p>`;
-    try {
-      const rows = await readSheetRows(acFile, 0);
-      if (disposed) return;
-      const v = validateAcoples(rows);
-      acOk = v.ok;
-      acBtn.disabled = !v.ok;
-      acRes.innerHTML = `
-        <div class="tn-card ${v.ok ? "ok" : "warn"}" style="margin-top:10px">
-          <small>VALIDACIÓN TIPO ACOPLE</small>
-          <b>${v.ok ? "Listo para subir" : "Cabeceras incompletas"}</b>
-          <p class="muted" style="font-size:12px;margin:6px 0">Columna código: <b>${esc(v.firstCol || "—")}</b></p>
-          ${renderHeaders(v.headers || [], {}, v.missing)}
-          ${
-            v.ok
-              ? `<p style="margin-top:8px">Acoples únicos: <b>${v.unicos}</b></p>
-                 ${renderSampleTable(["codigo", "carroceria", "gestor"], v.sample)}`
-              : ""
-          }
-        </div>
-      `;
-    } catch (e) {
-      acOk = false;
-      acBtn.disabled = true;
-      acRes.innerHTML = `<p class="tn-badge err">${esc(e.message || e)}</p>`;
-    }
-  }
-
-  ocInput.addEventListener("change", (e) => {
-    const f = e.target.files && e.target.files[0];
-    onOcSelected(f);
   });
-  acInput.addEventListener("change", (e) => {
-    const f = e.target.files && e.target.files[0];
-    onAcSelected(f);
+
+  ocBtn.addEventListener("click", async () => {
+    if (!ocOk || !ocFilasLocal.length) return;
+    ocBtn.disabled = true;
+    ocBtn.textContent = "SINCRONIZANDO…";
+    try {
+      const r = await maestrosApi({
+        action: "guardar_oc",
+        nombre_archivo: ocFile?.name || "oc.xlsx",
+        filas: ocFilasLocal,
+      });
+      ocRes.insertAdjacentHTML(
+        "beforeend",
+        `<p class="tn-badge ok" style="margin-top:8px">Sync · ${r.filas ?? ocFilasLocal.length} equipos</p>`,
+      );
+      await refresh();
+    } catch (e) {
+      ocRes.insertAdjacentHTML(
+        "beforeend",
+        `<p class="tn-badge warn" style="margin-top:8px">Local OK · sync: ${esc(e.message)}</p>`,
+      );
+    } finally {
+      ocBtn.disabled = !ocOk;
+      ocBtn.textContent = "SINCRONIZAR RESUMEN A SUPABASE";
+    }
   });
 
   async function refresh() {
@@ -445,83 +434,37 @@ export async function mount(container) {
       const st = await maestrosApi({ action: "estado" });
       if (disposed) return;
       const oc = st.oc || {};
-      const ac = st.acoples || {};
       estado.innerHTML = `
-        <div class="tn-card ${oc.filas ? "ok" : "warn"}">
-          <small>OC ÚLTIMA / EQUIPO</small><b>${oc.filas ?? 0}</b>
-          <span class="muted" style="font-size:12px">${oc.filas ? fechaPE(oc.actualizado_en) : "Sin datos"} · ${esc(oc.nombre_archivo || "—")}</span>
-        </div>
-        <div class="tn-card ${ac.filas ? "ok" : "warn"}">
-          <small>ACOPLES</small><b>${ac.filas ?? 0}</b>
-          <span class="muted" style="font-size:12px">${ac.filas ? fechaPE(ac.actualizado_en) : "Sin datos"} · ${esc(ac.nombre_archivo || "—")}</span>
-        </div>
-      `;
+        <div class="tn-card ${oc.filas ? "ok" : "warn"}"><small>OC EN SUPABASE</small><b>${oc.filas ?? 0}</b>
+          <span class="muted" style="font-size:12px">${oc.filas ? fechaPE(oc.actualizado_en) : "Opcional"}</span></div>
+        <div class="tn-card ${acoples.length ? "ok" : "warn"}"><small>ACOPLES LOCAL</small><b>${acoples.length}</b>
+          <span class="muted" style="font-size:12px">Catálogo manual</span></div>`;
     } catch (e) {
       if (disposed) return;
       estado.innerHTML = `
-        <div class="tn-card warn">
-          <small>BACKEND</small><b>Pendiente de despliegue</b>
-          <span class="muted" style="font-size:12px">${esc(e.message)}. La validación de Excel en el navegador sí funciona.</span>
-        </div>`;
+        <div class="tn-card warn"><small>SUPABASE</small><b>—</b><span class="muted" style="font-size:12px">${esc(e.message)}</span></div>
+        <div class="tn-card ${acoples.length ? "ok" : "warn"}"><small>ACOPLES LOCAL</small><b>${acoples.length}</b></div>`;
     }
   }
 
-  ocBtn.addEventListener("click", async () => {
-    if (!ocOk || !ocFilasLocal.length) return;
-    ocBtn.disabled = true;
-    const prev = ocBtn.textContent;
-    ocBtn.textContent = "SINCRONIZANDO…";
+  // Cargar acoples remotos una vez si local vacío
+  if (!acoples.length) {
     try {
-      // Solo se envía el resumen ya deduplicado (1 fila por equipo). Sin Excel.
-      const r = await maestrosApi({
-        action: "guardar_oc",
-        nombre_archivo: ocFile?.name || "oc_local.xlsx",
-        filas: ocFilasLocal,
-      });
-      ocRes.insertAdjacentHTML(
-        "beforeend",
-        `<p class="tn-badge ok" style="margin-top:8px">Sync OK · ${r.filas ?? ocFilasLocal.length} equipos (payload liviano, proceso local)</p>`,
-      );
-      await refresh();
-    } catch (e) {
-      ocRes.insertAdjacentHTML(
-        "beforeend",
-        `<p class="tn-badge warn" style="margin-top:8px">Cache local OK · sync Supabase: ${esc(e.message)}</p>`,
-      );
-    } finally {
-      ocBtn.textContent = prev;
-      ocBtn.disabled = !ocOk;
+      const r = await maestrosApi({ action: "listar_acoples" });
+      if (r.filas?.length) {
+        acoples = r.filas.map((x) => ({
+          codigo: normalizarClave(x.codigo),
+          carroceria: x.carroceria || "",
+          gestor: x.gestor || "",
+        }));
+        saveAcoplesLocal(acoples);
+      }
+    } catch {
+      /* ignore */
     }
-  });
+  }
 
-  acBtn.addEventListener("click", async () => {
-    if (!acFile || !acOk) return;
-    acBtn.disabled = true;
-    const prev = acBtn.textContent;
-    acBtn.textContent = "SUBIENDO…";
-    try {
-      const b64 = await fileToBase64(acFile);
-      const r = await maestrosApi({
-        action: "cargar_acoples",
-        nombre_archivo: acFile.name,
-        contenido_base64: b64,
-      });
-      acRes.insertAdjacentHTML(
-        "beforeend",
-        `<p class="tn-badge ok" style="margin-top:8px">Guardado · ${r.filas ?? 0} acoples</p>`,
-      );
-      await refresh();
-    } catch (e) {
-      acRes.insertAdjacentHTML(
-        "beforeend",
-        `<p class="tn-badge err" style="margin-top:8px">${esc(e.message)}</p>`,
-      );
-    } finally {
-      acBtn.textContent = prev;
-      acBtn.disabled = !acOk;
-    }
-  });
-
+  renderAcoples();
   container.querySelector("#tn-refresh").addEventListener("click", refresh);
   await refresh();
 }
