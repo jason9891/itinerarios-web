@@ -608,6 +608,7 @@ export async function mount(container, runtime) {
             <span><i style="background:#dc2626;width:14px;height:3px;border-radius:1px"></i> post-22h</span>
           </div>
         </div>
+        <div class="tn-right">
         <aside class="tn-list-panel">
           <div class="tn-list-head">
             <b>UNIDADES</b>
@@ -615,8 +616,6 @@ export async function mount(container, runtime) {
           </div>
           <div class="tn-list" id="tn-list"></div>
         </aside>
-      </div>
-
       <section class="tn-detail" id="tn-detail">
         <div class="tn-detail-empty" id="tn-detail-empty">
           Selecciona una unidad en la lista o en el mapa para clasificarla.
@@ -677,6 +676,8 @@ export async function mount(container, runtime) {
           </div>
         </div>
       </section>
+        </div>
+      </div>
     </div>
   `;
 
@@ -1061,47 +1062,54 @@ export async function mount(container, runtime) {
   // Google Maps — key desde secret GOOGLE_MAPS_API_KEY vía snapshot
   try {
     let key = mapsKey;
+    // 1) Key desde secret GOOGLE_MAPS_API_KEY (vía editor-geocercas, función ya en prod)
     if (!key) {
       try {
-        const boot = await apiPost(API.snapshot, { action: "snapshot" });
-        key = boot.google_maps_api_key || "";
-        if (boot?.ok && Array.isArray(boot.unidades)) {
-          const byCode = new Map(boot.unidades.map((x) => [x.codigo, x]));
-          for (const u of unidades) {
-            const n = byCode.get(u.codigo);
-            if (!n) continue;
-            if (n.lat != null) u.lat = n.lat;
-            if (n.lng != null) u.lng = n.lng;
-            if (n.color_html) u.color_html = n.color_html;
-            if (n.clase_html) u.clase_html = n.clase_html;
-            if (n.t_parada != null) u.t_parada = n.t_parada;
-          }
-        }
-      } catch (e) {
-        console.warn("[TN] boot snapshot", e);
-      }
-    }
-    // Fallback: misma secret expuesta por editor-geocercas (ya desplegada)
-    if (!key) {
-      try {
+        const user = auth.currentUser;
+        if (!user) throw new Error("Sin sesión");
         const r = await fetch(
           "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1/editor-geocercas",
           {
             method: "POST",
             headers: {
-              Authorization: `Bearer ${await auth.currentUser.getIdToken(false)}`,
+              Authorization: `Bearer ${await user.getIdToken(false)}`,
               "Content-Type": "application/json",
             },
-            body: JSON.stringify({ action: "list" }),
+            body: JSON.stringify({ action: "leer_maestro" }),
           },
         );
         const j = await r.json().catch(() => ({}));
         key = j.google_maps_api_key || "";
+        if (!key) console.warn("[TN] Sin google_maps_api_key en respuesta", Object.keys(j || {}));
       } catch (e) {
-        console.warn("[TN] maps key fallback", e);
+        console.warn("[TN] maps key", e);
       }
     }
+    if (!key) {
+      throw new Error(
+        "No hay GOOGLE_MAPS_API_KEY en Supabase (secret del proyecto). Configúrala y redespliega editor-geocercas / snapshot.",
+      );
+    }
     await loadGoogleMaps(key);
+    // 2) Posiciones frescas (no bloquea el mapa si falla)
+    try {
+      const boot = await apiPost(API.snapshot, { action: "snapshot" });
+      if (boot?.google_maps_api_key) mapsKey = boot.google_maps_api_key;
+      if (boot?.ok && Array.isArray(boot.unidades)) {
+        const byCode = new Map(boot.unidades.map((x) => [x.codigo, x]));
+        for (const u of unidades) {
+          const n = byCode.get(u.codigo);
+          if (!n) continue;
+          if (n.lat != null) u.lat = n.lat;
+          if (n.lng != null) u.lng = n.lng;
+          if (n.color_html) u.color_html = n.color_html;
+          if (n.clase_html) u.clase_html = n.clase_html;
+          if (n.t_parada != null) u.t_parada = n.t_parada;
+        }
+      }
+    } catch (e) {
+      console.warn("[TN] boot snapshot", e);
+    }
     if (disposed) return;
     map = new google.maps.Map(container.querySelector("#tn-map"), {
       center: { lat: -16.4, lng: -71.5 },

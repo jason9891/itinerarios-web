@@ -237,13 +237,21 @@ body.tn-fs-monitoreo .content {
 /* MAPA grande + lista derecha (como desktop) */
 .tn-track-main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 340px;
+  grid-template-columns: minmax(0, 1fr) minmax(340px, 400px);
   gap: 0;
   flex: 1 1 auto;
   min-height: 0;
   height: auto;
   max-height: none;
-  border-bottom: 1px solid #ffffff12;
+  border-bottom: 0;
+}
+.tn-right {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  border-left: 1px solid #ffffff14;
+  background: #0b1928;
 }
 .tn-map-wrap {
   position: relative;
@@ -254,7 +262,13 @@ body.tn-fs-monitoreo .content {
   min-height: 0;
   height: 100%;
 }
-.tn-map { width: 100%; height: 100%; min-height: 0; }
+.tn-map {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  position: absolute;
+  inset: 0;
+}
 .tn-map-error {
   display: grid;
   place-items: center;
@@ -343,11 +357,11 @@ body.tn-fs-monitoreo .content {
   display: flex;
   flex-direction: column;
   border: 0;
-  border-left: 1px solid #ffffff14;
   border-radius: 0;
-  background: #0b1928;
+  background: transparent;
   min-height: 0;
-  height: 100%;
+  flex: 0 0 34%;
+  max-height: 36%;
   overflow: hidden;
 }
 .tn-list-head {
@@ -395,10 +409,11 @@ body.tn-fs-monitoreo .content {
   border: 0;
   border-top: 1px solid #ffffff14;
   border-radius: 0;
-  background: #0b1928;
-  padding: 8px 12px;
-  flex: 0 0 auto;
-  max-height: 28vh;
+  background: #07111c;
+  padding: 10px 12px;
+  flex: 1 1 auto;
+  min-height: 0;
+  max-height: none;
   overflow: auto;
 }
 .tn-detail-empty {
@@ -582,10 +597,10 @@ body.tn-fs-monitoreo .content {
 @media (max-width: 900px) {
   .tn-track-main {
     grid-template-columns: 1fr;
-    grid-template-rows: 1fr 200px;
+    grid-template-rows: minmax(40vh, 1fr) minmax(280px, 50vh);
   }
-  .tn-list-panel { border-left: 0; border-top: 1px solid #ffffff14; }
-  .tn-detail { max-height: 40vh; }
+  .tn-right { border-left: 0; border-top: 1px solid #ffffff14; }
+  .tn-list-panel { flex: 0 0 40%; max-height: 40%; }
 }
 
 .tn-sino-field {
