@@ -311,7 +311,33 @@ function fechaTurnoDefault() {
 
 export async function mount(container, runtime) {
   disposed = false;
-  unidades = demoUnidades();
+  // Preferir base real del turno (snapshot + match OC local)
+  try {
+    const base = JSON.parse(localStorage.getItem("tn_base_turno_v1") || "null");
+    if (base?.unidades?.length) {
+      const saved = loadClasificaciones();
+      unidades = base.unidades.map((u) => {
+        const s = saved[u.codigo] || {};
+        const merged = {
+          ...u,
+          status: s.status ?? u.status ?? "-",
+          riesgo: s.riesgo ?? u.riesgo ?? "-",
+          punto_autorizado: s.punto_autorizado ?? u.punto_autorizado ?? "-",
+          cobertura_gps: s.cobertura_gps ?? u.cobertura_gps ?? "-",
+          tipo_lugar: s.tipo_lugar ?? u.tipo_lugar ?? "",
+          punto_pernocte: s.punto_pernocte ?? u.punto_pernocte ?? "",
+          observaciones: s.observaciones ?? u.observaciones ?? "",
+          timestamp_clasificacion: s.timestamp_clasificacion || "",
+        };
+        merged.estado_clasificacion = estadoClasificacion(merged);
+        return merged;
+      });
+    } else {
+      unidades = demoUnidades();
+    }
+  } catch {
+    unidades = demoUnidades();
+  }
 
   container.innerHTML = `
     <div class="tn-track">
@@ -319,7 +345,7 @@ export async function mount(container, runtime) {
         <div class="tn-track-title">
           <p class="eyebrow">TURNO AMANECIDA · DESDE LAS 22:00</p>
           <h1>Tránsitos de la noche</h1>
-          <p class="muted">Identificar unidades 20-R- en tránsito o detenidas fuera de punto conocido · clasificar riesgo y pernocte</p>
+          <p class="muted">Base del turno (snapshot real + OC local) · tránsitos fuera de punto conocido · clasificar riesgo/pernocte</p>
         </div>
         <div class="tn-track-meta">
           <label class="tn-field">

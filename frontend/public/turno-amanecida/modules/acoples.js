@@ -71,6 +71,9 @@ export async function mount(container) {
     try {
       const r = await maestrosApi({ action: "guardar_acoples", filas: clean });
       msg.innerHTML = `<span class="tn-badge ok">Guardado · ${r.filas ?? clean.length} filas</span>`;
+      try {
+        localStorage.setItem("tn_acoples_v1", JSON.stringify({ actualizado_en: new Date().toISOString(), filas: clean }));
+      } catch (_) {}
       await load();
     } catch (e) {
       msg.innerHTML = `<span class="tn-badge err">${esc(e.message)}</span>`;
@@ -86,6 +89,9 @@ export async function mount(container) {
         carroceria: x.carroceria || "",
         gestor: x.gestor || "",
       }));
+      try {
+        localStorage.setItem("tn_acoples_v1", JSON.stringify({ actualizado_en: new Date().toISOString(), filas: rows }));
+      } catch (_) {}
       render();
     } catch (e) {
       if (disposed) return;

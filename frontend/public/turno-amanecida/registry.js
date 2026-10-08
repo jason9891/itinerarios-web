@@ -2,7 +2,7 @@
  * Registry de módulos de TURNO AMANECIDA.
  * Independiente de Cemento y Cerro Verde.
  */
-const V = "tn07";
+const V = "tn08";
 
 export const modules = {
   home:          () => import(`./modules/home.js?v=${V}`),
@@ -18,8 +18,5 @@ export const modules = {
 /** Endpoints exclusivos de Turno Amanecida. */
 export const API = {
   maestros: "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1/turno-amanecida-maestros",
-  // Próximos:
-  // snapshot: ".../turno-amanecida-snapshot",
-  // monitor:  ".../turno-amanecida-monitor",
-  // report:   ".../turno-amanecida-reporte",
+  snapshot: "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1/turno-amanecida-snapshot",
 };
