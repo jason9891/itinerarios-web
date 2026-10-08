@@ -1,13 +1,266 @@
 /**
- * Halo amarillo/rojo = movimiento REAL ≥100 m después de las 22:00
- * (comparando lat/lng del recorrido o posiciones sucesivas).
- * NO usa "en movimiento" de CLocator ni COLOR_HTML.
- *  - si hubo ≥100 m post-22h y hora actual ≥22 y <23 → amarillo
- *  - si hubo ≥100 m post-22h y hora ≥23 o <4 → rojo
- *  - sin movimiento válido → sin halo (aunque COLOR sea rojo = no reporta)
+ * MONITOREO + CLASIFICACIÓN — identificar tránsitos después de las 22:00.
+ * Layout (como VentanaMapa del desktop):
+ *   cabecera (fecha, contadores, filtros, poll)
+ *   mapa (izq) + lista unidades (der)
+ *   ficha unidad + formulario de clasificación (abajo)
+ *
+ * Persistencia local de clasificaciones mientras no exista backend de snapshot.
+ * Cuando exista base/snapshot, runtime.state / API alimentarán `unidades`.
  */
+import { moduleHead, esc, fechaPE } from "../api-client.js";
+import { queryClocator, clocatorEndpoint } from "../../shared/clocator-client.js";
+import { auth } from "../../shared/auth.js";
+import { startPrecarga, loadMeta, currentRunId, getProgress } from "../precarga-engine.js";
+import { readGPS, gpsKey } from "../gps-cache.js";
 
-/** Desplazamiento en metros después de las 22:00 del día del turno. */
+const POLL_MS = 3 * 60 * 1000;
+const STORAGE_KEY = "tn_clasificaciones_v1";
+const STATUS_OPTS = [
+  "",
+  "TRANSITO CARGADO",
+  "TRANSITO VACIO",
+  "ESTACIONADO CARGADO",
+  "ESTACIONADO VACIO",
+];
+
+let disposed = false;
+let map = null;
+let markersLayer = null;
+let markersByCode = new Map();
+let unidades = [];
+let seleccion = null;
+let filtro = "Pendientes";
+let busqueda = "";
+let pollTimer = null;
+let routeLayers = [];
+let routeLoading = false;
+let clipboard = null;
+let leafletReady = null;
+/** null = hora real Lima; number 0-23 fuerza umbral nocturno (pruebas). */
+let simHora = null;
+
+function loadLeaflet() {
+  if (window.L) return Promise.resolve(window.L);
+  if (leafletReady) return leafletReady;
+  leafletReady = new Promise((resolve, reject) => {
+    const css = document.createElement("link");
+    css.rel = "stylesheet";
+    css.href = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.css";
+    document.head.appendChild(css);
+    const s = document.createElement("script");
+    s.src = "https://unpkg.com/leaflet@1.9.4/dist/leaflet.js";
+    s.onload = () => resolve(window.L);
+    s.onerror = () => reject(new Error("No se pudo cargar Leaflet"));
+    document.head.appendChild(s);
+  });
+  return leafletReady;
+}
+
+function loadClasificaciones() {
+  try {
+    return JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}") || {};
+  } catch {
+    return {};
+  }
+}
+
+function saveClasificacion(codigo, data) {
+  const all = loadClasificaciones();
+  all[codigo] = { ...data, timestamp_clasificacion: new Date().toISOString() };
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(all));
+}
+
+function estadoClasificacion(u) {
+  if (u.observaciones === "NO VA" || u.status === "NO VA") return "REVISAR";
+  const filled =
+    (u.status && u.status !== "-") ||
+    (u.riesgo && u.riesgo !== "-") ||
+    (u.punto_autorizado && u.punto_autorizado !== "-");
+  return filled ? "CALIFICADA" : "PENDIENTE";
+}
+
+/** Unidades de demostración centradas en Arequipa / macro sur (hasta tener snapshot). */
+function demoUnidades() {
+  const saved = loadClasificaciones();
+  const base = [
+    {
+      codigo: "20-R-799",
+      placa: "APK811",
+      piloto: "LARICO COCHON DANY",
+      acoplado: "20-P-238",
+      tipo_acople: "TOLVA HIDRAULICA",
+      gestor: "CARLOS YARI",
+      mercaderia: "TRANSP. CAL VIVA A GRANEL (C)",
+      ruta: "PUN Caracoto a ICA Marcona",
+      zona: "Transito",
+      lat: -16.3989,
+      lng: -71.535,
+      estado_monitoreo: "DETENIDA",
+      t_parada: "01:42:00",
+      color_html: "ROJO",
+    },
+    {
+      codigo: "20-R-697",
+      placa: "BYW706",
+      piloto: "SUYCO PANTA URIEL",
+      acoplado: "20-T-199",
+      tipo_acople: "TOLVA",
+      gestor: "OPERACIONES SUR",
+      mercaderia: "CAL VIVA A GRANEL",
+      ruta: "Yura - Caracoto",
+      zona: "Cesur_Caracoto_TN",
+      lat: -15.5735,
+      lng: -70.1055,
+      estado_monitoreo: "DETENIDA",
+      t_parada: "03:10:00",
+      color_html: "AMARILLO",
+    },
+    {
+      codigo: "20-R-586",
+      placa: "CHF759",
+      piloto: "HUACASI TICONA HUBERT",
+      acoplado: "20-T-329",
+      tipo_acople: "TOLVA",
+      gestor: "CARLOS YARI",
+      mercaderia: "CEMENTO",
+      ruta: "Planta Gloria - Majes",
+      zona: "Transito",
+      lat: -16.41,
+      lng: -71.55,
+      estado_monitoreo: "MOVIMIENTO",
+      t_parada: "",
+      color_html: "VERDE",
+    },
+    {
+      codigo: "20-R-904",
+      placa: "V8L852",
+      piloto: "SARAVIA MAMANI NILTON",
+      acoplado: "20-T-254",
+      tipo_acople: "TOLVA",
+      gestor: "BASE MOQUEGUA",
+      mercaderia: "CAL VIVA",
+      ruta: "Moquegua - Tacna",
+      zona: "Base_Mpquegua_TN",
+      lat: -17.194,
+      lng: -70.935,
+      estado_monitoreo: "DETENIDA",
+      t_parada: "02:05:00",
+      color_html: "ROJO",
+    },
+    {
+      codigo: "20-R-160",
+      placa: "CHD788",
+      piloto: "JAEN SALAZAR MIGUEL",
+      acoplado: "20-T-201",
+      tipo_acople: "TOLVA",
+      gestor: "RACIEMSA",
+      mercaderia: "TRANSP. GRANEL",
+      ruta: "Arequipa - Juliaca",
+      zona: "Transito",
+      lat: -16.25,
+      lng: -71.35,
+      estado_monitoreo: "PERDIDA_GPS",
+      t_parada: "",
+      color_html: "GRIS",
+    },
+  ];
+  return base.map((u) => {
+    const s = saved[u.codigo] || {};
+    const merged = {
+      ...u,
+      status: s.status ?? "-",
+      riesgo: s.riesgo ?? "-",
+      punto_autorizado: s.punto_autorizado ?? "-",
+      cobertura_gps: s.cobertura_gps ?? "-",
+      tipo_lugar: s.tipo_lugar ?? "",
+      punto_pernocte: s.punto_pernocte ?? "",
+      observaciones: s.observaciones ?? "",
+      timestamp_clasificacion: s.timestamp_clasificacion || "",
+    };
+    merged.estado_clasificacion = estadoClasificacion(merged);
+    return merged;
+  });
+}
+
+function colorClasif(est) {
+  if (est === "CALIFICADA") return "#166534";
+  if (est === "REVISAR") return "#854d0e";
+  return "#334155";
+}
+
+/** Color del punto = COLOR_HTML del snapshot CLocator (no el estado). */
+function reporteDesdeColorLocal(colorHtml) {
+  const c = String(colorHtml || "").toUpperCase();
+  if (c === "VERDE") return "REPORTA";
+  if (c === "ROJO") return "NO_REPORTA";
+  if (c === "GRIS") return "NO_REPORTA_LARGO";
+  if (c === "AMARILLO") return "ALERTA_REPORTE";
+  return "SIN_DATOS";
+}
+
+function colorHtmlHex(colorHtml) {
+  const c = String(colorHtml || "").toUpperCase();
+  if (c === "VERDE") return "#22c55e";
+  if (c === "AMARILLO") return "#eab308";
+  if (c === "ROJO") return "#ef4444";
+  if (c === "GRIS" || c === "PLOMO") return "#94a3b8";
+  return "#64748b";
+}
+
+/** Badge de estado operativo (MOVIMIENTO / DETENIDA / PERDIDA_GPS). */
+function colorEstado(est) {
+  if (est === "MOVIMIENTO") return "#38bdf8";
+  if (est === "DETENIDA") return "#a3e635";
+  if (est === "PERDIDA_GPS") return "#f97316";
+  return "#94a3b8";
+}
+
+function haversineM(lat1, lng1, lat2, lng2) {
+  if (![lat1, lng1, lat2, lng2].every(Number.isFinite)) return null;
+  const R = 6371000;
+  const toR = (d) => (d * Math.PI) / 180;
+  const dLat = toR(lat2 - lat1);
+  const dLng = toR(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toR(lat1)) * Math.cos(toR(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/** Si hay posición previa y se movió ≥100 m → MOVIMIENTO (regla desktop). */
+function aplicarRegla100m(u, prev) {
+  if (!prev || prev.lat == null || prev.lng == null || u.lat == null || u.lng == null) return u;
+  const d = haversineM(Number(prev.lat), Number(prev.lng), Number(u.lat), Number(u.lng));
+  if (d != null && d >= 100) {
+    return { ...u, estado_monitoreo: "MOVIMIENTO", movimiento_m: Math.round(d) };
+  }
+  return u;
+}
+
+/** Hora actual en Perú (0–23). */
+function horaLima() {
+  if (simHora != null && Number.isFinite(simHora)) return simHora;
+  try {
+    const parts = new Intl.DateTimeFormat("en-US", {
+      timeZone: "America/Lima",
+      hour: "numeric",
+      hour12: false,
+    }).formatToParts(new Date());
+    return Number(parts.find((p) => p.type === "hour")?.value ?? 0);
+  } catch {
+    return new Date().getHours();
+  }
+}
+
+/**
+ * Halo nocturno SOLO para tránsito activo (MOVIMIENTO).
+ * No aplica a detenidas / GPS perdido / toda la flota a la 1 AM.
+ *  - 22:00–22:59 → amarillo
+ *  - 23:00–03:59 → rojo
+ * El punto central sigue siendo COLOR_HTML del snapshot (verde/amarillo/rojo/plomo).
+ */
+/** Metros desplazados después de las 22:00 (ancla = última pos ≤22:00). */
 function calcularMovimientoNocturno(puntos, fechaTurno) {
   if (!puntos?.length) return 0;
   const dia = parseFechaTurno(fechaTurno);
@@ -16,11 +269,9 @@ function calcularMovimientoNocturno(puntos, fechaTurno) {
   for (const p of puntos) {
     const ll = puntoLatLng(p);
     if (!ll) continue;
-    const ft = parsePuntoFecha(p);
-    pts.push({ ...ll, t: ft });
+    pts.push({ ...ll, t: parsePuntoFecha(p) });
   }
   if (pts.length < 2) return 0;
-  // ancla: último punto ≤22:00, o el primero del día si todos son post-22
   let ancla = null;
   for (const p of pts) {
     if (p.t && p.t <= corte) ancla = p;
@@ -36,6 +287,7 @@ function calcularMovimientoNocturno(puntos, fechaTurno) {
 }
 
 function urgenciaNocturna(u) {
+  // Halo solo si hubo desplazamiento real ≥100 m después de las 22:00
   if (!u.movimiento_nocturno_m || u.movimiento_nocturno_m < 100) return null;
   const h = horaLima();
   if (h >= 23 || h < 4) return "rojo";
@@ -260,6 +512,8 @@ export async function mount(container, runtime) {
         const s = saved[u.codigo] || {};
         const merged = {
           ...u,
+          movimiento_nocturno_m: u.movimiento_nocturno_m || 0,
+          reporte_gps: u.reporte_gps || reporteDesdeColorLocal(u.color_html),
           status: s.status ?? u.status ?? "-",
           riesgo: s.riesgo ?? u.riesgo ?? "-",
           punto_autorizado: s.punto_autorizado ?? u.punto_autorizado ?? "-",
@@ -445,8 +699,8 @@ export async function mount(container, runtime) {
             <small>${esc(u.placa || "—")} · ${esc(u.piloto || "—")}</small>
           </span>
           <span class="tn-li-meta">
-            <span class="tn-badge" style="background:${colorHtmlHex(u.color_html)}33;color:${colorHtmlHex(u.color_html)}" title="${esc(u.clase_html || "")}">${esc(u.color_html || "—")}</span>
-            <small title="Último reporte / T.Parada">${esc(u.t_parada || "—")}</small>
+            <span class="tn-badge" style="background:${colorHtmlHex(u.color_html)}33;color:${colorHtmlHex(u.color_html)}" title="${esc(u.clase_html || u.reporte_gps || "")}">${esc(u.color_html || "—")}</span>
+            <small title="T.Parada / último reporte">${esc(u.t_parada || "—")}</small>
             <small>${u.movimiento_nocturno_m >= 100 ? `↔${u.movimiento_nocturno_m}m` : ""}</small>
           </span>
         </button>`;
@@ -780,7 +1034,7 @@ export async function mount(container, runtime) {
       seleccion.movimiento_nocturno_m = Math.round(mov);
       syncMarkers();
       renderList();
-      msgEl.textContent = `Recorrido (${fuente}): ${azul.length} azules · ${rojo.length} post-22h · mov nocturno ${Math.round(mov)} m`;
+      msgEl.textContent = `Recorrido (${fuente}): ${azul.length} azules · ${rojo.length} post-22h · mov noct. ${Math.round(mov)} m`;
     } catch (e) {
       msgEl.textContent = `Recorrido: ${e.message || e}`;
       clearRouteLayers();
@@ -797,7 +1051,6 @@ export async function mount(container, runtime) {
   // Precarga de rutas en caché (16:00→ahora) — no bloquea la UI
   const fechaVal = container.querySelector("#tn-fecha")?.value || fechaTurnoDefault();
   const precargaEl = container.querySelector("#tn-precarga");
-
   async function enriquecerMovimientoDesdeCache() {
     const rid = currentRunId() || loadMeta()?.id;
     if (!rid) return;
@@ -809,9 +1062,9 @@ export async function mount(container, runtime) {
           gpsKey(rid, String(u.codigo || "").toUpperCase(), String(u.placa || "").toUpperCase()),
         );
         if (!cached?.puntos_gps?.length) continue;
-        const m = calcularMovimientoNocturno(cached.puntos_gps, fechaVal);
-        if (Math.round(m) !== (u.movimiento_nocturno_m || 0)) {
-          u.movimiento_nocturno_m = Math.round(m);
+        const m = Math.round(calcularMovimientoNocturno(cached.puntos_gps, fechaVal));
+        if (m !== (u.movimiento_nocturno_m || 0)) {
+          u.movimiento_nocturno_m = m;
           changed = true;
         }
       } catch {
