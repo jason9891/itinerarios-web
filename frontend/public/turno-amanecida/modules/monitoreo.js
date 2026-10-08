@@ -1081,6 +1081,26 @@ export async function mount(container, runtime) {
         console.warn("[TN] boot snapshot", e);
       }
     }
+    // Fallback: misma secret expuesta por editor-geocercas (ya desplegada)
+    if (!key) {
+      try {
+        const r = await fetch(
+          "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1/editor-geocercas",
+          {
+            method: "POST",
+            headers: {
+              Authorization: `Bearer ${await auth.currentUser.getIdToken(false)}`,
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ action: "list" }),
+          },
+        );
+        const j = await r.json().catch(() => ({}));
+        key = j.google_maps_api_key || "";
+      } catch (e) {
+        console.warn("[TN] maps key fallback", e);
+      }
+    }
     await loadGoogleMaps(key);
     if (disposed) return;
     map = new google.maps.Map(container.querySelector("#tn-map"), {
