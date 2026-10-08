@@ -9,6 +9,7 @@
 import { moduleHead, esc, maestrosApi, fechaPE } from "../api-client.js";
 import { auth } from "../../shared/auth.js";
 import { API } from "../registry.js";
+import { startPrecarga } from "../precarga-engine.js";
 
 const OC_KEY = "tn_oc_ultima_v1";
 const ACOPLE_KEY = "tn_acoples_v1";
@@ -272,6 +273,19 @@ export async function mount(container) {
         unidades,
       };
       localStorage.setItem(BASE_KEY, JSON.stringify(payload));
+      // Precarga de recorridos en 2º plano (caché) — mismo rango 16:00→ahora
+      try {
+        const now = new Date();
+        // Si es madrugada (<12h), el turno es del día anterior
+        const turno = new Date(now);
+        if (now.getHours() < 12) turno.setDate(turno.getDate() - 1);
+        startPrecarga(
+          unidades.map((u) => ({ codigo: u.codigo, placa: u.placa })),
+          turno.toISOString().slice(0, 10),
+        );
+      } catch (err) {
+        console.warn("[TN] precarga", err);
+      }
 
       cardBase.className = "tn-card ok";
       cardBase.innerHTML = `<small>ÚLTIMA BASE</small><b>${unidades.length}</b>

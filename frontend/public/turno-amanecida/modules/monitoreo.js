@@ -11,6 +11,8 @@
 import { moduleHead, esc, fechaPE } from "../api-client.js";
 import { queryClocator, clocatorEndpoint } from "../../shared/clocator-client.js";
 import { auth } from "../../shared/auth.js";
+import { startPrecarga, loadMeta, currentRunId, getProgress } from "../precarga-engine.js";
+import { readGPS, gpsKey } from "../gps-cache.js";
 
 const POLL_MS = 3 * 60 * 1000;
 const STORAGE_KEY = "tn_clasificaciones_v1";
@@ -243,18 +245,14 @@ function horaLima() {
 }
 
 /**
- * Halo de urgencia nocturna para tránsitos:
- *  - 22:00–22:59 → amarillo (tránsito pasadas las 22h)
- *  - 23:00–03:59 → rojo (ya pasó de las 23h)
- *  - resto del día → sin halo nocturno
- * Aplica a unidades en movimiento, detenidas o en zona Transito.
+ * Halo nocturno SOLO para tránsito activo (MOVIMIENTO).
+ * No aplica a detenidas / GPS perdido / toda la flota a la 1 AM.
+ *  - 22:00–22:59 → amarillo
+ *  - 23:00–03:59 → rojo
+ * El punto central sigue siendo COLOR_HTML del snapshot (verde/amarillo/rojo/plomo).
  */
 function urgenciaNocturna(u) {
-  const est = u.estado_monitoreo || "";
-  const zona = String(u.zona || "");
-  const enJuego =
-    est === "MOVIMIENTO" || est === "DETENIDA" || est === "PERDIDA_GPS" || zona === "Transito";
-  if (!enJuego) return null;
+  if (String(u.estado_monitoreo || "") !== "MOVIMIENTO") return null;
   const h = horaLima();
   if (h >= 23 || h < 4) return "rojo";
   if (h >= 22) return "amarillo";
@@ -515,6 +513,7 @@ export async function mount(container, runtime) {
             <span class="tn-live-dot" id="tn-live-dot"></span>
             <span id="tn-live-txt">Poll 3 min</span>
           </div>
+          <span class="tn-chip" id="tn-precarga">Rutas: —</span>
           <label class="tn-field">
             <span>HALO NOCTURNO</span>
             <select id="tn-sim-hora" title="Hora para umbral 22h/23h (pruebas o revisión diurna)">
@@ -952,30 +951,48 @@ export async function mount(container, runtime) {
     msgEl.textContent = "Consultando recorrido CLocator…";
     try {
       const fechaVal = container.querySelector("#tn-fecha")?.value || fechaTurnoDefault();
-      const dia = parseFechaTurno(fechaVal);
-      const desdeDt = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), 16, 0, 0);
-      const hastaDt = new Date();
-      // No pasar de 04:00 del día siguiente
-      const limite = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate() + 1, 4, 0, 0);
-      const hasta = hastaDt > limite ? limite : hastaDt;
+      const placaU = placa.toUpperCase();
+      const tractoU = tracto.toUpperCase();
+      let pts = [];
+      let fuente = "live";
 
-      const user = auth.currentUser;
-      if (!user) throw new Error("Sin sesión");
-      const token = await user.getIdToken(true);
-      const data = await queryClocator({
-        endpoint: clocatorEndpoint("cemento"),
-        token,
-        placa: placa || tracto,
-        tracto,
-        desde: formatPE(desdeDt),
-        hasta: formatPE(hasta),
-        includeMap: false,
-        timeoutMs: 60000,
-      });
-      const pts = data.puntos_gps || data.puntos || [];
+      // 1) Caché de precarga
+      const rid = currentRunId() || loadMeta()?.id;
+      if (rid) {
+        const cached = await readGPS(gpsKey(rid, tractoU, placaU));
+        if (cached?.puntos_gps?.length) {
+          pts = cached.puntos_gps;
+          fuente = "caché";
+        }
+      }
+
+      // 2) Fallback consulta puntual
+      if (!pts.length) {
+        const dia = parseFechaTurno(fechaVal);
+        const desdeDt = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), 16, 0, 0);
+        const hastaDt = new Date();
+        const limite = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate() + 1, 4, 0, 0);
+        const hasta = hastaDt > limite ? limite : hastaDt;
+        const user = auth.currentUser;
+        if (!user) throw new Error("Sin sesión");
+        const token = await user.getIdToken(true);
+        const data = await queryClocator({
+          endpoint: clocatorEndpoint("cemento"),
+          token,
+          placa: placa || tracto,
+          tracto,
+          desde: formatPE(desdeDt),
+          hasta: formatPE(hasta),
+          includeMap: false,
+          timeoutMs: 60000,
+        });
+        pts = data.puntos_gps || data.puntos || [];
+        fuente = "live";
+      }
+
       const { azul, rojo } = partirRecorrido(pts, fechaVal);
       drawSplitRoute(azul, rojo);
-      msgEl.textContent = `Recorrido: ${azul.length} pts azules (16–22h) · ${rojo.length} pts rojos (post-22h) · total GPS ${pts.length}`;
+      msgEl.textContent = `Recorrido (${fuente}): ${azul.length} azules 16–22h · ${rojo.length} rojos post-22h · ${pts.length} pts`;
     } catch (e) {
       msgEl.textContent = `Recorrido: ${e.message || e}`;
       clearRouteLayers();
@@ -988,6 +1005,31 @@ export async function mount(container, runtime) {
     }
   });
 
+
+  // Precarga de rutas en caché (16:00→ahora) — no bloquea la UI
+  const fechaVal = container.querySelector("#tn-fecha")?.value || fechaTurnoDefault();
+  const precargaEl = container.querySelector("#tn-precarga");
+  function paintPrecarga() {
+    const m = loadMeta();
+    const g = getProgress();
+    if (!precargaEl) return;
+    if (g.running || m?.running) {
+      precargaEl.textContent = `Rutas: ${m?.done || g.done || 0}/${m?.total || g.total || unidades.length}`;
+    } else if (m?.completo) {
+      precargaEl.textContent = `Rutas: ${m.ok || 0}/${m.total || 0} OK`;
+      precargaEl.classList.add("ok");
+    } else {
+      precargaEl.textContent = "Rutas: en cola";
+    }
+  }
+  paintPrecarga();
+  window.addEventListener("turno-amanecida:precarga", paintPrecarga);
+  if (unidades.length) {
+    startPrecarga(
+      unidades.map((u) => ({ codigo: u.codigo, placa: u.placa })),
+      fechaVal,
+    ).then(paintPrecarga).catch(() => {});
+  }
 
   renderCounters();
   renderList();

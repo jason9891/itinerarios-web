@@ -93,11 +93,14 @@ button:disabled,
 }
 
 /* ===== SEGUIMIENTO / MONITOREO ===== */
+/* Ventana fija: mapa+lista no empujan el alto; lista scrollea; form abajo */
 .tn-track {
   display: flex;
   flex-direction: column;
-  gap: 10px;
-  min-height: calc(100vh - var(--shell-header-h) - 48px);
+  gap: 8px;
+  height: calc(100vh - var(--shell-header-h) - 28px);
+  max-height: calc(100vh - var(--shell-header-h) - 28px);
+  overflow: hidden;
 }
 .tn-track-head {
   display: flex;
@@ -195,10 +198,12 @@ button:disabled,
 
 .tn-track-main {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 320px;
+  grid-template-columns: minmax(0, 1fr) 300px;
   gap: 10px;
-  min-height: 420px;
-  flex: 1;
+  flex: 1 1 auto;
+  min-height: 0;           /* clave: no crecer con la lista */
+  max-height: 52vh;        /* ventana visual fija */
+  height: 52vh;
 }
 .tn-map-wrap {
   position: relative;
@@ -206,9 +211,10 @@ button:disabled,
   border-radius: 12px;
   overflow: hidden;
   background: #07111c;
-  min-height: 420px;
+  min-height: 0;
+  height: 100%;
 }
-.tn-map { width: 100%; height: 100%; min-height: 420px; }
+.tn-map { width: 100%; height: 100%; min-height: 0; }
 .tn-map-error {
   display: grid;
   place-items: center;
@@ -311,7 +317,8 @@ button:disabled,
   border: 1px solid #ffffff14;
   border-radius: 12px;
   background: #0b1928;
-  min-height: 420px;
+  min-height: 0;
+  height: 100%;
   overflow: hidden;
 }
 .tn-list-head {
@@ -355,7 +362,10 @@ button:disabled,
   border: 1px solid #ffffff14;
   border-radius: 12px;
   background: #0b1928;
-  padding: 14px 16px;
+  padding: 12px 14px;
+  flex: 0 0 auto;
+  max-height: 36vh;
+  overflow: auto;
 }
 .tn-detail-empty {
   color: #8aa0b8;
@@ -459,7 +469,10 @@ button:disabled,
 }
 
 @media (max-width: 1100px) {
-  .tn-track-main { grid-template-columns: 1fr; }
-  .tn-list-panel { max-height: 280px; min-height: 220px; }
-  .tn-map-wrap, .tn-map { min-height: 320px; }
+  .tn-track-main {
+    grid-template-columns: 1fr;
+    height: 48vh;
+    max-height: 48vh;
+  }
+  .tn-list-panel { max-height: 40%; }
 }
