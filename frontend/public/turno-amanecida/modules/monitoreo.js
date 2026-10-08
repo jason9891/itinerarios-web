@@ -9,6 +9,8 @@
  * Cuando exista base/snapshot, runtime.state / API alimentarán `unidades`.
  */
 import { moduleHead, esc, fechaPE } from "../api-client.js";
+import { queryClocator, clocatorEndpoint } from "../../shared/clocator-client.js";
+import { auth } from "../../shared/auth.js";
 
 const POLL_MS = 3 * 60 * 1000;
 const STORAGE_KEY = "tn_clasificaciones_v1";
@@ -29,6 +31,8 @@ let seleccion = null;
 let filtro = "Pendientes";
 let busqueda = "";
 let pollTimer = null;
+let routeLayers = [];
+let routeLoading = false;
 let clipboard = null;
 let leafletReady = null;
 /** null = hora real Lima; number 0-23 fuerza umbral nocturno (pruebas). */
@@ -183,11 +187,44 @@ function colorClasif(est) {
   return "#334155";
 }
 
-function colorMonitor(est) {
-  if (est === "MOVIMIENTO") return "#22c55e";
-  if (est === "DETENIDA") return "#ef4444";
-  if (est === "PERDIDA_GPS") return "#94a3b8";
+/** Color del punto = COLOR_HTML del snapshot CLocator (no el estado). */
+function colorHtmlHex(colorHtml) {
+  const c = String(colorHtml || "").toUpperCase();
+  if (c === "VERDE") return "#22c55e";
+  if (c === "AMARILLO") return "#eab308";
+  if (c === "ROJO") return "#ef4444";
+  if (c === "GRIS" || c === "PLOMO") return "#94a3b8";
   return "#64748b";
+}
+
+/** Badge de estado operativo (MOVIMIENTO / DETENIDA / PERDIDA_GPS). */
+function colorEstado(est) {
+  if (est === "MOVIMIENTO") return "#38bdf8";
+  if (est === "DETENIDA") return "#a3e635";
+  if (est === "PERDIDA_GPS") return "#f97316";
+  return "#94a3b8";
+}
+
+function haversineM(lat1, lng1, lat2, lng2) {
+  if (![lat1, lng1, lat2, lng2].every(Number.isFinite)) return null;
+  const R = 6371000;
+  const toR = (d) => (d * Math.PI) / 180;
+  const dLat = toR(lat2 - lat1);
+  const dLng = toR(lng2 - lng1);
+  const a =
+    Math.sin(dLat / 2) ** 2 +
+    Math.cos(toR(lat1)) * Math.cos(toR(lat2)) * Math.sin(dLng / 2) ** 2;
+  return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+/** Si hay posición previa y se movió ≥100 m → MOVIMIENTO (regla desktop). */
+function aplicarRegla100m(u, prev) {
+  if (!prev || prev.lat == null || prev.lng == null || u.lat == null || u.lng == null) return u;
+  const d = haversineM(Number(prev.lat), Number(prev.lng), Number(u.lat), Number(u.lng));
+  if (d != null && d >= 100) {
+    return { ...u, estado_monitoreo: "MOVIMIENTO", movimiento_m: Math.round(d) };
+  }
+  return u;
 }
 
 /** Hora actual en Perú (0–23). */
@@ -225,7 +262,7 @@ function urgenciaNocturna(u) {
 }
 
 function markerHtml(u) {
-  const c = colorMonitor(u.estado_monitoreo);
+  const c = colorHtmlHex(u.color_html);
   const urg = urgenciaNocturna(u);
   const ring =
     urg === "rojo"
@@ -309,6 +346,127 @@ function fechaTurnoDefault() {
   return d.toISOString().slice(0, 10);
 }
 
+
+/** Fecha del turno desde el input (YYYY-MM-DD) → Date local Lima aproximado. */
+function parseFechaTurno(val) {
+  if (!val) return new Date();
+  const [y, m, d] = String(val).split("-").map(Number);
+  return new Date(y, (m || 1) - 1, d || 1);
+}
+
+function formatPE(dt) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${pad(dt.getDate())}/${pad(dt.getMonth() + 1)}/${dt.getFullYear()} ${pad(dt.getHours())}:${pad(dt.getMinutes())}:${pad(dt.getSeconds())}`;
+}
+
+function parsePuntoFecha(p) {
+  const raw = p.fecha || p.fechaFinToString || p.fechaInicioToString || p.time || "";
+  if (!raw) return null;
+  // dd/MM/yyyy HH:mm:ss
+  let m = String(raw).match(/(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?/);
+  if (m) {
+    return new Date(
+      Number(m[3]),
+      Number(m[2]) - 1,
+      Number(m[1]),
+      Number(m[4]),
+      Number(m[5]),
+      Number(m[6] || 0),
+    );
+  }
+  const t = Date.parse(raw);
+  return Number.isFinite(t) ? new Date(t) : null;
+}
+
+function puntoLatLng(p) {
+  const lat = Number(p.lat ?? p.latitud);
+  const lng = Number(p.lng ?? p.lon ?? p.longitud);
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null;
+  if (Math.abs(lat) > 90 || Math.abs(lng) > 180) return null;
+  return { lat, lng };
+}
+
+/**
+ * Partición del recorrido:
+ *  - azul: desde 16:00 del día del turno hasta 22:00
+ *  - rojo: después de las 22:00 (tránsito nocturno)
+ */
+function partirRecorrido(puntos, fechaTurno) {
+  const dia = parseFechaTurno(fechaTurno);
+  const corte = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), 22, 0, 0);
+  const azul = [];
+  const rojo = [];
+  for (const p of puntos || []) {
+    const ll = puntoLatLng(p);
+    if (!ll) continue;
+    const ft = parsePuntoFecha(p);
+    const item = { ...ll, fecha: p.fecha || p.fechaFinToString || "" };
+    if (!ft || ft < corte) azul.push(item);
+    else rojo.push(item);
+  }
+  return { azul, rojo };
+}
+
+function clearRouteLayers() {
+  for (const layer of routeLayers) {
+    try {
+      map?.removeLayer(layer);
+    } catch {
+      /* ignore */
+    }
+  }
+  routeLayers = [];
+}
+
+function drawSplitRoute(azul, rojo) {
+  if (!map || !window.L) return;
+  clearRouteLayers();
+  const bounds = [];
+  if (azul.length >= 2) {
+    const line = L.polyline(
+      azul.map((p) => [p.lat, p.lng]),
+      { color: "#2563EB", weight: 4, opacity: 0.9 },
+    ).addTo(map);
+    routeLayers.push(line);
+    azul.forEach((p) => bounds.push([p.lat, p.lng]));
+    const start = L.circleMarker([azul[0].lat, azul[0].lng], {
+      radius: 7,
+      color: "#1e40af",
+      fillColor: "#2563EB",
+      fillOpacity: 1,
+      weight: 2,
+    }).bindTooltip("Inicio 16:00–22:00");
+    start.addTo(map);
+    routeLayers.push(start);
+  }
+  if (rojo.length >= 2) {
+    const line = L.polyline(
+      rojo.map((p) => [p.lat, p.lng]),
+      { color: "#DC2626", weight: 4, opacity: 0.9 },
+    ).addTo(map);
+    routeLayers.push(line);
+    rojo.forEach((p) => bounds.push([p.lat, p.lng]));
+  } else if (rojo.length === 1) {
+    const m = L.circleMarker([rojo[0].lat, rojo[0].lng], {
+      radius: 6,
+      color: "#991b1b",
+      fillColor: "#DC2626",
+      fillOpacity: 1,
+    }).bindTooltip("Post 22:00");
+    m.addTo(map);
+    routeLayers.push(m);
+    bounds.push([rojo[0].lat, rojo[0].lng]);
+  }
+  if (bounds.length) {
+    try {
+      map.fitBounds(bounds, { padding: [40, 40], maxZoom: 14 });
+    } catch {
+      /* ignore */
+    }
+  }
+}
+
+
 export async function mount(container, runtime) {
   disposed = false;
   // Preferir base real del turno (snapshot + match OC local)
@@ -388,11 +546,14 @@ export async function mount(container, runtime) {
         <div class="tn-map-wrap">
           <div id="tn-map" class="tn-map"></div>
           <div class="tn-map-legend">
-            <span><i style="background:#22c55e"></i> Movimiento</span>
-            <span><i style="background:#ef4444"></i> Detenida</span>
-            <span><i style="background:#94a3b8"></i> GPS perdido</span>
-            <span><i class="halo-leg am"></i> Tránsito ≥22:00</span>
-            <span><i class="halo-leg ro"></i> Tránsito ≥23:00</span>
+            <span><i style="background:#22c55e"></i> Verde</span>
+            <span><i style="background:#eab308"></i> Amarillo</span>
+            <span><i style="background:#ef4444"></i> Rojo</span>
+            <span><i style="background:#94a3b8"></i> Plomo</span>
+            <span><i class="halo-leg am"></i> ≥22:00</span>
+            <span><i class="halo-leg ro"></i> ≥23:00</span>
+            <span><i style="background:#2563eb;width:14px;height:3px;border-radius:1px"></i> 16–22h</span>
+            <span><i style="background:#dc2626;width:14px;height:3px;border-radius:1px"></i> post-22h</span>
           </div>
         </div>
         <aside class="tn-list-panel">
@@ -461,7 +622,7 @@ export async function mount(container, runtime) {
               <button type="button" class="ghost" id="tn-paste">PEGAR</button>
               <button type="button" class="ghost" id="tn-clear">LIMPIAR</button>
               <button type="button" class="tn-btn-nova" id="tn-nova">NO VA</button>
-              <button type="button" class="ghost" id="tn-track" disabled title="Próximo: recorrido CLocator">VER RECORRIDO</button>
+              <button type="button" class="ghost" id="tn-track" disabled title="Recorrido 16:00→ahora (azul hasta 22:00, rojo después)">VER RECORRIDO</button>
               <span id="tn-save-msg" class="muted"></span>
             </div>
           </div>
@@ -501,7 +662,8 @@ export async function mount(container, runtime) {
             <small>${esc(u.placa || "—")} · ${esc(u.piloto || "—")}</small>
           </span>
           <span class="tn-li-meta">
-            <span class="tn-badge" style="background:${colorMonitor(u.estado_monitoreo)}22;color:${colorMonitor(u.estado_monitoreo)}">${esc(u.estado_monitoreo)}</span>
+            <span class="tn-badge" style="background:${colorHtmlHex(u.color_html)}33;color:${colorHtmlHex(u.color_html)}">${esc(u.color_html || "—")}</span>
+            <small>${esc(u.estado_monitoreo || "")}</small>
             <small>${esc(u.t_parada || "—")}</small>
           </span>
         </button>`;
@@ -566,7 +728,7 @@ export async function mount(container, runtime) {
 
     container.querySelector("#tn-sel-badges").innerHTML = `
       <span class="tn-badge" style="background:${colorClasif(u.estado_clasificacion)}33;color:#e2e8f0">${esc(u.estado_clasificacion)}</span>
-      <span class="tn-badge" style="background:${colorMonitor(u.estado_monitoreo)}33;color:#e2e8f0">${esc(u.estado_monitoreo)}</span>
+      <span class="tn-badge" style="background:${colorEstado(u.estado_monitoreo)}33;color:#e2e8f0">${esc(u.estado_monitoreo)}</span>
       <span class="tn-badge">${esc(u.zona || "—")}</span>
     `;
 
@@ -587,6 +749,8 @@ export async function mount(container, runtime) {
     fillForm(u);
     renderList();
     msgEl.textContent = "";
+    const trackBtn = container.querySelector("#tn-track");
+    if (trackBtn) trackBtn.disabled = !(u.placa || u.codigo);
 
     const m = markersByCode.get(codigo);
     if (m && map) {
@@ -770,6 +934,61 @@ export async function mount(container, runtime) {
       `<div class="tn-map-error">Mapa no disponible: ${esc(e.message)}</div>`;
   }
 
+
+  container.querySelector("#tn-track")?.addEventListener("click", async () => {
+    if (!seleccion || routeLoading) return;
+    const placa = String(seleccion.placa || "").trim();
+    const tracto = String(seleccion.codigo || "").trim();
+    if (!placa && !tracto) {
+      msgEl.textContent = "Unidad sin placa/código";
+      return;
+    }
+    routeLoading = true;
+    const btn = container.querySelector("#tn-track");
+    if (btn) {
+      btn.disabled = true;
+      btn.textContent = "CARGANDO…";
+    }
+    msgEl.textContent = "Consultando recorrido CLocator…";
+    try {
+      const fechaVal = container.querySelector("#tn-fecha")?.value || fechaTurnoDefault();
+      const dia = parseFechaTurno(fechaVal);
+      const desdeDt = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), 16, 0, 0);
+      const hastaDt = new Date();
+      // No pasar de 04:00 del día siguiente
+      const limite = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate() + 1, 4, 0, 0);
+      const hasta = hastaDt > limite ? limite : hastaDt;
+
+      const user = auth.currentUser;
+      if (!user) throw new Error("Sin sesión");
+      const token = await user.getIdToken(true);
+      const data = await queryClocator({
+        endpoint: clocatorEndpoint("cemento"),
+        token,
+        placa: placa || tracto,
+        tracto,
+        desde: formatPE(desdeDt),
+        hasta: formatPE(hasta),
+        includeMap: false,
+        timeoutMs: 60000,
+      });
+      const pts = data.puntos_gps || data.puntos || [];
+      const { azul, rojo } = partirRecorrido(pts, fechaVal);
+      drawSplitRoute(azul, rojo);
+      msgEl.textContent = `Recorrido: ${azul.length} pts azules (16–22h) · ${rojo.length} pts rojos (post-22h) · total GPS ${pts.length}`;
+    } catch (e) {
+      msgEl.textContent = `Recorrido: ${e.message || e}`;
+      clearRouteLayers();
+    } finally {
+      routeLoading = false;
+      if (btn) {
+        btn.disabled = false;
+        btn.textContent = "VER RECORRIDO";
+      }
+    }
+  });
+
+
   renderCounters();
   renderList();
   syncMarkers();
@@ -793,6 +1012,7 @@ export function unmount() {
     clearInterval(pollTimer);
     pollTimer = null;
   }
+  clearRouteLayers();
   if (map) {
     map.remove();
     map = null;

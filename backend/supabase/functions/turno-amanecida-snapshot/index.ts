@@ -294,10 +294,20 @@ function colorFromTr($: any, tr: any) {
   return "SIN_COLOR";
 }
 
+/**
+ * COLOR_HTML viene del HTML de CLocator (plomo/gris, rojo, amarillo, verde).
+ * NO es lo mismo que "detenida".
+ * Reglas desktop (monitor_nocturno):
+ *   ROJO  → PERDIDA_GPS (alerta de color CLocator, no "movimiento")
+ *   GRIS  → PERDIDA_GPS / sin señal
+ *   VERDE → indicios de actividad (sin snapshot previo no hay regla de 100 m)
+ *   resto → DETENIDA (el movimiento real ≥100 m se calcula en el poll de monitoreo)
+ */
 function estadoDesdeColor(color: string) {
-  if (color === "VERDE") return "MOVIMIENTO";
-  if (color === "ROJO" || color === "AMARILLO") return "DETENIDA";
-  if (color === "GRIS") return "PERDIDA_GPS";
+  const c = String(color || "").toUpperCase();
+  if (c === "ROJO" || c === "GRIS") return "PERDIDA_GPS";
+  if (c === "VERDE") return "MOVIMIENTO";
+  if (c === "AMARILLO") return "DETENIDA";
   return "SIN_DATOS";
 }
 
