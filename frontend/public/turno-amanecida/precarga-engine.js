@@ -1,21 +1,29 @@
 /**
  * Precarga de recorridos TURNO AMANECIDA (singleton).
- * 1ª pasada: 16:00 del día del turno → ahora.
- * Siguientes: solo desde el último `hasta` cacheado → ahora (tramos nuevos).
- * unmount de UI NO detiene el motor.
+ *
+ * - 1ª vez (sin caché): 16:00 → ahora
+ * - Siguiente: solo desde último `hasta` → ahora
+ * - Si el caché tiene < FRESH_MS de antigüedad → NO consulta Comsatel
+ * - Token Firebase una sola vez por lote
+ * - unmount de UI NO detiene el motor
  */
 import { queryClocator, clocatorEndpoint } from "../shared/clocator-client.js";
 import { auth } from "../shared/auth.js";
 import { cacheGPS, gpsKey, readGPS } from "./gps-cache.js";
 
 const META_KEY = "tn_precarga_v1";
-const TIMEOUT_MS = 45000;
-const CONCURRENCY = 2;
+const TIMEOUT_MS = 40000;
+const CONCURRENCY = 3;
+/** No pedir de nuevo a Comsatel si el tramo ya se actualizó hace menos de esto */
+const FRESH_MS = 3 * 60 * 1000;
+/** Intervalo sugerido entre ticks de tramos nuevos (monitoreo puede llamar tick) */
+export const TICK_MS = 5 * 60 * 1000;
 
 let running = false;
 let stopFlag = false;
 let runId = null;
-let progress = { done: 0, total: 0, current: "" };
+let progress = { done: 0, total: 0, current: "", skipped: 0, incremental: 0, full: 0 };
+let lastTickAt = 0;
 
 function formatPE(date) {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -32,21 +40,40 @@ function formatPE(date) {
   return `${g("day")}/${g("month")}/${g("year")} ${g("hour")}:${g("minute")}:${g("second")}`;
 }
 
-function parseFechaTurno(val) {
-  if (!val) {
-    const now = new Date();
-    if (now.getHours() < 12) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - 1);
-      return d.toISOString().slice(0, 10);
-    }
-    return now.toISOString().slice(0, 10);
+/** Fecha del turno YYYY-MM-DD en zona Lima */
+export function fechaTurnoPE(val) {
+  if (val && /^\d{4}-\d{2}-\d{2}$/.test(String(val).slice(0, 10))) {
+    return String(val).slice(0, 10);
   }
-  return String(val).slice(0, 10);
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "America/Lima",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).formatToParts(new Date());
+  const g = (t) => parts.find((p) => p.type === t)?.value || "00";
+  let y = Number(g("year"));
+  let m = Number(g("month"));
+  let d = Number(g("day"));
+  const hourParts = new Intl.DateTimeFormat("en-US", {
+    timeZone: "America/Lima",
+    hour: "numeric",
+    hour12: false,
+  }).formatToParts(new Date());
+  const h = Number(hourParts.find((p) => p.type === "hour")?.value ?? 0);
+  // Madrugada: el turno es el día calendario anterior
+  if (h < 12) {
+    const dt = new Date(Date.UTC(y, m - 1, d));
+    dt.setUTCDate(dt.getUTCDate() - 1);
+    y = dt.getUTCFullYear();
+    m = dt.getUTCMonth() + 1;
+    d = dt.getUTCDate();
+  }
+  return `${y}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
 }
 
 function rangoBase(fechaTurno) {
-  const [y, m, d] = parseFechaTurno(fechaTurno).split("-").map(Number);
+  const [y, m, d] = fechaTurnoPE(fechaTurno).split("-").map(Number);
   const desde = new Date(y, m - 1, d, 16, 0, 0);
   const limite = new Date(y, m - 1, d + 1, 4, 0, 0);
   const ahora = new Date();
@@ -54,7 +81,6 @@ function rangoBase(fechaTurno) {
   return { desde, hasta, desdeStr: formatPE(desde), hastaStr: formatPE(hasta) };
 }
 
-/** Parse dd/MM/yyyy HH:mm:ss → Date */
 function parsePE(str) {
   const m = String(str || "").match(
     /(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?/,
@@ -113,10 +139,26 @@ export function currentRunId() {
   return runId || loadMeta()?.id || null;
 }
 
+export function isRunning() {
+  return running;
+}
+
+/**
+ * ¿Conviene no relanzar precarga al entrar a Monitoreo?
+ * true si el último lote del mismo día terminó hace < FRESH_MS
+ */
+export function cacheIsFresh(fechaTurno) {
+  const m = loadMeta();
+  const fecha = fechaTurnoPE(fechaTurno);
+  if (!m?.completo || m.fecha !== fecha || !m.finished_at) return false;
+  const age = Date.now() - new Date(m.finished_at).getTime();
+  return Number.isFinite(age) && age >= 0 && age < FRESH_MS;
+}
+
 /**
  * @param {Array<{codigo:string,placa:string}>} unidades
  * @param {string} fechaTurno YYYY-MM-DD
- * @param {{ forceFull?: boolean }} opts
+ * @param {{ forceFull?: boolean, reason?: string }} opts
  */
 export async function startPrecarga(unidades, fechaTurno, opts = {}) {
   if (running) return loadMeta();
@@ -125,17 +167,23 @@ export async function startPrecarga(unidades, fechaTurno, opts = {}) {
 
   running = true;
   stopFlag = false;
-  const fecha = parseFechaTurno(fechaTurno);
+  const fecha = fechaTurnoPE(fechaTurno);
   const prevMeta = loadMeta();
-  // Mismo día de turno → reutilizar runId para seguir leyendo la misma caché
   if (prevMeta?.fecha === fecha && prevMeta?.id) {
     runId = prevMeta.id;
   } else {
-    runId = `tn_${fecha}_${Date.now()}`;
+    runId = `tn_${fecha}`;
   }
 
   const { desdeStr, hastaStr, desde, hasta } = rangoBase(fecha);
-  progress = { done: 0, total: list.length, current: "" };
+  progress = {
+    done: 0,
+    total: list.length,
+    current: "",
+    skipped: 0,
+    incremental: 0,
+    full: 0,
+  };
 
   const meta = {
     id: runId,
@@ -146,13 +194,32 @@ export async function startPrecarga(unidades, fechaTurno, opts = {}) {
     done: 0,
     ok: 0,
     error: 0,
+    skipped: 0,
     incremental: 0,
     full: 0,
     running: true,
     completo: false,
+    reason: opts.reason || "manual",
     started_at: new Date().toISOString(),
   };
   saveMeta(meta);
+  lastTickAt = Date.now();
+
+  // Un solo token por lote
+  let token = null;
+  try {
+    const user = auth.currentUser;
+    if (!user) throw new Error("Sin sesión");
+    token = await user.getIdToken(false);
+  } catch (e) {
+    meta.running = false;
+    meta.error = list.length;
+    meta.completo = true;
+    meta.finished_at = new Date().toISOString();
+    running = false;
+    saveMeta(meta);
+    return meta;
+  }
 
   const queue = [...list];
   const workers = Array.from({ length: Math.min(CONCURRENCY, queue.length) }, async () => {
@@ -169,27 +236,29 @@ export async function startPrecarga(unidades, fechaTurno, opts = {}) {
         let fetchDesde = desdeStr;
         let incremental = false;
 
-        if (!opts.forceFull && cached?.puntos_gps?.length && cached.hasta) {
+        if (!opts.forceFull && cached?.puntos_gps && cached.hasta) {
           const lastHasta = parsePE(cached.hasta);
-          // Solo pedir desde el último hasta (con 1 min de solape)
-          if (lastHasta && lastHasta < hasta) {
-            const solape = new Date(lastHasta.getTime() - 60 * 1000);
-            const baseDesde = desde;
-            fetchDesde = formatPE(solape > baseDesde ? solape : baseDesde);
-            incremental = true;
-          } else if (lastHasta && lastHasta >= hasta) {
-            // Ya está al día — no consultar Comsatel
-            meta.ok += 1;
-            meta.done += 1;
-            progress.done = meta.done;
-            saveMeta({ ...meta });
-            continue;
+          if (lastHasta) {
+            const age = hasta.getTime() - lastHasta.getTime();
+            // Caché fresco → no llamar Comsatel
+            if (age <= FRESH_MS) {
+              meta.skipped += 1;
+              progress.skipped = meta.skipped;
+              meta.ok += 1;
+              meta.done += 1;
+              progress.done = meta.done;
+              saveMeta({ ...meta });
+              continue;
+            }
+            // Tramo nuevo: solo desde último hasta (1 min solape)
+            if (lastHasta < hasta) {
+              const solape = new Date(lastHasta.getTime() - 60 * 1000);
+              fetchDesde = formatPE(solape > desde ? solape : desde);
+              incremental = true;
+            }
           }
         }
 
-        const user = auth.currentUser;
-        if (!user) throw new Error("Sin sesión");
-        const token = await user.getIdToken(true);
         const data = await queryClocator({
           endpoint: clocatorEndpoint("cemento"),
           token,
@@ -201,9 +270,10 @@ export async function startPrecarga(unidades, fechaTurno, opts = {}) {
           timeoutMs: TIMEOUT_MS,
         });
         const nuevos = data.puntos_gps || data.puntos || [];
-        const merged = incremental
-          ? mergePuntos(cached.puntos_gps, nuevos)
-          : nuevos;
+        const merged =
+          incremental && cached?.puntos_gps?.length
+            ? mergePuntos(cached.puntos_gps, nuevos)
+            : nuevos;
 
         await cacheGPS(
           {
@@ -218,8 +288,13 @@ export async function startPrecarga(unidades, fechaTurno, opts = {}) {
           key,
         );
         meta.ok += 1;
-        if (incremental) meta.incremental += 1;
-        else meta.full += 1;
+        if (incremental) {
+          meta.incremental += 1;
+          progress.incremental = meta.incremental;
+        } else {
+          meta.full += 1;
+          progress.full = meta.full;
+        }
       } catch (e) {
         meta.error += 1;
         try {
@@ -244,7 +319,8 @@ export async function startPrecarga(unidades, fechaTurno, opts = {}) {
       }
       meta.done += 1;
       progress.done = meta.done;
-      saveMeta({ ...meta });
+      // Evento cada 5 unidades para no saturar UI
+      if (meta.done % 5 === 0 || meta.done === meta.total) saveMeta({ ...meta });
     }
   });
 
@@ -252,7 +328,18 @@ export async function startPrecarga(unidades, fechaTurno, opts = {}) {
   meta.running = false;
   meta.completo = true;
   meta.finished_at = new Date().toISOString();
+  meta.skipped = progress.skipped;
   running = false;
   saveMeta(meta);
   return meta;
+}
+
+/**
+ * Tick de tramos nuevos: solo si pasó TICK_MS desde el último lote.
+ * Pensado para llamarse en el poll de monitoreo.
+ */
+export async function tickPrecargaSiToca(unidades, fechaTurno) {
+  if (running) return null;
+  if (Date.now() - lastTickAt < TICK_MS && loadMeta()?.completo) return null;
+  return startPrecarga(unidades, fechaTurno, { reason: "tick" });
 }

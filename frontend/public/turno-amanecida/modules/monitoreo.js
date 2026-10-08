@@ -11,7 +11,7 @@
 import { moduleHead, esc, fechaPE } from "../api-client.js";
 import { queryClocator, clocatorEndpoint } from "../../shared/clocator-client.js";
 import { auth } from "../../shared/auth.js";
-import { startPrecarga, loadMeta, currentRunId, getProgress } from "../precarga-engine.js";
+import { startPrecarga, loadMeta, currentRunId, getProgress, cacheIsFresh, tickPrecargaSiToca, TICK_MS } from "../precarga-engine.js";
 import { readGPS, gpsKey } from "../gps-cache.js";
 
 const POLL_MS = 60 * 1000; // snapshot posiciones cada 1 min
@@ -1088,11 +1088,17 @@ export async function mount(container, runtime) {
     const g = getProgress();
     if (!precargaEl) return;
     if (g.running || m?.running) {
-      precargaEl.textContent = `Rutas: ${m?.done || g.done || 0}/${m?.total || g.total || unidades.length}`;
+      const sk = m?.skipped || g.skipped || 0;
+      precargaEl.textContent = `Rutas: ${m?.done || g.done || 0}/${m?.total || g.total || unidades.length} (omit ${sk})`;
+      precargaEl.classList.remove("ok");
     } else if (m?.completo) {
-      const inc = m.incremental ? ` · +${m.incremental} incr.` : "";
-      precargaEl.textContent = `Rutas: ${m.ok || 0}/${m.total || 0} OK${inc}`;
+      const parts = [];
+      if (m.full) parts.push(`${m.full} full`);
+      if (m.incremental) parts.push(`${m.incremental} incr`);
+      if (m.skipped) parts.push(`${m.skipped} caché`);
+      precargaEl.textContent = `Rutas OK ${m.ok || 0}/${m.total || 0}` + (parts.length ? ` · ${parts.join(" · ")}` : "");
       precargaEl.classList.add("ok");
+      precargaEl.title = `Último lote: ${m.finished_at || ""} · motivo: ${m.reason || ""} · próximo tick ~${Math.round(TICK_MS / 60000)} min`;
     } else {
       precargaEl.textContent = "Rutas: en cola";
     }
@@ -1102,16 +1108,17 @@ export async function mount(container, runtime) {
     paintPrecarga();
     enriquecerMovimientoDesdeCache();
   });
-  if (unidades.length) {
-    startPrecarga(
-      unidades.map((u) => ({ codigo: u.codigo, placa: u.placa })),
-      fechaVal,
-    )
-      .then(() => {
-        paintPrecarga();
-        return enriquecerMovimientoDesdeCache();
-      })
-      .catch(() => {});
+
+  const unitList = unidades.map((u) => ({ codigo: u.codigo, placa: u.placa }));
+  // Si el caché del mismo día está fresco (<3 min) → solo leer, no relanzar Comsatel
+  if (unitList.length) {
+    const go = cacheIsFresh(fechaVal)
+      ? Promise.resolve(loadMeta()).then(() => enriquecerMovimientoDesdeCache())
+      : startPrecarga(unitList, fechaVal, { reason: "entrada-monitoreo" }).then(() => {
+          paintPrecarga();
+          return enriquecerMovimientoDesdeCache();
+        });
+    go.catch(() => {});
   }
 
   renderCounters();
@@ -1120,10 +1127,17 @@ export async function mount(container, runtime) {
   pulseLive();
 
   // Poll placeholder (3 min) — refresca “vivo” cuando exista monitor API
-  pollTimer = setInterval(() => {
-    if (disposed) return;
+    pollTimer = setInterval(() => {
     pulseLive();
-    // runtime.bus.emit("turno-amanecida:poll", { at: Date.now() });
+    // Tramos nuevos solo cada TICK_MS (~5 min) y solo lo faltante / fresco
+    tickPrecargaSiToca(unitList, fechaVal)
+      .then((meta) => {
+        if (meta) {
+          paintPrecarga();
+          return enriquecerMovimientoDesdeCache();
+        }
+      })
+      .catch(() => {});
   }, POLL_MS);
 
   if (runtime?.bus) {
