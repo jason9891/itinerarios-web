@@ -197,26 +197,86 @@ function evaluarZona(lat: number | null, lng: number | null) {
   return { zona: "Transito", en_macro: true, en_planta: false, sin_coord: false };
 }
 
-function esParGeoValido(a: number, b: number) {
-  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
-  if (Math.abs(a) > 90 || Math.abs(b) > 180) return false;
-  if (Math.abs(a) < 0.1 || Math.abs(b) < 0.1) return false;
-  return true;
+function inPeruBBox(lat: number, lng: number) {
+  return lat >= -19.5 && lat <= 0.5 && lng >= -82 && lng <= -68;
 }
 
-function latLngFromHtml(html: string): { lat: number | null; lng: number | null } {
-  const patterns = [
-    /irAMonitoreo\s*\(\s*['"]?(-?\d+(?:\.\d+)?)['"]?\s*,\s*['"]?(-?\d+(?:\.\d+)?)['"]?/i,
-    /(-?\d{1,3}\.\d{4,})\s*[,;]\s*(-?\d{1,3}\.\d{4,})/,
-  ];
-  for (const p of patterns) {
-    const m = html.match(p);
-    if (!m) continue;
-    const a = Number(m[1]), b = Number(m[2]);
-    // Prefer lat,lng order if valid
-    if (esParGeoValido(a, b) && Math.abs(a) <= 90) return { lat: a, lng: b };
-    if (esParGeoValido(b, a) && Math.abs(b) <= 90) return { lat: b, lng: a };
+/** Rechaza UTM/odómetro (p.ej. 8689952) — solo pares geo reales. */
+function esParGeoValido(a: number, b: number) {
+  if (!Number.isFinite(a) || !Number.isFinite(b)) return false;
+  const ok = (la: number, lo: number) =>
+    Math.abs(la) <= 90 && Math.abs(lo) <= 180 && Math.abs(la) > 0.1 && Math.abs(lo) > 0.1;
+  return ok(a, b) || ok(b, a);
+}
+
+function normalizeLatLng(a: number, b: number): { lat: number; lng: number } | null {
+  if (!esParGeoValido(a, b)) return null;
+  if (inPeruBBox(a, b)) return { lat: a, lng: b };
+  if (inPeruBBox(b, a)) return { lat: b, lng: a };
+  if (Math.abs(a) <= 90 && Math.abs(b) <= 180) return { lat: a, lng: b };
+  if (Math.abs(b) <= 90 && Math.abs(a) <= 180) return { lat: b, lng: a };
+  return null;
+}
+
+function decodeHtmlEntities(s: string) {
+  return String(s || "")
+    .replace(/&quot;/g, '"')
+    .replace(/&#39;/g, "'")
+    .replace(/&apos;/g, "'")
+    .replace(/&#x27;/gi, "'")
+    .replace(/&#(\d+);/g, (_, n) => String.fromCharCode(Number(n)))
+    .replace(/&#x([0-9a-f]+);/gi, (_, h) => String.fromCharCode(parseInt(h, 16)))
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">");
+}
+
+/**
+ * CLocator real (validado en cemento-clocator):
+ *   irAMonitoreo(8689952,'-16.403656666666667','-71.600115','0')
+ *   → (idVehiculo, lat, lng, flag)  NO es (lat, lng)
+ */
+function latLngFromFila($: any, tr: any): { lat: number | null; lng: number | null } {
+  const chunks: string[] = [];
+  chunks.push($.html(tr) || "");
+  $(tr).find("*").addBack().each((_: number, el: any) => {
+    const node = $(el);
+    for (const attr of [
+      "onclick", "ondblclick", "href", "data-href", "data-url",
+      "data-lat", "data-lon", "data-longitude", "data-latitude", "title",
+    ]) {
+      const v = node.attr(attr);
+      if (v) chunks.push(String(v));
+    }
+    const attribs = el.attribs || {};
+    for (const v of Object.values(attribs)) {
+      if (v) chunks.push(String(v));
+    }
+  });
+  chunks.push($(tr).html() || "");
+  const src = decodeHtmlEntities(chunks.join("\n"));
+  const toNum = (s: string) => Number(String(s).replace(",", "."));
+
+  // 1) Firma real: id, lat, lng
+  const reIdLatLng =
+    /irAMonitoreo\s*\(\s*['"]?\d+['"]?\s*,\s*['"]?(-?\d+[.,]\d+)['"]?\s*,\s*['"]?(-?\d+[.,]\d+)/gi;
+  let m: RegExpExecArray | null;
+  while ((m = reIdLatLng.exec(src))) {
+    const fixed = normalizeLatLng(toNum(m[1]), toNum(m[2]));
+    if (fixed) return fixed;
   }
+
+  // 2) Firma antigua: lat, lng (sin id)
+  const reLatLng =
+    /irAMonitoreo\s*\(\s*['"]?(-?\d+[.,]\d+)['"]?\s*,\s*['"]?(-?\d+[.,]\d+)/gi;
+  while ((m = reLatLng.exec(src))) {
+    const a = toNum(m[1]), b = toNum(m[2]);
+    // Evitar (idEntero, lat) si el id no tiene decimal
+    if (Number.isInteger(a) && Math.abs(a) > 90) continue;
+    const fixed = normalizeLatLng(a, b);
+    if (fixed) return fixed;
+  }
+
   return { lat: null, lng: null };
 }
 
@@ -284,8 +344,7 @@ function extraerSnapshot(mainHtml: string) {
       if (/20-R-/i.test(c2)) codigo = c2.toUpperCase();
     }
     const tParada = textos[5] || textos[6] || "";
-    const rowHtml = $.html(tr);
-    const { lat, lng } = latLngFromHtml(rowHtml);
+    const { lat, lng } = latLngFromFila($, tr);
     if (lat != null && lng != null) conCoord++;
     const color = colorFromTr($, tr);
     const geo = evaluarZona(lat, lng);
@@ -304,7 +363,22 @@ function extraerSnapshot(mainHtml: string) {
     });
   }
 
-  return { registros, conPlaca, conCoord, totalFilas: filas.length };
+  // Diagnóstico: ¿hay irAMonitoreo en el HTML de la tabla?
+  const sampleSrc = decodeHtmlEntities($tbody.html() || "").slice(0, 50000);
+  const reProbe = /irAMonitoreo\s*\([^)]{0,120}\)/gi;
+  const muestrasIr: string[] = [];
+  let mm: RegExpExecArray | null;
+  while ((mm = reProbe.exec(sampleSrc)) && muestrasIr.length < 5) {
+    muestrasIr.push(mm[0].slice(0, 120));
+  }
+
+  return {
+    registros,
+    conPlaca,
+    conCoord,
+    totalFilas: filas.length,
+    muestras_irAMonitoreo: muestrasIr,
+  };
 }
 
 Deno.serve(async (req) => {
@@ -392,6 +466,7 @@ Deno.serve(async (req) => {
         transito_20r: nTransito20r,
         unidades_finales: unidades.length,
         geocercas_tn: Object.keys(geocercasTn).length,
+        muestras_irAMonitoreo: raw.muestras_irAMonitoreo || [],
       },
       unidades,
       nota:

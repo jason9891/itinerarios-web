@@ -245,6 +245,11 @@ export async function mount(container) {
       if (st.por_planta && Object.keys(st.por_planta).length) {
         log(`  Plantas excluidas: ${JSON.stringify(st.por_planta)}`);
       }
+      if (st.muestras_irAMonitoreo?.length) {
+        log(`  Muestras irAMonitoreo: ${st.muestras_irAMonitoreo.join(" | ")}`);
+      } else if (!st.con_coord) {
+        log(`  ⚠ Sin irAMonitoreo en HTML de tabla — no hay lat/lng para filtrar geocercas`);
+      }
 
       if (!n) {
         throw new Error(
