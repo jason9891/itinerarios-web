@@ -280,34 +280,46 @@ function latLngFromFila($: any, tr: any): { lat: number | null; lng: number | nu
   return { lat: null, lng: null };
 }
 
-function colorFromTr($: any, tr: any) {
-  const cls = String($(tr).attr("class") || "").toUpperCase();
-  if (cls.includes("AMARIL") || cls.includes("YELLOW")) return "AMARILLO";
-  if (cls.includes("GRIS") || cls.includes("GRAY") || cls.includes("GREY")) return "GRIS";
-  if (cls.includes("ROJO") || cls.includes("RED")) return "ROJO";
-  if (cls.includes("VERDE") || cls.includes("GREEN")) return "VERDE";
-  const style = String($(tr).attr("style") || "").toLowerCase();
-  if (style.includes("yellow") || style.includes("#ff")) return "AMARILLO";
-  if (style.includes("red")) return "ROJO";
-  if (style.includes("green")) return "VERDE";
-  if (style.includes("gray") || style.includes("grey")) return "GRIS";
-  return "SIN_COLOR";
+/**
+ * CLASE_HTML exacta del desktop (snapshot_base_clocator.obtener_color_fila):
+ *   fila-amarillo-opaco → AMARILLO
+ *   fila-gris           → GRIS (plomo)
+ *   fila-verde-opaco    → VERDE  = reporta GPS (puede estar detenida)
+ *   fila-rojo-opaco     → ROJO   = NO reporta (crítico: desde cuándo)
+ * NO usar "estado en movimiento" de CLocator: no es dato fiable.
+ */
+function colorFromTr($: any, tr: any): { clase: string; color: string } {
+  const raw = String($(tr).attr("class") || "");
+  const clases = raw.split(/\s+/).map((c: string) => c.trim().toLowerCase()).filter(Boolean);
+  for (const clase of clases) {
+    if (clase === "fila-amarillo-opaco") return { clase, color: "AMARILLO" };
+    if (clase === "fila-gris") return { clase, color: "GRIS" };
+    if (clase === "fila-verde-opaco") return { clase, color: "VERDE" };
+    if (clase === "fila-rojo-opaco") return { clase, color: "ROJO" };
+  }
+  // fallback parcial por si CLocator cambia el nombre
+  const joined = clases.join(" ");
+  if (joined.includes("amarillo")) return { clase: joined, color: "AMARILLO" };
+  if (joined.includes("gris") || joined.includes("gray")) return { clase: joined, color: "GRIS" };
+  if (joined.includes("verde") || joined.includes("green")) return { clase: joined, color: "VERDE" };
+  if (joined.includes("rojo") || joined.includes("red")) return { clase: joined, color: "ROJO" };
+  return { clase: "", color: "SIN_COLOR" };
 }
 
 /**
- * COLOR_HTML viene del HTML de CLocator (plomo/gris, rojo, amarillo, verde).
- * NO es lo mismo que "detenida".
- * Reglas desktop (monitor_nocturno):
- *   ROJO  → PERDIDA_GPS (alerta de color CLocator, no "movimiento")
- *   GRIS  → PERDIDA_GPS / sin señal
- *   VERDE → indicios de actividad (sin snapshot previo no hay regla de 100 m)
- *   resto → DETENIDA (el movimiento real ≥100 m se calcula en el poll de monitoreo)
+ * reporte_gps a partir de CLASE_HTML/COLOR_HTML (no movimiento):
+ *   VERDE → REPORTA
+ *   ROJO  → NO_REPORTA
+ *   GRIS  → NO_REPORTA_LARGO
+ *   AMARILLO → ALERTA_REPORTE
+ * El movimiento real (≥100 m post-22h) se calcula aparte con lat/lng.
  */
-function estadoDesdeColor(color: string) {
+function reporteDesdeColor(color: string) {
   const c = String(color || "").toUpperCase();
-  if (c === "ROJO" || c === "GRIS") return "PERDIDA_GPS";
-  if (c === "VERDE") return "MOVIMIENTO";
-  if (c === "AMARILLO") return "DETENIDA";
+  if (c === "VERDE") return "REPORTA";
+  if (c === "ROJO") return "NO_REPORTA";
+  if (c === "GRIS") return "NO_REPORTA_LARGO";
+  if (c === "AMARILLO") return "ALERTA_REPORTE";
   return "SIN_DATOS";
 }
 
@@ -356,7 +368,7 @@ function extraerSnapshot(mainHtml: string) {
     const tParada = textos[5] || textos[6] || "";
     const { lat, lng } = latLngFromFila($, tr);
     if (lat != null && lng != null) conCoord++;
-    const color = colorFromTr($, tr);
+    const col = colorFromTr($, tr);
     const geo = evaluarZona(lat, lng);
     registros.push({
       placa,
@@ -364,8 +376,10 @@ function extraerSnapshot(mainHtml: string) {
       t_parada: tParada,
       lat,
       lng,
-      color_html: color,
-      estado_monitoreo: estadoDesdeColor(color),
+      clase_html: col.clase,
+      color_html: col.color,
+      reporte_gps: reporteDesdeColor(col.color),
+      // NO inferir "MOVIMIENTO" desde verde: verde solo = reporta GPS
       zona: geo.zona,
       en_macro: geo.en_macro,
       en_planta: geo.en_planta,
@@ -454,8 +468,9 @@ Deno.serve(async (req) => {
         t_parada: r.t_parada,
         lat: r.lat,
         lng: r.lng,
+        clase_html: r.clase_html,
         color_html: r.color_html,
-        estado_monitoreo: r.estado_monitoreo,
+        reporte_gps: r.reporte_gps,
         zona: "Transito",
       });
     }

@@ -94,8 +94,10 @@ function matchLocal(unidadesSnap, ocFilas, acoples) {
       lat: u.lat,
       lng: u.lng,
       t_parada: u.t_parada || "",
-      estado_monitoreo: u.estado_monitoreo || "SIN_DATOS",
+      clase_html: u.clase_html || "",
       color_html: u.color_html || "",
+      reporte_gps: u.reporte_gps || "",
+      movimiento_nocturno_m: 0,
       zona: u.zona || "Transito",
       // desde OC (local)
       piloto: oc?.nombre_piloto || "",
