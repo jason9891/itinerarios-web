@@ -11,6 +11,7 @@ import { esc, moduleHead, apiPost } from "../api-client.js";
 import { API } from "../registry.js";
 import { auth } from "../../shared/auth.js";
 import { queryClocator } from "../../shared/clocator-client.js";
+import { readLegacyGPS, putLegacyGPS } from "../gps-cache.js";
 
 /** Corredor autorizado de pernocte (solo informativo para el validador SI/NO). */
 const RUTA_PERNOCTE_AUTORIZADA = [
@@ -469,9 +470,19 @@ async function fetchParadasEstado() {
 }
 
 async function loadRouteForItem(item) {
+  // 1) Caché local (precarga / seguimiento): cero egress Supabase
+  const cached = await readLegacyGPS(item.placa).catch(() => null);
+  if (cached && (cached.puntos_gps?.length || cached.ok)) {
+    return {
+      ...cached,
+      desde_cache_local: true,
+      nota: cached.nota || "GPS desde caché local del navegador (sin Supabase)",
+    };
+  }
+  // 2) Red solo si no hay puntos guardados
   if (!auth.currentUser) throw new Error("No hay sesión activa");
   const token = await auth.currentUser.getIdToken(true);
-  return queryClocator({
+  const route = await queryClocator({
     endpoint: API.clocator,
     token,
     placa: item.placa,
@@ -480,6 +491,10 @@ async function loadRouteForItem(item) {
     hasta: item.ventana_gps_hasta,
     includeMap: false,
   });
+  try {
+    await putLegacyGPS(item.placa, { ...route, run: "paradas" });
+  } catch (_) {}
+  return route;
 }
 
 async function registerPernocte(item, form) {
@@ -800,7 +815,7 @@ async function renderSinRegistro(panel, root) {
     if (candHost) candHost.innerHTML = `<p class="muted">Consultando GPS…</p>`;
     try {
       if (statusEl)
-        statusEl.textContent = `Consultando ${it.placa} · ${it.ventana_gps_desde} → ${it.ventana_gps_hasta}`;
+        statusEl.textContent = `Cargando ${it.placa} (caché local si existe)…`;
       if (mapHost.dataset.placeholder !== "0") {
         mapHost.textContent = "";
         mapHost.dataset.placeholder = "0";
@@ -835,7 +850,7 @@ async function renderSinRegistro(panel, root) {
       if (statusEl) {
         statusEl.textContent = drawn.empty
           ? `Sin puntos · ${it.placa}`
-          : `${drawn.puntos} pts · ${pernoctes.length} P · ${it.placa}`;
+          : `${drawn.puntos} pts · ${pernoctes.length} P · ${it.placa}${route?.desde_cache_local ? " · CACHÉ LOCAL" : ""}`;
       }
     } catch (e) {
       if (statusEl) statusEl.textContent = e.message || String(e);
