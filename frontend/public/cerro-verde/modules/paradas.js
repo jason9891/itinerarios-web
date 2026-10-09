@@ -12,6 +12,37 @@ import { API } from "../registry.js";
 import { auth } from "../../shared/auth.js";
 import { queryClocator } from "../../shared/clocator-client.js";
 
+/** Corredor autorizado de pernocte (solo informativo para el validador SI/NO). */
+const RUTA_PERNOCTE_AUTORIZADA = [
+  "JULIACA",
+  "CABANILLAS",
+  "SANTA LUCÍA",
+  "IMATA",
+  "PATAHUASI",
+  "YURA",
+  "RACIEMSA",
+];
+
+function rutaPernocteGuideHtml() {
+  const steps = RUTA_PERNOCTE_AUTORIZADA.map(
+    (z, i) =>
+      `<span class="cv-ruta-step"><b>${i + 1}</b>${esc(z)}</span>${
+        i < RUTA_PERNOCTE_AUTORIZADA.length - 1
+          ? `<span class="cv-ruta-arrow" aria-hidden="true">→</span>`
+          : ""
+      }`,
+  ).join("");
+  return `<section class="cv-ruta-guide" role="note">
+    <div class="cv-ruta-guide-title">
+      <b>PUNTOS AUTORIZADOS DE PERNOCTE</b>
+      <small>Solo referencia · no bloquea la validación SI/NO</small>
+    </div>
+    <div class="cv-ruta-guide-flow">${steps}</div>
+    <p class="cv-ruta-guide-note">Orden correcto del corredor: <b>Juliaca → Cabanillas → Santa Lucía → Imata → Patahuasi → Yura → Raciemsa</b>. Use esta secuencia al contrastar “DEBIÓ PERNOCTAR” vs “PERNOCTÓ EN”.</p>
+  </section>`;
+}
+
+
 let cleanup = [];
 let mapRuntime = {
   map: null,
@@ -567,6 +598,16 @@ async function renderShell(container, runtime) {
       .pernocte-decision button.selected{outline:2px solid #38bdf8;outline-offset:2px}
       .pending-warning{background:#7c2d12;color:#ffedd5;padding:10px 12px;border-radius:8px;margin-bottom:12px}
       .pending-ok{background:#14532d;color:#bbf7d0;padding:10px 12px;border-radius:8px;margin-bottom:12px}
+      .cv-ruta-guide{margin:0 0 14px;padding:12px 14px;border-radius:10px;border:1px solid #1e4a6e;background:linear-gradient(180deg,#0c1f33,#0a1828);color:#e2e8f0}
+      .cv-ruta-guide-title{display:flex;flex-wrap:wrap;gap:8px;align-items:baseline;justify-content:space-between;margin-bottom:10px}
+      .cv-ruta-guide-title b{font-size:12px;letter-spacing:.04em;color:#7dd3fc}
+      .cv-ruta-guide-title small{font-size:11px;color:#94a3b8}
+      .cv-ruta-guide-flow{display:flex;flex-wrap:wrap;align-items:center;gap:6px}
+      .cv-ruta-step{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;background:#12263a;border:1px solid #234;font-size:12px;font-weight:700;color:#f8fafc}
+      .cv-ruta-step b{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:#0369a1;color:#e0f2fe;font-size:10px}
+      .cv-ruta-arrow{color:#38bdf8;font-weight:900;opacity:.85}
+      .cv-ruta-guide-note{margin:10px 0 0;font-size:12px;color:#cbd5e1;line-height:1.45}
+      .cv-ruta-guide-note b{color:#fde68a}
       
       .pernocte-proposal{border-radius:999px;padding:4px 10px;font-size:10px;font-weight:800}
       .pernocte-proposal.pendiente{background:#fef3c7;color:#92400e}
@@ -970,6 +1011,7 @@ async function renderValidacion(panel) {
       Los sin evento van a la pestaña <b>Sin registro</b>. Al guardar, salen de esta cola y baja el contador.
       Sin pendientes → <b>DESCARGAR ENVIABLE</b>.
     </section>
+    ${rutaPernocteGuideHtml()}
     <section class="pernocte-toolbar">
       <article class="panel"><small>VALIDACIÓN PENDIENTE</small><h1>${pending.length}</h1><p>Requieren revisión manual.</p></article>
       <article class="panel">
