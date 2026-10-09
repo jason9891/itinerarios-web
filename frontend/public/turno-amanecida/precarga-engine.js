@@ -36,8 +36,20 @@ function formatPE(date) {
     second: "2-digit",
     hour12: false,
   }).formatToParts(date);
-  const g = (t) => parts.find((p) => p.type === t)?.value || "00";
+  const g = (t) => {
+    let v = parts.find((p) => p.type === t)?.value || "00";
+    if (t === "hour" && v === "24") v = "00";
+    return String(v).padStart(2, "0");
+  };
+  // Obligatorio: dd/MM/yyyy HH:mm:ss (backend + CLocator Java)
   return `${g("day")}/${g("month")}/${g("year")} ${g("hour")}:${g("minute")}:${g("second")}`;
+}
+
+function assertFechaPE(s, label) {
+  if (!/^\d{2}\/\d{2}\/\d{4} \d{2}:\d{2}:\d{2}$/.test(String(s || ""))) {
+    throw new Error(`Fecha inválida (${label}): ${s}`);
+  }
+  return s;
 }
 
 /** Fecha del turno YYYY-MM-DD en zona Lima */
@@ -151,8 +163,19 @@ export function cacheIsFresh(fechaTurno) {
   const m = loadMeta();
   const fecha = fechaTurnoPE(fechaTurno);
   if (!m?.completo || m.fecha !== fecha || !m.finished_at) return false;
+  // Si hubo muchos errores / pocos OK, hay que reintentar
+  const ok = Number(m.ok || 0);
+  const err = Number(m.error || 0);
+  const total = Number(m.total || 0);
+  if (total > 0 && ok < total * 0.5) return false;
+  if (err > ok) return false;
   const age = Date.now() - new Date(m.finished_at).getTime();
   return Number.isFinite(age) && age >= 0 && age < FRESH_MS;
+}
+
+/** ¿Cuántas rutas tienen puntos en meta reciente? (orientativo) */
+export function precargaResumen() {
+  return loadMeta();
 }
 
 /**
@@ -176,6 +199,8 @@ export async function startPrecarga(unidades, fechaTurno, opts = {}) {
   }
 
   const { desdeStr, hastaStr, desde, hasta } = rangoBase(fecha);
+  assertFechaPE(desdeStr, "desde");
+  assertFechaPE(hastaStr, "hasta");
   progress = {
     done: 0,
     total: list.length,
@@ -259,11 +284,15 @@ export async function startPrecarga(unidades, fechaTurno, opts = {}) {
           }
         }
 
+        if (!placa && !tracto) throw new Error("Sin placa ni código");
+        assertFechaPE(fetchDesde, "fetchDesde");
+        assertFechaPE(hastaStr, "hasta");
+        // CLocator busca por placa; si no hay placa usar tracto solo como último recurso
         const data = await queryClocator({
           endpoint: clocatorEndpoint("cemento"),
           token,
           placa: placa || tracto,
-          tracto,
+          tracto: tracto || placa,
           desde: fetchDesde,
           hasta: hastaStr,
           includeMap: false,

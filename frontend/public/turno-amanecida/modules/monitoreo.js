@@ -831,44 +831,14 @@ export async function mount(container, runtime) {
     }
   }
 
-  async function fetchRecorridoLive(placa, tracto, fechaVal) {
-    const dia = parseFechaTurno(fechaVal);
-    const desdeDt = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), 16, 0, 0);
-    const limite = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate() + 1, 4, 0, 0);
-    const ahora = new Date();
-    const hastaDt = ahora > limite ? limite : ahora;
-    const user = auth.currentUser;
-    if (!user) throw new Error("Sin sesión");
-    const token = await user.getIdToken(false);
-    const data = await queryClocator({
-      endpoint: clocatorEndpoint("cemento"),
-      token,
-      placa: placa || tracto,
-      tracto,
-      desde: formatPE(desdeDt),
-      hasta: formatPE(hastaDt),
-      includeMap: false,
-      timeoutMs: 55000,
-    });
-    return data.puntos_gps || data.puntos || [];
-  }
-
   async function mostrarRecorridoUnidad(u) {
     if (!u) return;
-    // Permitir re-click: cancelar bloqueo si quedó colgado
-    if (routeLoading) {
-      routeLoading = false;
-    }
-    routeLoading = true;
-    if (msgEl) msgEl.textContent = "Cargando recorrido 16:00→ahora…";
+    // Solo caché de precarga (16:00 → hora de proceso + ticks). NUNCA Comsatel al click.
     try {
       const fechaVal = container.querySelector("#tn-fecha")?.value || fechaTurnoDefault();
       const placaU = String(u.placa || "").trim().toUpperCase();
       const tractoU = String(u.codigo || "").trim().toUpperCase();
       let pts = [];
-      let fuente = "caché";
-
-      // 1) Caché: probar varias claves (runId actual, meta, fecha fija)
       const meta = loadMeta();
       const ids = [
         currentRunId(),
@@ -880,7 +850,6 @@ export async function mount(container, runtime) {
         [tractoU, placaU],
         [tractoU, ""],
         ["", placaU],
-        [tractoU, tractoU],
       ];
       for (const rid of ids) {
         if (pts.length) break;
@@ -889,7 +858,6 @@ export async function mount(container, runtime) {
             const cached = await readGPS(gpsKey(rid, c, pl));
             if (cached?.puntos_gps?.length) {
               pts = cached.puntos_gps;
-              fuente = "caché";
               break;
             }
           } catch {
@@ -898,33 +866,17 @@ export async function mount(container, runtime) {
         }
       }
 
-      // 2) Live Comsatel: 16:00 del día del turno → último punto (ahora / tope 04:00)
-      if (!pts.length) {
-        fuente = "live";
-        if (msgEl) msgEl.textContent = "Consultando Comsatel 16:00→ahora…";
-        pts = await fetchRecorridoLive(placaU, tractoU, fechaVal);
-        // Guardar en caché para siguientes clicks
-        const rid = currentRunId() || loadMeta()?.id || `tn_${String(fechaVal).slice(0, 10)}`;
-        try {
-          await cacheGPS(
-            {
-              placa: placaU,
-              tracto: tractoU,
-              puntos_gps: pts,
-              ok: true,
-              desde: "16:00",
-              hasta: formatPE(new Date()),
-            },
-            gpsKey(rid, tractoU, placaU),
-          );
-        } catch {
-          /* ignore */
-        }
-      }
-
       if (!pts.length) {
         clearRouteLayers();
-        if (msgEl) msgEl.textContent = "Sin puntos GPS 16:00→ahora para esta unidad";
+        const m = loadMeta();
+        if (m?.running) {
+          if (msgEl) msgEl.textContent = "Recorrido en precarga… espera a que termine el lote";
+        } else {
+          if (msgEl) {
+            msgEl.textContent =
+              "Sin recorrido en caché. Genera base del turno o espera la precarga (16:00→ahora).";
+          }
+        }
         return;
       }
 
@@ -934,16 +886,12 @@ export async function mount(container, runtime) {
       u.movimiento_nocturno_m = ev.metros;
       u.halo_nocturno = ev.halo;
       if (msgEl) {
-        msgEl.textContent = `Recorrido (${fuente}): ${pts.length} pts · azul ${azul.length} · rojo ${rojo.length} · halo ${ev.halo || "—"}`;
+        msgEl.textContent = `Recorrido precargado: ${pts.length} pts · azul ${azul.length} · rojo ${rojo.length}`;
       }
-      // Refrescar halo del marcador sin mover el mapa
-      syncMarkers();
     } catch (err) {
       console.warn("[TN] recorrido", err);
       if (msgEl) msgEl.textContent = `Recorrido: ${err.message || err}`;
       clearRouteLayers();
-    } finally {
-      routeLoading = false;
     }
   }
 
@@ -1319,18 +1267,33 @@ export async function mount(container, runtime) {
   window.addEventListener("turno-amanecida:precarga", () => {
     paintPrecarga();
     enriquecerMovimientoDesdeCache();
+    // Cuando avanza la precarga, si hay unidad seleccionada pintar su ruta
+    if (seleccion) mostrarRecorridoUnidad(seleccion);
   });
 
-  const unitList = unidades.map((u) => ({ codigo: u.codigo, placa: u.placa }));
-  // Si el caché del mismo día está fresco (<3 min) → solo leer, no relanzar Comsatel
+  const unitList = unidades
+    .map((u) => ({ codigo: u.codigo, placa: u.placa }))
+    .filter((u) => u.placa || u.codigo);
+  // Precarga batch 16:00→ahora al entrar (solo se omite si el lote está completo y fresco)
   if (unitList.length) {
-    const go = cacheIsFresh(fechaVal)
-      ? Promise.resolve(loadMeta()).then(() => enriquecerMovimientoDesdeCache())
-      : startPrecarga(unitList, fechaVal, { reason: "entrada-monitoreo" }).then(() => {
+    if (cacheIsFresh(fechaVal)) {
+      enriquecerMovimientoDesdeCache();
+      if (seleccion) mostrarRecorridoUnidad(seleccion);
+    } else {
+      if (precargaEl) precargaEl.textContent = "Rutas: precargando 16:00→ahora…";
+      startPrecarga(unitList, fechaVal, { reason: "entrada-monitoreo" })
+        .then(() => {
           paintPrecarga();
           return enriquecerMovimientoDesdeCache();
+        })
+        .then(() => {
+          if (seleccion) return mostrarRecorridoUnidad(seleccion);
+        })
+        .catch((e) => {
+          console.warn("[TN] precarga", e);
+          if (precargaEl) precargaEl.textContent = `Rutas: error ${e.message || e}`;
         });
-    go.catch(() => {});
+    }
   }
 
   renderCounters();

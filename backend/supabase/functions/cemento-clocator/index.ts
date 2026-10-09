@@ -768,6 +768,12 @@ async function recorrido(plate, tracto, from, to, cartography) {
   view = viewPartial(xml);
   if (!view) throw new Error("CLocator no abrió Mostrar Recorrido");
   const [startField, endField] = dateFields(xml);
+  if (!startField || !endField) {
+    throw new Error("CLocator no expuso campos de fecha de recorrido (start/end null)");
+  }
+  if (!from || !to) {
+    throw new Error(`Rango de fechas vacío (from='${from}' to='${to}') — evita NPE Java en getRecorridoAgregado`);
+  }
   r = await postForm(s.fetcher, MAIN, {
     "javax.faces.partial.ajax": "true",
     "javax.faces.source": "frmRecorrido:fnBuscarRecorridoDeVehiculo",

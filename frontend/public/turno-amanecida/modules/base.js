@@ -278,15 +278,22 @@ export async function mount(container) {
       // Precarga de recorridos en 2º plano (caché) — mismo rango 16:00→ahora
       try {
         const now = new Date();
-        // Si es madrugada (<12h), el turno es del día anterior
-        const turno = new Date(now);
+        // Fecha local (no UTC): madrugada → turno del día anterior
+        const turno = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         if (now.getHours() < 12) turno.setDate(turno.getDate() - 1);
+        const y = turno.getFullYear();
+        const mo = String(turno.getMonth() + 1).padStart(2, "0");
+        const d = String(turno.getDate()).padStart(2, "0");
+        const fechaTurno = `${y}-${mo}-${d}`;
         startPrecarga(
-          unidades.map((u) => ({ codigo: u.codigo, placa: u.placa })),
-          turno.toISOString().slice(0, 10),
+          unidades.map((u) => ({ codigo: u.codigo, placa: u.placa })).filter((u) => u.placa || u.codigo),
+          fechaTurno,
+          { reason: "base-turno" },
         );
+        log(`Precarga rutas iniciada en 2º plano (16:00 ${fechaTurno} → ahora)`);
       } catch (err) {
         console.warn("[TN] precarga", err);
+        log(`Precarga: ${err.message || err}`);
       }
 
       cardBase.className = "tn-card ok";
