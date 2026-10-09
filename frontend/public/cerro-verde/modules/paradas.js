@@ -484,6 +484,7 @@ async function loadRouteForItem(item) {
   const token = await auth.currentUser.getIdToken(true);
   const route = await queryClocator({
     endpoint: API.clocator,
+        fallbackEndpoint: API.clocatorSupabase || "",
     token,
     placa: item.placa,
     tracto: item.codigo_tracto,

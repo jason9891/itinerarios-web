@@ -197,7 +197,20 @@ function buildTrackingContext(runtime) {
   };
 
   async function post(url, body, binary = false, signal) {
-    return apiPost(url, body, { signal, binary: !!binary });
+    try {
+      return await apiPost(url, body, { signal, binary: !!binary });
+    } catch (e) {
+      const isGps =
+        url === API.clocator ||
+        String(url).includes("cerroVerdeClocator") ||
+        String(url).includes("cerro-verde-clocator");
+      const fb = API.clocatorSupabase;
+      if (isGps && fb && fb !== url) {
+        console.warn("[seguimiento] GPS primary falló, fallback Supabase", e?.message || e);
+        return apiPost(fb, body, { signal, binary: !!binary });
+      }
+      throw e;
+    }
   }
   async function get(path) {
     return apiGet(path);

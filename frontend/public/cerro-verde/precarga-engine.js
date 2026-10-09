@@ -251,6 +251,7 @@ export async function startPreload(units, opts = {}) {
     try {
       const data = await queryClocator({
         endpoint: API.clocator,
+        fallbackEndpoint: API.clocatorSupabase || "",
         token,
         placa: u.placa,
         tracto: u.tracto,
