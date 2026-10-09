@@ -18,7 +18,7 @@ import {
   nplate,
 } from "../precarga-engine.js";
 import { readLegacyGPS, putLegacyGPS } from "../gps-cache.js";
-import { tracking } from "../../cerro-verde-tracking.js?v=cv-pause-02";
+import { tracking } from "../../cerro-verde-tracking.js?v=cv-hist-01";
 
 const MIN_ROUTES_TO_OPEN = 5;
 const PRECARGA_DONE = new Set([

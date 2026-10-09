@@ -1254,6 +1254,29 @@ function reportV3(c){return async()=>{
   const b=c.$("cv-report-download");if(b&&!b.disabled)b.onclick=async()=>{b.disabled=true;b.textContent="GENERANDO…";try{const x=await c.post(c.END.report,{action:"excel"},true),a=document.createElement("a");a.href=URL.createObjectURL(x.blob);a.download=x.name||"REPORTE_DIARIO_CERRO_VERDE.xlsx";document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}catch(e){await notice("NO SE PUDO GENERAR",e.message||String(e))}finally{if(b.isConnected){b.disabled=false;b.textContent="DESCARGAR EXCEL"}}};
 }}
 
+
+function histClosedCard(c,o,pos,total){
+  const p=o.payload||{};
+  const fecha=displayTs(o.fecha_referencia||p["FECHA DE CARGA"]||p["SALIDA DE CARACOTO"]||"—");
+  const fields=[
+    ["SALIDA RACIEMSA",p["SALIDA DE BASE RACIEMSA"]],
+    ["LLEGADA CARACOTO",p["LLEGADA A CARACOTO"]],
+    ["SALIDA CARACOTO",p["SALIDA DE CARACOTO"]],
+    ["LLEGADA RACIEMSA",p["LLEGADA A BASE RACIEMSA"]],
+    ["SALIDA RACIEMSA CARGADO",p["SALIDA DE BASE RACIEMSA CARGADO"]],
+    ["INGRESO SMCV",p["INGRESO A SMCV"]],
+    ["SALIDA SMCV",p["SALIDA DE SMCV"]],
+    ["LLEGADA RACIEMSA VACÍO",p["LLEGADA A BASE RACIEMSA VACIO"]],
+    ["ESTADO",p.ESTADO],
+    ["MONITOREO",p.MONITOREO],
+  ];
+  const rows=fields.map(([lab,val])=>`<div class="hist-kv"><b>${c.esc(lab)}</b><span>${c.esc(displayTs(val)||val||"—")}</span></div>`).join("");
+  return `<article class="hist-closed-card" data-hist-id="${o.id}">
+    <header><div><small>CERRADO HISTÓRICO ${pos} DE ${total}</small><h3>ENTREGA ${c.esc(o.orden_carga)}</h3><p>REF: <b>${c.esc(fecha)}</b></p></div>
+    <button type="button" class="reopen-hist" data-hist-reopen="${o.id}" data-hist-entrega="${c.esc(o.orden_carga)}">REABRIR</button></header>
+    <div class="hist-grid">${rows}</div>
+  </article>`;
+}
 function tracking(c){return async()=>{
   // CHECKPOINT 15/09 + correcciones acumuladas exclusivamente de SEGUIMIENTO.
   if(!localStorage.getItem("cv_prueba_integral_02_review_reset")){localStorage.removeItem("cv_revisadas");localStorage.setItem("cv_prueba_integral_02_review_reset","1")}
@@ -1263,6 +1286,7 @@ function tracking(c){return async()=>{
   const nextIndex=(from=idx)=>{if(!unitList.length)return 0;for(let step=1;step<=unitList.length;step++){const j=(from+step)%unitList.length;if(!unitList[j].revisada)return j}return(from+1)%unitList.length};
   const autoReviewNoMovement=async()=>{if(!schemaReady)return 0;let changed=0;for(const u of unitList){if(u.revisada||Number(u.despachos_abiertos??u.ocs??0)>0||Number(u.pendientes_anteriores||0)>0)continue;const g=await c.one("gps",u.placa);if(!g||stateOf(g)!=="SIN MOVIMIENTO")continue;try{await c.post(c.END.track,{action:"marcar_revisada",placa:u.placa,origen:"AUTO_SIN_MOVIMIENTO_SIN_DESPACHO"});changed++}catch(e){console.warn("[CERRO VERDE] autorevisión omitida",u.placa,e?.message||e)}}if(changed){await refreshList(unitList[idx]?.placa||"");if(unitList[idx]?.revisada)idx=nextIndex(idx)}return changed};
   const uiDrafts=new Map(),stopDrafts=new Map();
+  let histClosedAll=[],histClosedShown=0,histClosedPlate="",histClosedLoading=false;
   const captureUi=plate=>{const key=norm(plate);if(!key)return;const state=uiDrafts.get(key)||{cycles:{},range:{},closedOpen:false};const from=c.$("from"),to=c.$("to");if(from)state.range.from=from.value;if(to)state.range.to=to.value;document.querySelectorAll(".cycle-card[data-id]").forEach(card=>{const id=String(card.dataset.id||"");if(!id)return;const values={};card.querySelectorAll("[data-field]").forEach(input=>{values[input.dataset.field]=input.value});state.cycles[id]=values});const closed=c.$("closed-list");if(closed)state.closedOpen=!closed.hidden;const desc=c.$("stop-desc");if(desc&&selectedStopId!=null)stopDrafts.set(`${key}:${selectedStopId}`,desc.value);uiDrafts.set(key,state)};
   const restoreUi=plate=>{const key=norm(plate),state=uiDrafts.get(key);if(!state)return;const from=c.$("from"),to=c.$("to");if(from&&state.range?.from)from.value=state.range.from;if(to&&state.range?.to)to.value=state.range.to;for(const [id,values] of Object.entries(state.cycles||{})){const card=document.querySelector(`.cycle-card[data-id="${id}"]`);if(!card)continue;for(const [field,value] of Object.entries(values||{})){const input=card.querySelector(`[data-field="${field}"]`);if(input)input.value=value}}const closed=c.$("closed-list");if(closed&&state.closedOpen){closed.hidden=false;const b=c.$("closed-toggle");if(b)b.textContent=`${closed.querySelectorAll(".closed-cycle-row").length} CERRADO${closed.querySelectorAll(".closed-cycle-row").length===1?"":"S"} · OCULTAR CERRADOS`}};
   const focusStop=stop=>{const map=mapRuntime.map,lat=+stop?.lat,lng=+stop?.lng;if(!map||!Number.isFinite(lat)||!Number.isFinite(lng))return;const pos={lat,lng};map.panTo(pos);if((map.getZoom?.()||0)<17)map.setZoom(17);try{mapRuntime.stopMarkers?.get(stop.id)?.setAnimation?.(google.maps.Animation.BOUNCE);setTimeout(()=>{try{mapRuntime.stopMarkers?.get(stop.id)?.setAnimation?.(null)}catch{}},650)}catch{}};
@@ -1281,9 +1305,66 @@ function tracking(c){return async()=>{
     if(!x.revisada&&!hasOlderPending&&openOcs.length===0&&g&&stateOf(g)==="SIN MOVIMIENTO"&&schemaReady){try{await c.post(c.END.track,{action:"marcar_revisada",placa:u.placa,origen:"AUTO_SIN_MOVIMIENTO_SIN_DESPACHO"});await refreshList(u.placa);idx=nextIndex(idx);selectedStopId=null;return render()}catch(e){console.warn("[CERRO VERDE] autorevisión no aplicada",e?.message||e)}}
     c.$("from").value=g?.desde||meta()?.desde||localStorage.getItem("cv_corte")||"";c.$("to").value=g?.hasta||meta()?.hasta||nowPE();
     const reviewLabel=x.revisada?"SIGUIENTE PLACA":hasOlderPending?`RESOLVER ${x.revision.unresolved_previous.length} DESPACHO(S) ANTERIOR(ES)`:"REVISADA Y SIGUIENTE";
-    const closedHtml=closedOcs.length?`<section class="closed-cycles"><button id="closed-toggle" type="button">${closedOcs.length} CERRADO${closedOcs.length===1?"":"S"} · OCULTAR CERRADOS</button><div id="closed-list">${closedOcs.map(o=>`<article class="closed-cycle-row" data-closed-id="${o.id}"><div><b>ENTREGA ${c.esc(o.orden_carga)}</b><span>${c.esc(displayTs(o.payload?.["FECHA DE CARGA"]||"—"))}</span><em>CIERRE PREPARADO</em></div><button type="button" class="reopen-closed" data-reopen-id="${o.id}" data-reopen-entrega="${c.esc(o.orden_carga)}">REABRIR</button></article>`).join("")}</div></section>`:"";
+    const sessionClosedHtml=closedOcs.length?`<section class="closed-cycles session-closed"><button id="closed-toggle" type="button">${closedOcs.length} CIERRE(S) DE SESIÓN · OCULTAR</button><div id="closed-list">${closedOcs.map(o=>`<article class="closed-cycle-row" data-closed-id="${o.id}"><div><b>ENTREGA ${c.esc(o.orden_carga)}</b><span>${c.esc(displayTs(o.payload?.["FECHA DE CARGA"]||"—"))}</span><em>CIERRE PREPARADO</em></div><button type="button" class="reopen-closed" data-reopen-id="${o.id}" data-reopen-entrega="${c.esc(o.orden_carga)}">REABRIR SESIÓN</button></article>`).join("")}</div></section>`:"";
+    const plateKey=norm(u.placa||"");
+    if(histClosedPlate!==plateKey){histClosedAll=[];histClosedShown=0;histClosedPlate=plateKey;histClosedLoading=false}
+    const histVisible=histClosedAll.slice(0,histClosedShown);
+    const histBtnLabel=histClosedLoading?"…":(!histClosedAll.length&&!histClosedShown?"BUSCAR CERRADOS HISTÓRICOS":histClosedShown<histClosedAll.length?(histClosedShown===0?"MOSTRAR ÚLTIMO CERRADO":"MOSTRAR SIGUIENTE"):histClosedAll.length?`TODOS (${histClosedAll.length})`:"SIN CERRADOS HISTÓRICOS");
+    const histHtml=`<section class="closed-cycles hist-closed">
+      <div class="hist-closed-bar">
+        <div><b>CERRADOS HISTÓRICOS</b><small>Más reciente primero · un click = un despacho</small></div>
+        <button type="button" id="hist-closed-next" ${histClosedLoading||(histClosedAll.length&&histClosedShown>=histClosedAll.length)?"disabled":""}>${histBtnLabel}</button>
+        <button type="button" id="hist-closed-reset" class="ghost-btn" ${histClosedShown?"":"hidden"}>OCULTAR</button>
+      </div>
+      <div id="hist-closed-panel">${histVisible.length?histVisible.map((o,i)=>histClosedCard(c,o,i+1,histClosedAll.length)).join(""):(histClosedShown&&!histClosedAll.length?`<p class="muted">No hay despachos HISTÓRICO para esta placa.</p>`:"")}</div>
+    </section>`;
+    const closedHtml=sessionClosedHtml+histHtml;
     c.$("cycle").innerHTML=`<section class="unit-head ${x.revisada?"unit-reviewed":""}"><div class="unit-head-main"><h1>${c.esc(x.tracto)} · ${c.esc(x.placa)}</h1><div class="unit-meta"><span><b>CONDUCTOR</b>${c.esc(x.conductor||"—")}</span><span><b>CARRETA</b>${c.esc(x.carreta||"—")}</span><span><b>DESPACHOS ABIERTOS</b>${openOcs.length}</span><span><b>SECCIÓN</b>${c.esc(x.seccion||"—")}</span></div></div><div class="unit-actions"><button id="review" ${(!schemaReady||(hasOlderPending&&!x.revisada))?"disabled":""}>${reviewLabel}</button><button id="other-operation" class="remove-report" ${schemaReady?"":"disabled"}>RETIRAR DEL REPORTE</button></div></section>${openOcs.length?`<section class="nested-cycles"><div class="nested-title"><h2>DESPACHOS PENDIENTES</h2><p>Se revisan juntos y en orden cronológico. Una OC cerrada sale inmediatamente de esta lista.</p></div>${openOcs.map((o,i)=>cycleCard(c,o,analysis,i,openOcs.length,schemaReady)).join("")}</section>`:`<article class="empty-cycle"><h3>SIN DESPACHO ABIERTO</h3><p>La unidad permanece activa en GRUPO_SMCV. Revise su GPS; no se inventará ningún ciclo.</p></article>`}${closedHtml}<article id="candidate-editor" class="candidate-editor"><h3>VALIDACIÓN DE PARADA SELECCIONADA</h3><p>Seleccione una P roja o amarilla en el mapa o en la lista lateral.</p></article>`;
     if(closedOcs.length){c.$("closed-toggle").onclick=()=>{const box=c.$("closed-list"),b=c.$("closed-toggle"),show=box.hidden;box.hidden=!show;b.textContent=`${closedOcs.length} CERRADO${closedOcs.length===1?"":"S"} · ${show?"OCULTAR CERRADOS":"VER CERRADOS"}`};c.$("closed-list")?.querySelectorAll("[data-reopen-id]").forEach(btn=>{btn.onclick=async()=>{const id=Number(btn.dataset.reopenId);const ent=btn.dataset.reopenEntrega||"";if(!id)return;if(!await ask("REABRIR DESPACHO",`Se anulará el cierre preparado de la entrega ${ent} para poder editarlo en seguimiento.`,"REABRIR",false))return;btn.disabled=true;btn.textContent="…";try{await c.post(c.END.track,{action:"reabrir_despacho",id});await notice("REABIERTO",`Entrega ${ent}: cierre preparado anulado. Ya puede editar el despacho.`);await render()}catch(e){btn.disabled=false;btn.textContent="REABRIR";await notice("NO SE PUDO REABRIR",e.message||String(e))}}})}
+    const histNext=c.$("hist-closed-next"),histReset=c.$("hist-closed-reset");
+    if(histNext){
+      histNext.onclick=async()=>{
+        const plate=u.placa||"";
+        const key=norm(plate);
+        if(histClosedPlate!==key||!histClosedAll.length){
+          histClosedLoading=true;histClosedPlate=key;histClosedShown=0;histClosedAll=[];
+          histNext.disabled=true;histNext.textContent="BUSCANDO…";
+          try{
+            const data=await c.post(c.END.track,{action:"cerradas_por_placa",placa:plate,tracto:u.tracto||plate});
+            histClosedAll=Array.isArray(data?.ocs)?data.ocs:[];
+          }catch(e){
+            histClosedLoading=false;
+            await notice("CERRADOS HISTÓRICOS",e.message||String(e));
+            histNext.disabled=false;histNext.textContent="BUSCAR CERRADOS HISTÓRICOS";
+            return;
+          }
+          histClosedLoading=false;
+        }
+        if(histClosedShown<histClosedAll.length) histClosedShown+=1;
+        await render();
+      };
+    }
+    if(histReset){
+      histReset.onclick=()=>{histClosedShown=0;render().catch(()=>null)};
+    }
+    c.$("hist-closed-panel")?.querySelectorAll("[data-hist-reopen]").forEach(btn=>{
+      btn.onclick=async()=>{
+        const id=Number(btn.dataset.histReopen);const ent=btn.dataset.histEntrega||"";
+        if(!id)return;
+        if(!await ask("REABRIR HISTÓRICO",`La entrega ${ent} volverá a DIARIO para editarla en seguimiento.`,"REABRIR",false))return;
+        btn.disabled=true;btn.textContent="…";
+        try{
+          await c.post(c.END.track,{action:"reabrir_historico",id});
+          histClosedAll=[];histClosedShown=0;
+          await notice("REABIERTO",`Entrega ${ent} está otra vez en DIARIO.`);
+          await render();
+        }catch(e){
+          btn.disabled=false;btn.textContent="REABRIR";
+          await notice("NO SE PUDO REABRIR",e.message||String(e));
+        }
+      };
+    });
+
     c.$("stops").innerHTML=`<h3>PARADAS CANDIDATAS</h3><b>${c.esc(u.placa)}</b><p>${candidates.length} candidato(s)</p><section class="validated"><h4>✓ ÚLTIMA PARADA VALIDADA · SOLO LECTURA</h4>${lastValid?`<article><b>✓ ${String(lastValid.tipo_parada||lastValid.tipo).toUpperCase()==="PAUSA_ACTIVA"?"PAUSA ACTIVA VALIDADA":"PERNOCTE VALIDADO"}</b><p>${c.esc(lastValid.inicio)} → ${c.esc(lastValid.fin)}</p><strong>${c.esc(lastValid.geocerca||"FUERA DE GEOCERCA")}</strong></article>`:"Sin paradas validadas para esta unidad."}</section><section class="candidate-list">${candidates.map(v=>`<button class="candidate ${v.tipo==="PERNOCTE"?"red":"yellow"}" data-stop="${c.esc(v.id)}"><b>${v.tipo==="PERNOCTE"?"POSIBLE PERNOCTE":"POSIBLE PAUSA ACTIVA"}</b><span>${c.esc(v.inicio)} → ${c.esc(v.fin)}</span><strong>${c.esc(formatDur(v.duracion_min))} · ${c.esc(v.geocerca||"FUERA DE GEOCERCA")}</strong></button>`).join("")||'<p class="no-candidates">Sin candidatos nuevos.</p>'}</section>`;
     const selectStop=id=>{const priorDesc=c.$("stop-desc");if(priorDesc&&selectedStopId!=null)stopDrafts.set(`${norm(u.placa)}:${selectedStopId}`,priorDesc.value);selectedStopId=id;const stop=candidates.find(v=>String(v.id)===String(id)),box=c.$("candidate-editor");document.querySelectorAll("[data-stop]").forEach(b=>b.classList.toggle("selected",String(b.dataset.stop)===String(id)));if(!stop||!box)return;focusStop(stop);const owner=cycleOwner(stop,openOcs),draftKey=`${norm(u.placa)}:${stop.id}`;box.innerHTML=`<h3>${stop.tipo==="PERNOCTE"?"POSIBLE PERNOCTE":"POSIBLE PAUSA ACTIVA"}</h3><div class="stop-detail"><b>INICIO</b><span>${c.esc(stop.inicio)}</span><b>FIN</b><span>${c.esc(stop.fin)}</span><b>DURACIÓN</b><span>${c.esc(formatDur(stop.duracion_min))}</span><b>ZONA</b><span>${c.esc(stop.geocerca||"FUERA DE GEOCERCA")}</span><b>DESPACHO</b><span>${c.esc(owner?.orden_carga||"SIN DESPACHO ABIERTO")}</span></div><input id="stop-desc" placeholder="Descripción opcional" value="${c.esc(stopDrafts.get(draftKey)||"")}"><div class="stop-actions"><button id="validate-stop" ${owner?"":"disabled"}>VALIDAR</button><button id="ignore-stop">IGNORAR</button></div>${owner?"":'<p class="stop-warning">Sin despacho abierto relacionado: el candidato se conserva solo para revisión visual.</p>'}`;const desc=c.$("stop-desc");if(desc)desc.oninput=()=>stopDrafts.set(draftKey,desc.value);if(owner)c.$("validate-stop").onclick=async()=>{const b=c.$("validate-stop");b.disabled=true;try{await c.post(c.END.track,{action:"parada_validar",id:owner.id,parada:{...stop,descripcion:c.$("stop-desc").value}});ignored.add(stop.id);localStorage.setItem(ignoredKey,JSON.stringify([...ignored]));stopDrafts.delete(draftKey);try{mapRuntime.stopMarkers?.get(stop.id)?.setMap?.(null);mapRuntime.stopMarkers?.delete(stop.id)}catch{}selectedStopId=null;await render()}catch(e){await notice("NO SE PUDO VALIDAR",e.message||String(e));b.disabled=false}};c.$("ignore-stop").onclick=()=>{ignored.add(stop.id);localStorage.setItem(ignoredKey,JSON.stringify([...ignored]));stopDrafts.delete(draftKey);try{mapRuntime.stopMarkers?.get(stop.id)?.setMap?.(null);mapRuntime.stopMarkers?.delete(stop.id)}catch{}selectedStopId=null;render()}};
     document.querySelectorAll("[data-stop]").forEach(b=>b.onclick=()=>selectStop(b.dataset.stop));

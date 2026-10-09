@@ -603,6 +603,101 @@ Deno.serve(async (req) => {
       return reply(req, { ok: true, placa: plate, retirado_del_reporte: true, motivo: reason, cierres_preparados: prepared });
     }
 
+    if (action === "cerradas_por_placa" || action === "cerradas_por_tracto") {
+      // Histórico consolidado de la placa (más reciente primero). Progresivo en UI.
+      const raw = text(b.placa || b.tracto || b.placa_tracto);
+      const key = normPlate(raw);
+      if (!key) throw Error("Indique placa o tracto");
+      const all: any[] = [];
+      const pageSize = 1000;
+      for (let from = 0; ; from += pageSize) {
+        const { data, error } = await db.from("seguimiento_staging")
+          .select("id,orden_carga,payload")
+          .eq("itinerario", IT)
+          .eq("origen", "HISTORICO")
+          .order("id", { ascending: false })
+          .range(from, from + pageSize - 1);
+        if (error) throw error;
+        const batch = data || [];
+        all.push(...batch);
+        if (batch.length < pageSize) break;
+      }
+      const stamp = (p: any) => {
+        const candidates = [
+          p?.["FECHA DE CARGA"], p?.["SALIDA DE CARACOTO"], p?.["INGRESO A SMCV"],
+          p?.["TIMESTAMP INGRESO SAP"], p?.["FECHA CIERRE SEGUIMIENTO"],
+        ];
+        for (const c of candidates) {
+          const t = parseTs(c);
+          if (Number.isFinite(t)) return t;
+        }
+        return 0;
+      };
+      const rows = all
+        .filter((x: any) => plateOf(x.payload) === key || normPlate(x.payload?.["PLACA TRACTO"] || x.payload?.PLACA_TRACTO || "") === key)
+        .sort((a: any, b: any) => {
+          const d = stamp(b.payload) - stamp(a.payload);
+          return d || Number(b.id) - Number(a.id);
+        });
+      return reply(req, {
+        placa: key,
+        total: rows.length,
+        ocs: rows.map((x: any) => ({
+          id: x.id,
+          orden_carga: x.orden_carga,
+          payload: x.payload || {},
+          historico: true,
+          fecha_referencia: text(
+            x.payload?.["FECHA DE CARGA"] ||
+            x.payload?.["SALIDA DE CARACOTO"] ||
+            x.payload?.["INGRESO A SMCV"] ||
+            "",
+          ),
+        })),
+      });
+    }
+
+    if (action === "reabrir_historico") {
+      // Vuelve un despacho HISTORICO a DIARIO para editarlo en seguimiento.
+      const id = Number(b.id);
+      if (!Number.isInteger(id) || id <= 0) throw Error("ID histórico inválido");
+      const { data: row, error } = await db.from("seguimiento_staging")
+        .select("id,orden_carga,payload,origen")
+        .eq("id", id).eq("itinerario", IT).eq("origen", "HISTORICO").maybeSingle();
+      if (error) throw error;
+      if (!row) throw Error("Despacho histórico no encontrado");
+      const plate = plateOf(row.payload);
+      // Evitar duplicar la misma entrega ya abierta en DIARIO
+      const { data: dup, error: de } = await db.from("seguimiento_staging")
+        .select("id")
+        .eq("itinerario", IT)
+        .eq("origen", "DIARIO")
+        .eq("orden_carga", row.orden_carga)
+        .maybeSingle();
+      if (de) throw de;
+      if (dup) throw Error(`La entrega ${row.orden_carga} ya está abierta en DIARIO`);
+      const payload = { ...(row.payload || {}) };
+      // Limpia marcas de cierre de ciclo si existían
+      if (payload["ESTADO CICLO"]) payload["ESTADO CICLO"] = "ABIERTO";
+      const { error: ue } = await db.from("seguimiento_staging")
+        .update({ origen: "DIARIO", payload })
+        .eq("id", id)
+        .eq("itinerario", IT)
+        .eq("origen", "HISTORICO");
+      if (ue) throw ue;
+      if (plate) {
+        await db.from("cerro_verde_revision_unidades").delete().eq("usuario", email).eq("placa", plate);
+      }
+      return reply(req, {
+        ok: true,
+        id,
+        orden_carga: row.orden_carga,
+        placa: plate,
+        accion: "REABIERTO_HISTORICO",
+        mensaje: "Despacho histórico reabierto en DIARIO. Ya aparece en seguimiento.",
+      });
+    }
+
     if (action === "reabrir_despacho") {
       // Deshace CIERRE PREPARADO de la sesión web para poder editar el ciclo en seguimiento.
       const id = Number(b.id);
