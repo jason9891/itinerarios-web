@@ -55,3 +55,10 @@ onAuthStateChanged(auth, async (user) => {
 });
 
 window.__cerroVerdeRuntime = runtime;
+window.__cerroVerdeGo = go;
+
+window.addEventListener("hashchange", () => {
+  if (!auth.currentUser) return;
+  const r = location.hash.replace(/^#\/?/, "") || "home";
+  go(r);
+});

@@ -18,7 +18,7 @@ import {
   nplate,
 } from "../precarga-engine.js";
 import { readLegacyGPS, putLegacyGPS } from "../gps-cache.js";
-import { tracking } from "../../cerro-verde-tracking.js?v=cv-reopen-01";
+import { tracking } from "../../cerro-verde-tracking.js?v=cv-pause-02";
 
 const MIN_ROUTES_TO_OPEN = 5;
 const PRECARGA_DONE = new Set([
@@ -180,8 +180,15 @@ function buildTrackingContext(runtime) {
   const go = (route) => {
     const r = route || "home";
     document.body.classList.remove("tracking-active");
+    try {
+      classicUnmount?.();
+    } catch (_) {}
+    // Router modular real (hashchange solo no bastaba)
+    if (typeof window.__cerroVerdeGo === "function") {
+      window.__cerroVerdeGo(r);
+      return;
+    }
     history.replaceState(null, "", `#/${r}`);
-    // delegar al main modular vía hashchange / runtime
     try {
       window.dispatchEvent(new HashChangeEvent("hashchange"));
     } catch (_) {
@@ -213,7 +220,7 @@ function buildTrackingContext(runtime) {
       track: API.track,
       sap: API.sap,
       q: API.consulta,
-      report: API.reporte,
+      report: API.report,
     },
     post,
     get,
