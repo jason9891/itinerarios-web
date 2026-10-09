@@ -1,5 +1,5 @@
 const norm=v=>String(v||"").normalize("NFD").replace(/[\u0300-\u036f]/g,"").toUpperCase().replace(/[^A-Z0-9]/g,"");
-const META="cv_precarga_activa_v5",TIMEOUT=120000,ANALYSIS_VERSION="CV_DESKTOP_RULES_20260913_1";
+const META="cv_precarga_activa_v5",TIMEOUT=120000,ANALYSIS_VERSION="CV_DESKTOP_RULES_20261009_1";
 let mapsPromise,mapConfig=null;
 const bg={running:false,stop:false,controller:null,units:[],meta:null,ctx:null,health:null,promise:null,lastError:null};
 // Un único mapa por permanencia en SEGUIMIENTO. Cambiar de placa solo reemplaza overlays.
@@ -108,6 +108,7 @@ async function maps(key){if(window.google?.maps)return;if(!key)throw Error("Falt
 async function config(c){return mapConfig||=await c.post(c.END.gps,{action:"map_config"})}
 async function ensureAnalysis(g,c,key){if(!g||g.analisis_version===ANALYSIS_VERSION||!(g.puntos_gps||[]).length)return g;const r=await c.post(c.END.gps,{action:"reanalyze",puntos_gps:g.puntos_gps});const updated={...g,ok:true,analisis:r.analisis,cartografia:r.cartografia,analisis_version:r.analisis_version};await c.put("gps",key,updated);return updated}
 
+function shortTimePE(fecha){const s=String(fecha||"");const m=s.match(/(\d{2}:\d{2})(?::\d{2})?/);return m?m[1]:s.slice(-8)||"—";}
 function markerIcon(color,scale=11,stroke="#fff",strokeWeight=3){return{path:google.maps.SymbolPath.CIRCLE,scale,fillColor:color,fillOpacity:1,strokeColor:stroke,strokeWeight}}
 async function draw(g,c,$,onStop){
   const source=(g?.puntos_gps||[]).filter(p=>Number.isFinite(+p.lat)&&Number.isFinite(+p.lng));
@@ -138,10 +139,53 @@ async function draw(g,c,$,onStop){
     addMapLayer(new google.maps.Polyline({map,path:pts,strokeColor:"#2563eb",strokeOpacity:.95,strokeWeight:5,icons:[{icon:arrow,offset:"40px",repeat:"110px"},{icon:arrow,offset:"100%"}]}));
     const last3=pts.slice(-3),redArrow={path:google.maps.SymbolPath.FORWARD_CLOSED_ARROW,scale:4,strokeColor:"#dc2626",strokeWeight:2,fillColor:"#dc2626",fillOpacity:1};
     addMapLayer(new google.maps.Polyline({map,path:last3,geodesic:true,strokeColor:"#dc2626",strokeOpacity:1,strokeWeight:7,zIndex:400,icons:[{icon:redArrow,offset:"100%"}]}));
-    [
-      {p:pts[0],text:"I",color:"#16a34a",title:`INICIO · ${pts[0].fecha||"-"}`},
-      {p:pts.at(-1),text:"F",color:"#2563eb",title:`FIN · ${pts.at(-1).fecha||"-"}`}
-    ].forEach(x=>addMapLayer(new google.maps.Marker({map,position:x.p,title:x.title,label:{text:x.text,color:"#fff",fontSize:"11px",fontWeight:"700"},icon:markerIcon(x.color,11),zIndex:220})));
+    const startPt=pts[0], endPt=pts.at(-1);
+    const startFecha=startPt.fecha||g?.analisis?.punto_inicio?.fecha||"—";
+    const endFecha=endPt.fecha||g?.analisis?.punto_fin?.fecha||"—";
+    const endGeo=g?.analisis?.punto_fin?.geocerca||g?.analisis?.ultima_geocerca||"";
+    // I = inicio (prioridad alta); F = fin (máxima prioridad visual sobre cualquier otra señal)
+    const mI=addMapLayer(new google.maps.Marker({
+      map, position:startPt,
+      title:`INICIO (I) · ${startFecha}`,
+      label:{text:"I",color:"#fff",fontSize:"12px",fontWeight:"900"},
+      icon:markerIcon("#16a34a",13,"#052e16",3),
+      zIndex:650
+    }));
+    const mF=addMapLayer(new google.maps.Marker({
+      map, position:endPt,
+      title:`FIN (F) · ${endFecha}${endGeo?` · ${endGeo}`:""}`,
+      label:{text:"F",color:"#fff",fontSize:"13px",fontWeight:"900"},
+      icon:markerIcon("#1d4ed8",15,"#fff",4),
+      zIndex:900
+    }));
+    // Etiquetas de hora permanentes (I y F)
+    const mkTimeLabel=(pos, letter, fecha, color)=>{
+      const el=document.createElement("div");
+      el.className="route-time-marker";
+      el.innerHTML=`<b style="color:${color}">${letter}</b> <span>${c.esc(shortTimePE(fecha))}</span>`;
+      const ov=new google.maps.OverlayView();
+      ov.onAdd=function(){this.getPanes().floatPane.appendChild(el)};
+      ov.draw=function(){
+        const p=this.getProjection()?.fromLatLngToDivPixel(new google.maps.LatLng(pos.lat,pos.lng));
+        if(!p)return;
+        el.style.left=(p.x+10)+"px";
+        el.style.top=(p.y-28)+"px";
+      };
+      ov.onRemove=function(){el.remove()};
+      ov.setMap(map);
+      addMapLayer({setMap(m){ov.setMap(m||null)}});
+    };
+    mkTimeLabel(startPt,"I",startFecha,"#15803d");
+    mkTimeLabel(endPt,"F",endFecha,"#1d4ed8");
+    // Info al click con hora completa + geocerca en F
+    mI.addListener("click",()=>{
+      info.setContent(`<div style="font:12px/1.4 Segoe UI,Arial"><b>INICIO (I)</b><br>${c.esc(startFecha)}</div>`);
+      info.open({map,anchor:mI});
+    });
+    mF.addListener("click",()=>{
+      info.setContent(`<div style="font:12px/1.4 Segoe UI,Arial"><b>FIN (F)</b><br>${c.esc(endFecha)}${endGeo?`<br><b>Geocerca:</b> ${c.esc(endGeo)}`:""}</div>`);
+      info.open({map,anchor:mF});
+    });
     map.fitBounds(bounds,{top:45,right:45,bottom:45,left:45});
   }else{
     addMapLayer(new google.maps.Marker({map,position:pts[0],label:{text:"U",color:"#fff",fontSize:"11px",fontWeight:"700"},title:`ÚLTIMA POSICIÓN · ${last?.fecha||source[0]?.fecha||""}`,icon:markerIcon("#111827",11),zIndex:450}));
@@ -413,7 +457,7 @@ function cycleCard(c,o,analysis,index,total,schemaReady=true){
     ${warning}
     <div class="hours-grid">${rows}</div>
     <button type="button" class="use-all" data-use-all>USAR TODAS LAS SUGERENCIAS GPS</button>
-    <div class="state-grid compact-state"><label>ESTADO${estadoSelect(c,p.ESTADO||"")}</label><label>MONITOREO<input data-field="monitoreo" value="${c.esc(p.MONITOREO||"")}"></label><label>OBSERVACIÓN<textarea data-field="observacion">${c.esc(p.OBSERVACION||"")}</textarea></label></div>
+    ${(()=>{const monitSug=String(a?.monitoreo_sugerido||analysis?.monitoreo_sugerido||a?.ultima_geocerca||analysis?.ultima_geocerca||"").trim();const monitVal=String(p.MONITOREO||"").trim()||monitSug;const sugNote=monitSug&&!String(p.MONITOREO||"").trim()?`<small class="monit-sug">Sugerido por GPS (punto F): ${c.esc(monitSug)}</small>`:monitSug&&String(p.MONITOREO||"").trim()&&String(p.MONITOREO).trim()!==monitSug?`<small class="monit-sug">GPS sugiere: ${c.esc(monitSug)}</small>`:"";return`<div class="state-grid compact-state"><label>ESTADO${estadoSelect(c,p.ESTADO||"")}</label><label>MONITOREO<input data-field="monitoreo" value="${c.esc(monitVal)}">${sugNote}</label><label>OBSERVACIÓN<textarea data-field="observacion">${c.esc(p.OBSERVACION||"")}</textarea></label></div>`})()}
     <div class="cv-actions"><button type="button" data-save>GUARDAR AVANCE</button><button type="button" data-close ${o.preparado_cierre||!schemaReady?"disabled":""}>${o.preparado_cierre?"CIERRE PREPARADO":!schemaReady?"BASE PENDIENTE":"CERRAR OC"}</button></div>
   </article>`;
 }

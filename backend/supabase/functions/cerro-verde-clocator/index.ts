@@ -940,9 +940,10 @@ function analyze(points: Pt[], fences: Fence[], eventFences: Fence[]) {
   const pernoctes = dedupePernoctes([...plantPernoctes(ordered, fences), ...spatialPernoctes(ordered, fences), ...revisitPernoctes(ordered, fences)]);
   const stops = [...pernoctes, ...pauses].map((x) => ({ ...x, id: stopId(x) })).sort((a, b) => timeValue(a.inicio) - timeValue(b.inicio));
   const last = ordered.at(-1), lastFence = last ? zoneAt(last, fences) : null;
+  const first = ordered[0] || null;
   return {
     puntos_evaluados: ordered.length,
-    reglas: { pausa_activa: ">5 y <20 min · >=3 puntos · radio 110 m · gap <=5 min · fuera de áreas operativas", pernocte: ">4 h y cambio de fecha · validación humana obligatoria", raciemsa: ">=20 min", san_jose_smcv: "cruce geométrico observado, sin permanencia mínima" },
+    reglas: { pausa_activa: ">5 y <20 min · >=3 puntos · radio 110 m · gap <=5 min · fuera de áreas operativas", pernocte: ">4 h y cambio de fecha · validación humana obligatoria", raciemsa: ">=20 min", san_jose_smcv: "cruce geométrico observado, sin permanencia mínima", geocercas_todas: "última posición usa todas las geocercas publicadas (incluye corredor SMCV)" },
     eventos_geocerca: geo.events,
     visitas_confirmadas: geo.visits,
     visitas_no_confirmadas: geo.unconfirmed,
@@ -950,6 +951,11 @@ function analyze(points: Pt[], fences: Fence[], eventFences: Fence[]) {
     resumen_paradas: { pernoctes: pernoctes.length, pausas_activas: pauses.length },
     estado_final: lastFence ? "EN GEOCERCA" : "TRÁNSITO",
     ultima_geocerca: lastFence?.name || "",
+    ultima_geocerca_rol: lastFence?.role || "",
+    // Sugerido para campo MONITOREO: nombre de geocerca si el punto F está dentro de una.
+    monitoreo_sugerido: lastFence?.name || "",
+    punto_inicio: first ? { lat: first.lat, lng: first.lng, fecha: first.fecha || "" } : null,
+    punto_fin: last ? { lat: last.lat, lng: last.lng, fecha: last.fecha || "", geocerca: lastFence?.name || "", rol: lastFence?.role || "" } : null,
   };
 }
 
@@ -1048,14 +1054,14 @@ Deno.serve(async (req: Request) => {
     const { db, user } = await secure(req), cartography = await publishedCartography(db), fences = cartography.fences, eventFences = cartography.eventFences;
     const body = await req.json().catch(() => ({}));
     if (body.action === "map_config") {
-      const out = { ok: true, geocercas: fences, cartografia: cartography.info, google_maps_api_key: Deno.env.get("GOOGLE_MAPS_API_KEY") || "", analisis_version: "CV_DESKTOP_RULES_20260913_1" };
+      const out = { ok: true, geocercas: fences, cartografia: cartography.info, google_maps_api_key: Deno.env.get("GOOGLE_MAPS_API_KEY") || "", analisis_version: "CV_DESKTOP_RULES_20261009_1" };
       await registrarEgress(db, user, "CLOCATOR_MAPA", out); return reply(req, out);
     }
     if (body.action === "reanalyze") {
       const raw = Array.isArray(body.puntos_gps) ? body.puntos_gps : [];
       const points: Pt[] = raw.map((p: any) => ({ lat: Number(p?.lat), lng: Number(p?.lng), fecha: p?.fecha || null }))
         .filter((p: Pt) => Number.isFinite(p.lat) && Number.isFinite(p.lng));
-      const out = { ok: true, analisis_version: "CV_DESKTOP_RULES_20260913_1", analisis: analyze(points, fences, eventFences), cartografia: cartography.info };
+      const out = { ok: true, analisis_version: "CV_DESKTOP_RULES_20261009_1", analisis: analyze(points, fences, eventFences), cartografia: cartography.info };
       await registrarEgress(db, user, "CLOCATOR_REANALISIS", out); return reply(req, out);
     }
     if (body.action === "health") {
@@ -1073,7 +1079,7 @@ Deno.serve(async (req: Request) => {
     if (!from) throw new Error("Falta una fecha de inicio válida para el recorrido");
     const includeMap = body.include_map !== false, result: any = await recorrido(plate, tracto, from, to, fences, eventFences);
     if (!includeMap) delete result.geocercas;
-    const out = { ok: true, modo: includeMap ? "ANALISIS_OPERATIVO_CERRO_VERDE" : "PRECARGA_ANALIZADA", analisis_version: "CV_DESKTOP_RULES_20260913_1", placa: plate, tracto, desde: from, hasta: to, ...result, cartografia: cartography.info, ...(includeMap ? { google_maps_api_key: Deno.env.get("GOOGLE_MAPS_API_KEY") || "" } : {}), nota: "GPS temporal en navegador; análisis operativo ejecutado en servidor." };
+    const out = { ok: true, modo: includeMap ? "ANALISIS_OPERATIVO_CERRO_VERDE" : "PRECARGA_ANALIZADA", analisis_version: "CV_DESKTOP_RULES_20261009_1", placa: plate, tracto, desde: from, hasta: to, ...result, cartografia: cartography.info, ...(includeMap ? { google_maps_api_key: Deno.env.get("GOOGLE_MAPS_API_KEY") || "" } : {}), nota: "GPS temporal en navegador; análisis operativo ejecutado en servidor." };
     await registrarEgress(db, user, includeMap ? "CLOCATOR_MAPA_GPS" : "CLOCATOR_PRECARGA_GPS", out); return reply(req, out);
   } catch (e) {
     console.error(e);

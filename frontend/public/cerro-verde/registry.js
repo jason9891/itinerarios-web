@@ -4,7 +4,7 @@
  * Independiente de Cemento. Agregar un módulo aquí no afecta a Cemento.
  * ?v= en imports: fuerza recarga tras deploys (Hosting cachea JS 1h).
  */
-const V = "cv21hist";
+const V = "cv22geo";
 
 export const modules = {
   home:        () => import(`./modules/home.js?v=${V}`),
