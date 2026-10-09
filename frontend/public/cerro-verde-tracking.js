@@ -1279,25 +1279,42 @@ function paradasV3(c){return async()=>{
 
 
 function reportV3(c){return async()=>{
-  const [s,d]=await Promise.all([c.post(c.END.report,{action:"estado"}),c.post(c.END.report,{action:"convoy_datos"})]),rows=d.convoy||[],tractos=d.tractos||[],carretas=d.carretas||[],conductores=d.conductores||[];
-  const byTract=new Map,byPlate=new Map,byTrailer=new Map,byTrailerPlate=new Map,byDriver=new Map,byLicense=new Map;
-  for(const m of tractos){byTract.set(norm(m.codigo_sap),m);byPlate.set(norm(m.placa),m)}
-  for(const m of carretas){byTrailer.set(norm(m.codigo_sap),m);byTrailerPlate.set(norm(m.placa),m)}
-  for(const m of conductores){byDriver.set(String(m.conductor||"").trim().toUpperCase(),m);byLicense.set(norm(m.licencia),m)}
-  const findTract=v=>byTract.get(norm(v))||byPlate.get(norm(v)),findTrailer=v=>byTrailer.get(norm(v))||byTrailerPlate.get(norm(v)),findDriver=v=>byDriver.get(String(v||"").trim().toUpperCase())||byLicense.get(norm(v));
-  const timeInput=v=>{if(!v)return"";const x=new Date(v);if(Number.isNaN(x.getTime()))return"";const z=n=>String(n).padStart(2,"0");return`${x.getUTCFullYear()}-${z(x.getUTCMonth()+1)}-${z(x.getUTCDate())}T${z(x.getUTCHours())}:${z(x.getUTCMinutes())}`};
-  const rowHtml=(i,r)=>`<tr data-convoy-row="${i+1}"><td style="text-align:center;font-weight:900">${i+1}</td><td><input data-cv="conductor" list="cv-report-conductores" value="${c.esc(r.conductor||"")}" placeholder="conductor o licencia"></td><td><input data-cv="tracto" list="cv-report-tractos" value="${c.esc(r.codigo_tracto||"")}" placeholder="código o placa"></td><td><input data-cv="carreta" list="cv-report-carretas" value="${c.esc(r.codigo_carreta||"")}" placeholder="código o placa"></td>${[1,2,3,4].map(n=>`<td><input type="datetime-local" data-cv="hito_${n}" value="${c.esc(timeInput(r[`hito_${n}`]))}"></td>`).join("")}<td><input data-cv="estado" value="${c.esc(r.estado||"")}"></td><td><input data-cv="monitoreo" value="${c.esc(r.monitoreo||"")}"></td><td><input data-cv="observacion" value="${c.esc(r.observacion||"")}"></td></tr>`;
-  c.$("content").innerHTML=`<p class="eyebrow">CERRO VERDE · REPORTE OPERATIVO</p><h1>Crear reporte</h1><p>El reporte se construye desde el GRUPO_SMCV activo. El CONVOY es información exclusiva del ENVIABLE y no interviene en SEGUIMIENTO.</p><section class="notice ${s.habilitado?"report-ready":"report-blocked"}"><b>${s.habilitado?"LISTO PARA DESCARGAR":"BLOQUEADO"}</b> · ${c.esc(s.mensaje||"")}</section><section class="cv-home-grid report-summary"><article class="panel"><small>UNIDADES</small><h2>${s.unidades_reporte}</h2><p>Una fila por placa activa.</p></article><article class="panel"><small>CAL VACÍO</small><h2>${s.cal_vacio}</h2></article><article class="panel"><small>CAL CARGADO</small><h2>${s.cal_cargado}</h2><p>PROCESO DE DESCARGUIO siempre se clasifica aquí.</p></article><article class="panel"><small>CONVOY</small><h2>${rows.filter(x=>x.codigo_tracto).length}/10</h2><p>Registro manual exclusivo del enviable.</p></article></section><section class="panel"><div class="panel-title"><div><h2>CONVOY / UNIDADES SIN DESPACHO</h2><p class="muted">Conductor, tracto y carreta sólo pueden seleccionarse desde los Maestros. Las 10 posiciones no modifican DIARIO/HISTÓRICO.</p></div><button id="cv-convoy-save">GUARDAR CONVOY</button></div><datalist id="cv-report-tractos">${tractos.map(m=>`<option value="${c.esc(m.codigo_sap)}">${c.esc(m.placa)}</option>`).join("")}</datalist><datalist id="cv-report-carretas">${carretas.map(m=>`<option value="${c.esc(m.codigo_sap)}">${c.esc(m.placa)}</option>`).join("")}</datalist><datalist id="cv-report-conductores">${conductores.map(m=>`<option value="${c.esc(m.conductor)}">${c.esc(m.licencia)}</option>`).join("")}</datalist><div style="overflow:auto;margin-top:10px"><table style="width:100%;min-width:1580px;border-collapse:separate;border-spacing:5px"><thead><tr><th>#</th><th>CONDUCTOR</th><th>TRACTO</th><th>CARRETA</th><th>HITO 1</th><th>HITO 2</th><th>HITO 3</th><th>HITO 4</th><th>ESTADO</th><th>MONITOREO</th><th>OBSERVACIÓN</th></tr></thead><tbody>${Array.from({length:10},(_,i)=>rowHtml(i,rows.find(x=>Number(x.posicion)===i+1)||{})).join("")}</tbody></table></div><p id="cv-convoy-msg" class="muted"></p></section><section class="panel"><div class="panel-title"><div><h2>REPORTE DIARIO CERRO VERDE</h2><p class="muted">Orden del ENVIABLE: CAL VACÍO → CONVOY (10 posiciones) → CAL CARGADO.</p></div><button id="cv-report-download" ${s.habilitado?"":"disabled"}>DESCARGAR EXCEL</button></div></section>`;
-  document.querySelectorAll("[data-convoy-row]").forEach(tr=>{
-    const ti=tr.querySelector('[data-cv="tracto"]'),ci=tr.querySelector('[data-cv="carreta"]'),di=tr.querySelector('[data-cv="conductor"]');
-    ti.onchange=()=>{const m=findTract(ti.value);if(m)ti.value=m.codigo_sap};
-    ci.onchange=()=>{if(!ci.value.trim())return;const m=findTrailer(ci.value);if(m)ci.value=m.codigo_sap};
-    di.onchange=()=>{if(!di.value.trim())return;const m=findDriver(di.value);if(m)di.value=m.conductor};
-  });
-  c.$("cv-convoy-save").onclick=async()=>{const b=c.$("cv-convoy-save"),msg=c.$("cv-convoy-msg"),filas=[];for(const tr of document.querySelectorAll("[data-convoy-row]")){const q=k=>tr.querySelector(`[data-cv="${k}"]`),tract=findTract(q("tracto").value),driver=findDriver(q("conductor").value),trailer=q("carreta").value.trim()?findTrailer(q("carreta").value):null,pos=Number(tr.dataset.convoyRow);if(q("tracto").value.trim()&&!tract)return notice("CONVOY",`Posición ${pos}: el tracto no existe en Maestro.`);if(q("conductor").value.trim()&&!driver)return notice("CONVOY",`Posición ${pos}: el conductor no existe en Maestro.`);if(q("carreta").value.trim()&&!trailer)return notice("CONVOY",`Posición ${pos}: la carreta no existe en Maestro.`);filas.push({posicion:pos,codigo_tracto:tract?.codigo_sap||"",conductor:driver?.conductor||"",codigo_carreta:trailer?.codigo_sap||"",hito_1:q("hito_1").value,hito_2:q("hito_2").value,hito_3:q("hito_3").value,hito_4:q("hito_4").value,estado:q("estado").value.trim(),monitoreo:q("monitoreo").value.trim(),observacion:q("observacion").value.trim()})}b.disabled=true;msg.textContent="Guardando…";try{const out=await c.post(c.END.report,{action:"convoy_guardar",filas});msg.textContent=out.mensaje||"Convoy guardado."}catch(e){msg.textContent=e.message||String(e)}finally{b.disabled=false}};
-  const b=c.$("cv-report-download");if(b&&!b.disabled)b.onclick=async()=>{b.disabled=true;b.textContent="GENERANDO…";try{const x=await c.post(c.END.report,{action:"excel"},true),a=document.createElement("a");a.href=URL.createObjectURL(x.blob);a.download=x.name||"REPORTE_DIARIO_CERRO_VERDE.xlsx";document.body.append(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000)}catch(e){await notice("NO SE PUDO GENERAR",e.message||String(e))}finally{if(b.isConnected){b.disabled=false;b.textContent="DESCARGAR EXCEL"}}};
+  // CONVOY ya no se edita en la web: solo se completa en el Excel generado.
+  const s=await c.post(c.END.report,{action:"estado"});
+  c.$("content").innerHTML=`<p class="eyebrow">CERRO VERDE · REPORTE OPERATIVO</p>
+    <h1>Crear reporte</h1>
+    <p>El reporte se construye desde el <b>GRUPO_SMCV</b> activo (CAL VACÍO / CAL CARGADO). Las filas de <b>CONVOY</b> se completan únicamente en el Excel generado, no desde esta aplicación.</p>
+    <section class="notice ${s.habilitado?"report-ready":"report-blocked"}"><b>${s.habilitado?"LISTO PARA DESCARGAR":"BLOQUEADO"}</b> · ${c.esc(s.mensaje||"")}</section>
+    <section class="cv-home-grid report-summary">
+      <article class="panel"><small>UNIDADES</small><h2>${s.unidades_reporte}</h2><p>Una fila por placa activa.</p></article>
+      <article class="panel"><small>CAL VACÍO</small><h2>${s.cal_vacio}</h2></article>
+      <article class="panel"><small>CAL CARGADO</small><h2>${s.cal_cargado}</h2><p>PROCESO DE DESCARGUIO siempre se clasifica aquí.</p></article>
+    </section>
+    <section class="panel">
+      <div class="panel-title">
+        <div>
+          <h2>REPORTE DIARIO CERRO VERDE</h2>
+          <p class="muted">Orden del ENVIABLE: CAL VACÍO → CONVOY (completar en Excel) → CAL CARGADO. Use la previsualización editable abajo si necesita corregir sección o hitos antes de descargar.</p>
+        </div>
+        <button id="cv-report-download" ${s.habilitado?"":"disabled"}>DESCARGAR EXCEL</button>
+      </div>
+    </section>`;
+  c.$("cv-report-download").onclick=async()=>{
+    const b=c.$("cv-report-download");
+    if(b.disabled)return;
+    b.disabled=true;b.textContent="GENERANDO…";
+    try{
+      const x=await c.post(c.END.report,{action:"excel"},true);
+      if(!x?.blob||x.blob.size<64)throw Error("Excel vacío o inválido");
+      const a=document.createElement("a");
+      a.href=URL.createObjectURL(x.blob);
+      a.download=x.name||"REPORTE_DIARIO_CERRO_VERDE.xlsx";
+      document.body.append(a);a.click();a.remove();
+      setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+    }catch(e){await notice("NO SE PUDO DESCARGAR",e.message||String(e))}
+    finally{if(b.isConnected){b.disabled=!s.habilitado;b.textContent="DESCARGAR EXCEL"}}
+  };
 }}
-
 
 function histClosedCard(c,o,pos,total){
   const p=o.payload||{};

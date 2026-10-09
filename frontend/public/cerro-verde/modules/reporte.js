@@ -1,14 +1,14 @@
 /**
  * Módulo CERRO VERDE · crear reporte / ENVIABLE de seguimiento
  *
- * - reportV3: estado, convoy, descarga
+ * - reportV3: estado y descarga (convoy solo en Excel)
  * - Previsualización editable CAL VACÍO / CAL CARGADO antes del Excel
  *   (corregir sección vacío→cargado, estado, hitos, llegada SMCV, etc.)
  */
 import { esc, apiGet, apiPost, bufferToBase64 } from "../api-client.js";
 import { API } from "../registry.js";
 import { auth } from "../../shared/auth.js";
-import { reportV3 } from "../../cerro-verde-tracking.js?v=cv-report-02";
+import { reportV3 } from "../../cerro-verde-tracking.js?v=cv-noconvoy-01";
 
 let cleanup = [];
 
@@ -174,7 +174,7 @@ async function mountPreview(host) {
     box.innerHTML = `
       <section class="notice" style="margin-top:14px">
         <b>Previsualización ENVIABLE (seguimiento)</b> —
-        Orden del Excel: <b>CAL VACÍO → CONVOY → CAL CARGADO</b>.
+        Orden del Excel: <b>CAL VACÍO → CONVOY (en Excel) → CAL CARGADO</b>. El convoy no se edita en la web.
         Si una unidad está en vacío pero ya salió de Caracoto / va cargada, cámbiela a
         <b>CAL CARGADO</b>, complete hitos (p. ej. ingreso SMCV) y estado.
         Filas en rojo = posible mala clasificación.
