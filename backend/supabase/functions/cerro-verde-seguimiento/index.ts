@@ -603,6 +603,51 @@ Deno.serve(async (req) => {
       return reply(req, { ok: true, placa: plate, retirado_del_reporte: true, motivo: reason, cierres_preparados: prepared });
     }
 
+    if (action === "reabrir_despacho") {
+      // Deshace CIERRE PREPARADO de la sesión web para poder editar el ciclo en seguimiento.
+      const id = Number(b.id);
+      if (!Number.isInteger(id) || id <= 0) throw Error("ID de despacho inválido");
+      const { data: row, error } = await db.from("seguimiento_staging")
+        .select("id,orden_carga,payload")
+        .eq("id", id).eq("itinerario", IT).eq("origen", "DIARIO").maybeSingle();
+      if (error) throw error;
+      if (!row) throw Error("El despacho no está en DIARIO (solo se reabren cierres preparados de la sesión actual)");
+      const { data: prev, error: pe } = await db.from("seguimiento_sesion_web")
+        .select("cambios,accion,revisada")
+        .eq("itinerario", IT).eq("usuario", email).eq("seguimiento_id", id).maybeSingle();
+      if (pe) throw pe;
+      if (!prev || prev.accion !== "CERRAR") {
+        throw Error("Este despacho no tiene un cierre preparado en su sesión");
+      }
+      const { error: ue } = await db.from("seguimiento_sesion_web").upsert({
+        itinerario: IT,
+        usuario: email,
+        seguimiento_id: id,
+        orden_carga: row.orden_carga,
+        cambios: prev.cambios || {},
+        accion: "GUARDAR",
+        revisada: false,
+        actualizado_en: new Date().toISOString(),
+      }, { onConflict: "itinerario,usuario,seguimiento_id" });
+      if (ue) throw ue;
+      // Si la placa quedó revisada por auto-cierre, quitar marca de revisión
+      const plate = plateOf(row.payload);
+      if (plate) {
+        const { error: de } = await db.from("cerro_verde_revision_unidades")
+          .delete()
+          .eq("usuario", email)
+          .eq("placa", plate);
+        if (de && de.code !== "42P01") throw de;
+      }
+      return reply(req, {
+        ok: true,
+        id,
+        orden_carga: row.orden_carga,
+        accion: "REABIERTO",
+        mensaje: "Cierre preparado anulado. El despacho vuelve a ser editable.",
+      });
+    }
+
     if (action === "consolidar") {
       const { data, error } = await db.rpc("cerro_verde_consolidar_seguimiento_v3", { p_usuario: email });
       if (error) throw error;

@@ -18,7 +18,7 @@ import {
   nplate,
 } from "../precarga-engine.js";
 import { readLegacyGPS, putLegacyGPS } from "../gps-cache.js";
-import { tracking } from "../../cerro-verde-tracking.js?v=cv-fullscreen-01";
+import { tracking } from "../../cerro-verde-tracking.js?v=cv-reopen-01";
 
 const MIN_ROUTES_TO_OPEN = 5;
 const PRECARGA_DONE = new Set([
@@ -243,13 +243,30 @@ async function bootstrap(container, runtime) {
 
   await waitForMinRoutes(container, units, runtime);
 
-  // UI clásico: mapa + despachos + pernoctes
+  // Pantalla intermedia: evita sensación de "congelado" mientras monta mapa + tarjetas
   document.body.classList.add("tracking-active");
+  container.innerHTML = `<section class="sg-boot" style="min-height:calc(100vh - 80px);display:flex;align-items:center;justify-content:center;padding:32px 16px;box-sizing:border-box;background:#0b1522;color:#e2e8f0">
+    <div style="max-width:440px;text-align:center">
+      <div style="width:42px;height:42px;margin:0 auto 16px;border-radius:50%;border:3px solid #1e3a5f;border-top-color:#38bdf8;animation:sgspin 0.8s linear infinite"></div>
+      <h2 style="margin:0 0 8px;font-size:18px;color:#7dd3fc">Abriendo seguimiento</h2>
+      <p style="margin:0;font-size:13px;line-height:1.5;color:#94a3b8">Cargando mapa, despachos y caché GPS local. Esto puede tardar unos segundos; no es un error.</p>
+      <p id="sg-open-step" style="margin:14px 0 0;font-size:12px;font-weight:700;color:#38bdf8">Preparando interfaz…</p>
+    </div>
+    <style>@keyframes sgspin{to{transform:rotate(360deg)}}</style>
+  </section>`;
+
   classicUnmount = () => {
     document.body.classList.remove("tracking-active");
   };
 
+  // cede un frame para pintar el spinner antes del trabajo pesado
+  await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
+  const step = container.querySelector("#sg-open-step");
+  if (step) step.textContent = "Consultando lista de unidades…";
+  await new Promise((r) => setTimeout(r, 30));
+
   const ctx = buildTrackingContext(runtime);
   const runTracking = tracking(ctx);
+  if (step) step.textContent = "Montando mapa y columnas…";
   await runTracking();
 }

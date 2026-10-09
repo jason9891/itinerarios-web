@@ -20,6 +20,46 @@ import {
 } from "../api-client.js";
 import { loadSapFile, saveSapFile } from "../sap-store.js";
 
+/** Confirmación local (no window.confirm): no bloquea el hilo del navegador de forma opaca. */
+function cvLocalConfirm({ title, message, confirmLabel = "CONTINUAR", cancelLabel = "CANCELAR" }) {
+  return new Promise((resolve) => {
+    const host = document.createElement("div");
+    host.className = "cv-modal-root";
+    host.innerHTML = `
+      <div class="cv-modal-backdrop" data-cancel></div>
+      <div class="cv-modal-card" role="dialog" aria-modal="true">
+        <h3>${title || "Confirmar"}</h3>
+        <p>${message || ""}</p>
+        <div class="cv-modal-actions">
+          <button type="button" class="cv-modal-cancel" data-cancel>${cancelLabel}</button>
+          <button type="button" class="cv-modal-ok" data-ok>${confirmLabel}</button>
+        </div>
+      </div>`;
+    const style = document.createElement("style");
+    style.textContent = `
+      .cv-modal-root{position:fixed;inset:0;z-index:9999;display:grid;place-items:center;padding:16px}
+      .cv-modal-backdrop{position:absolute;inset:0;background:rgba(2,8,16,.72);backdrop-filter:blur(2px)}
+      .cv-modal-card{position:relative;z-index:1;width:min(440px,100%);background:#0c1a2a;border:1px solid #1e3a5f;border-radius:14px;padding:18px 18px 14px;box-shadow:0 24px 60px rgba(0,0,0,.45);color:#e2e8f0}
+      .cv-modal-card h3{margin:0 0 8px;font-size:16px;color:#7dd3fc;letter-spacing:.03em}
+      .cv-modal-card p{margin:0 0 16px;font-size:13px;line-height:1.5;color:#cbd5e1}
+      .cv-modal-actions{display:flex;gap:10px;justify-content:flex-end;flex-wrap:wrap}
+      .cv-modal-cancel,.cv-modal-ok{border-radius:10px;padding:10px 16px;font-weight:800;font-size:12px;cursor:pointer;border:1px solid transparent}
+      .cv-modal-cancel{background:#12263a;border-color:#334155;color:#e2e8f0}
+      .cv-modal-ok{background:linear-gradient(135deg,#0ea5e9,#2563eb);border-color:#1d4ed8;color:#fff}
+    `;
+    document.head.appendChild(style);
+    document.body.appendChild(host);
+    const done = (v) => {
+      try { host.remove(); style.remove(); } catch (_) {}
+      resolve(v);
+    };
+    host.querySelectorAll("[data-cancel]").forEach((el) => el.addEventListener("click", () => done(false)));
+    host.querySelector("[data-ok]")?.addEventListener("click", () => done(true));
+    host.querySelector("[data-ok]")?.focus();
+  });
+}
+
+
 let cleanup = [];
 /** @type {{ nombre:string, tamano:number, contenido:ArrayBuffer, guardado:string } | null} */
 let current = null;
@@ -335,7 +375,7 @@ async function render(container, runtime) {
         <button type="button" id="cv-sap-validate" class="primary" style="min-width:160px;padding:12px 18px" disabled>
           VALIDAR ARCHIVO
         </button>
-        <button type="button" id="cv-sap-apply" class="secondary" style="min-width:160px;padding:12px 18px" disabled>
+        <button type="button" id="cv-sap-apply" class="primary" style="min-width:160px;padding:12px 18px" disabled>
           APLICAR CAMBIOS
         </button>
       </div>
@@ -528,13 +568,14 @@ async function render(container, runtime) {
 
   const onApply = async () => {
     if (!current || !validated) return;
-    if (
-      !window.confirm(
+    const ok = await cvLocalConfirm({
+      title: "APLICAR CAMBIOS SAP",
+      message:
         "Se aplicarán las entregas nuevas validadas y los ciclos faltantes de SAP histórico. ¿Continuar?",
-      )
-    ) {
-      return;
-    }
+      confirmLabel: "APLICAR",
+      cancelLabel: "CANCELAR",
+    });
+    if (!ok) return;
     btnApply.disabled = true;
     btnValidate.disabled = true;
     btnApply.textContent = "APLICANDO…";
