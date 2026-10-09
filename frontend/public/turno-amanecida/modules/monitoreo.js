@@ -13,7 +13,7 @@ import { API } from "../registry.js";
 import { queryClocator, clocatorEndpoint } from "../../shared/clocator-client.js";
 import { auth } from "../../shared/auth.js";
 import { startPrecarga, loadMeta, currentRunId, getProgress, cacheIsFresh, tickPrecargaSiToca, TICK_MS } from "../precarga-engine.js";
-import { readGPS, gpsKey } from "../gps-cache.js";
+import { readGPS, gpsKey, cacheGPS } from "../gps-cache.js";
 
 const POLL_MS = 60 * 1000; // snapshot posiciones cada 1 min
 const STORAGE_KEY = "tn_clasificaciones_v1";
@@ -488,35 +488,67 @@ function clearRouteLayers() {
   routeLayers = [];
 }
 
-/** Recorrido sin fitBounds ni pan (no redimensiona el mapa). */
+/** Recorrido 16:00→último punto: azul ≤22h, rojo >22h. Sin fitBounds. */
 function drawSplitRoute(azul, rojo) {
   if (!map || !window.google?.maps) return;
   clearRouteLayers();
-  if (azul.length >= 2) {
+  // Unir en el corte para que no quede hueco visual
+  let pathAzul = azul.map((p) => ({ lat: p.lat, lng: p.lng }));
+  let pathRojo = rojo.map((p) => ({ lat: p.lat, lng: p.lng }));
+  if (pathAzul.length && pathRojo.length) {
+    pathRojo = [pathAzul[pathAzul.length - 1], ...pathRojo];
+  }
+  if (pathAzul.length >= 2) {
     routeLayers.push(
       new google.maps.Polyline({
-        path: azul.map((p) => ({ lat: p.lat, lng: p.lng })),
+        path: pathAzul,
         geodesic: true,
         strokeColor: "#2563EB",
-        strokeOpacity: 0.9,
-        strokeWeight: 4,
+        strokeOpacity: 0.95,
+        strokeWeight: 5,
         map,
         zIndex: 200,
       }),
     );
   }
-  if (rojo.length >= 2) {
+  if (pathRojo.length >= 2) {
     routeLayers.push(
       new google.maps.Polyline({
-        path: rojo.map((p) => ({ lat: p.lat, lng: p.lng })),
+        path: pathRojo,
         geodesic: true,
         strokeColor: "#DC2626",
-        strokeOpacity: 0.9,
-        strokeWeight: 4,
+        strokeOpacity: 0.95,
+        strokeWeight: 5,
         map,
         zIndex: 210,
       }),
     );
+  }
+  // Fallback: si el split dejó tramos cortos pero hay ≥2 pts en total
+  if (routeLayers.length === 0) {
+    const all = [...pathAzul, ...pathRojo];
+    if (all.length >= 2) {
+      routeLayers.push(
+        new google.maps.Polyline({
+          path: all,
+          geodesic: true,
+          strokeColor: "#2563EB",
+          strokeOpacity: 0.9,
+          strokeWeight: 5,
+          map,
+          zIndex: 200,
+        }),
+      );
+    } else if (all.length === 1) {
+      routeLayers.push(
+        new google.maps.Marker({
+          position: all[0],
+          map,
+          icon: gMarkerIcon("#2563EB", 6),
+          zIndex: 220,
+        }),
+      );
+    }
   }
 }
 
@@ -799,30 +831,117 @@ export async function mount(container, runtime) {
     }
   }
 
+  async function fetchRecorridoLive(placa, tracto, fechaVal) {
+    const dia = parseFechaTurno(fechaVal);
+    const desdeDt = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate(), 16, 0, 0);
+    const limite = new Date(dia.getFullYear(), dia.getMonth(), dia.getDate() + 1, 4, 0, 0);
+    const ahora = new Date();
+    const hastaDt = ahora > limite ? limite : ahora;
+    const user = auth.currentUser;
+    if (!user) throw new Error("Sin sesión");
+    const token = await user.getIdToken(false);
+    const data = await queryClocator({
+      endpoint: clocatorEndpoint("cemento"),
+      token,
+      placa: placa || tracto,
+      tracto,
+      desde: formatPE(desdeDt),
+      hasta: formatPE(hastaDt),
+      includeMap: false,
+      timeoutMs: 55000,
+    });
+    return data.puntos_gps || data.puntos || [];
+  }
+
   async function mostrarRecorridoUnidad(u) {
-    if (!u || routeLoading) return;
+    if (!u) return;
+    // Permitir re-click: cancelar bloqueo si quedó colgado
+    if (routeLoading) {
+      routeLoading = false;
+    }
     routeLoading = true;
+    if (msgEl) msgEl.textContent = "Cargando recorrido 16:00→ahora…";
     try {
       const fechaVal = container.querySelector("#tn-fecha")?.value || fechaTurnoDefault();
       const placaU = String(u.placa || "").trim().toUpperCase();
       const tractoU = String(u.codigo || "").trim().toUpperCase();
       let pts = [];
-      const rid = currentRunId() || loadMeta()?.id;
-      if (rid) {
-        const cached = await readGPS(gpsKey(rid, tractoU, placaU));
-        if (cached?.puntos_gps?.length) pts = cached.puntos_gps;
+      let fuente = "caché";
+
+      // 1) Caché: probar varias claves (runId actual, meta, fecha fija)
+      const meta = loadMeta();
+      const ids = [
+        currentRunId(),
+        meta?.id,
+        meta?.fecha ? `tn_${meta.fecha}` : null,
+        fechaVal ? `tn_${String(fechaVal).slice(0, 10)}` : null,
+      ].filter(Boolean);
+      const keyPairs = [
+        [tractoU, placaU],
+        [tractoU, ""],
+        ["", placaU],
+        [tractoU, tractoU],
+      ];
+      for (const rid of ids) {
+        if (pts.length) break;
+        for (const [c, pl] of keyPairs) {
+          try {
+            const cached = await readGPS(gpsKey(rid, c, pl));
+            if (cached?.puntos_gps?.length) {
+              pts = cached.puntos_gps;
+              fuente = "caché";
+              break;
+            }
+          } catch {
+            /* ignore */
+          }
+        }
       }
+
+      // 2) Live Comsatel: 16:00 del día del turno → último punto (ahora / tope 04:00)
+      if (!pts.length) {
+        fuente = "live";
+        if (msgEl) msgEl.textContent = "Consultando Comsatel 16:00→ahora…";
+        pts = await fetchRecorridoLive(placaU, tractoU, fechaVal);
+        // Guardar en caché para siguientes clicks
+        const rid = currentRunId() || loadMeta()?.id || `tn_${String(fechaVal).slice(0, 10)}`;
+        try {
+          await cacheGPS(
+            {
+              placa: placaU,
+              tracto: tractoU,
+              puntos_gps: pts,
+              ok: true,
+              desde: "16:00",
+              hasta: formatPE(new Date()),
+            },
+            gpsKey(rid, tractoU, placaU),
+          );
+        } catch {
+          /* ignore */
+        }
+      }
+
       if (!pts.length) {
         clearRouteLayers();
+        if (msgEl) msgEl.textContent = "Sin puntos GPS 16:00→ahora para esta unidad";
         return;
       }
+
       const { azul, rojo } = partirRecorrido(pts, fechaVal);
       drawSplitRoute(azul, rojo);
       const ev = evaluarHaloNocturno(pts, fechaVal);
       u.movimiento_nocturno_m = ev.metros;
       u.halo_nocturno = ev.halo;
+      if (msgEl) {
+        msgEl.textContent = `Recorrido (${fuente}): ${pts.length} pts · azul ${azul.length} · rojo ${rojo.length} · halo ${ev.halo || "—"}`;
+      }
+      // Refrescar halo del marcador sin mover el mapa
+      syncMarkers();
     } catch (err) {
       console.warn("[TN] recorrido", err);
+      if (msgEl) msgEl.textContent = `Recorrido: ${err.message || err}`;
+      clearRouteLayers();
     } finally {
       routeLoading = false;
     }
