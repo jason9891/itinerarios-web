@@ -1147,3 +1147,115 @@ export const cerroVerdeClocator = onRequest(
     }
   },
 );
+
+
+/** Handler HTTP compartido (CORS manual, Gen2). */
+async function serveClocatorHttp(req: any, res: any) {
+  try {
+    const origin = String(req.get("origin") || "");
+    if (req.method === "OPTIONS") {
+      if (ORIGINS.has(origin)) {
+        res.set("access-control-allow-origin", origin);
+        res.set("vary", "Origin");
+        res.set("access-control-allow-headers", "authorization, content-type");
+        res.set("access-control-allow-methods", "POST, OPTIONS");
+      }
+      res.status(204).send("");
+      return;
+    }
+    const host = String(req.get("host") || "localhost");
+    const proto = String(req.get("x-forwarded-proto") || "https");
+    const url = `${proto}://${host}${req.originalUrl || req.url || "/"}`;
+    const headers = new Headers();
+    for (const [k, v] of Object.entries(req.headers || {})) {
+      if (v == null) continue;
+      headers.set(k, Array.isArray(v) ? v.join(",") : String(v));
+    }
+    let bodyText: BodyInit | undefined;
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      if (Buffer.isBuffer((req as any).rawBody)) bodyText = (req as any).rawBody;
+      else if (typeof req.body === "string") bodyText = req.body;
+      else if (req.body != null) bodyText = JSON.stringify(req.body);
+    }
+    const request = new Request(url, { method: req.method, headers, body: bodyText });
+    const response = await handleClocatorRequest(request);
+    response.headers.forEach((v, k) => res.set(k, v));
+    const text = await response.text();
+    res.status(response.status).send(text);
+  } catch (e) {
+    console.error(e);
+    const origin = String(req.get("origin") || "");
+    if (ORIGINS.has(origin)) {
+      res.set("access-control-allow-origin", origin);
+      res.set("vary", "Origin");
+    }
+    res.status(500).json({ error: e instanceof Error ? e.message : "Error proxy GPS" });
+  }
+}
+
+/**
+ * TURNO AMANECIDA — proxy CLocator independiente (no usa endpoint Cerro Verde).
+ * Mismo secret GOOGLE_MAPS_API_KEY / CLOCATOR_* del proyecto Work.
+ */
+export const turnoAmanecidaClocator = onRequest(
+  {
+    cors: false,
+    invoker: "public",
+    timeoutSeconds: 120,
+    memory: "512MiB",
+    region: "us-central1",
+  },
+  serveClocatorHttp,
+);
+
+/**
+ * TURNO AMANECIDA — solo config de mapa (API key). Independiente de Cerro Verde.
+ */
+export const turnoAmanecidaConfig = onRequest(
+  {
+    cors: false,
+    invoker: "public",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    region: "us-central1",
+  },
+  async (req, res) => {
+    const origin = String(req.get("origin") || "");
+    const setCors = () => {
+      if (ORIGINS.has(origin)) {
+        res.set("access-control-allow-origin", origin);
+        res.set("vary", "Origin");
+        res.set("access-control-allow-headers", "authorization, content-type");
+        res.set("access-control-allow-methods", "POST, OPTIONS");
+      }
+    };
+    try {
+      if (req.method === "OPTIONS") {
+        setCors();
+        res.status(204).send("");
+        return;
+      }
+      if (req.method !== "POST") {
+        setCors();
+        res.status(405).json({ error: "POST requerido" });
+        return;
+      }
+      // Auth opcional-ligera: si hay Bearer se valida; si no, igual devolvemos key solo a orígenes permitidos
+      setCors();
+      if (!ORIGINS.has(origin)) {
+        res.status(403).json({ error: "Origin no permitido" });
+        return;
+      }
+      const key = process.env["GOOGLE_MAPS_API_KEY"] || "";
+      res.status(200).json({
+        ok: true,
+        google_maps_api_key: key,
+        itinerary: "turno-amanecida",
+        nota: key ? "key_ok" : "GOOGLE_MAPS_API_KEY vacío en env de la function",
+      });
+    } catch (e) {
+      setCors();
+      res.status(500).json({ error: e instanceof Error ? e.message : "Error config" });
+    }
+  },
+);

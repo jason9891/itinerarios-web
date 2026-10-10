@@ -45820,6 +45820,8 @@ var require_set_cookie = __commonJS({
 var index_exports = {};
 __export(index_exports, {
   cerroVerdeClocator: () => cerroVerdeClocator,
+  turnoAmanecidaClocator: () => turnoAmanecidaClocator,
+  turnoAmanecidaConfig: () => turnoAmanecidaConfig,
   handleClocatorRequest: () => handleClocatorRequest
 });
 module.exports = __toCommonJS(index_exports);
@@ -64886,9 +64888,116 @@ var cerroVerdeClocator = (0, import_https.onRequest)(
     }
   }
 );
+
+async function serveClocatorHttpTN(req, res) {
+  try {
+    const origin = String(req.get("origin") || "");
+    if (req.method === "OPTIONS") {
+      if (ORIGINS.has(origin)) {
+        res.set("access-control-allow-origin", origin);
+        res.set("vary", "Origin");
+        res.set("access-control-allow-headers", "authorization, content-type");
+        res.set("access-control-allow-methods", "POST, OPTIONS");
+      }
+      res.status(204).send("");
+      return;
+    }
+    const host = String(req.get("host") || "localhost");
+    const proto = String(req.get("x-forwarded-proto") || "https");
+    const url = `${proto}://${host}${req.originalUrl || req.url || "/"}`;
+    const headers = new Headers();
+    for (const [k, v] of Object.entries(req.headers || {})) {
+      if (v == null) continue;
+      headers.set(k, Array.isArray(v) ? v.join(",") : String(v));
+    }
+    let bodyText;
+    if (req.method !== "GET" && req.method !== "HEAD") {
+      if (Buffer.isBuffer(req.rawBody)) bodyText = req.rawBody;
+      else if (typeof req.body === "string") bodyText = req.body;
+      else if (req.body != null) bodyText = JSON.stringify(req.body);
+    }
+    const request = new Request(url, { method: req.method, headers, body: bodyText });
+    const response = await handleClocatorRequest(request);
+    response.headers.forEach((v, k) => res.set(k, v));
+    const text3 = await response.text();
+    res.status(response.status).send(text3);
+  } catch (e) {
+    console.error(e);
+    const origin = String(req.get("origin") || "");
+    if (ORIGINS.has(origin)) {
+      res.set("access-control-allow-origin", origin);
+      res.set("vary", "Origin");
+    }
+    res.status(500).json({ error: e instanceof Error ? e.message : "Error proxy GPS TN" });
+  }
+}
+
+/** TURNO AMANECIDA — CLocator independiente */
+var turnoAmanecidaClocator = (0, import_https.onRequest)(
+  {
+    cors: false,
+    invoker: "public",
+    timeoutSeconds: 120,
+    memory: "512MiB",
+    region: "us-central1"
+  },
+  serveClocatorHttpTN
+);
+
+/** TURNO AMANECIDA — solo API key Maps (secret del proyecto Work) */
+var turnoAmanecidaConfig = (0, import_https.onRequest)(
+  {
+    cors: false,
+    invoker: "public",
+    timeoutSeconds: 30,
+    memory: "256MiB",
+    region: "us-central1"
+  },
+  async (req, res) => {
+    const origin = String(req.get("origin") || "");
+    const setCors = () => {
+      if (ORIGINS.has(origin)) {
+        res.set("access-control-allow-origin", origin);
+        res.set("vary", "Origin");
+        res.set("access-control-allow-headers", "authorization, content-type");
+        res.set("access-control-allow-methods", "POST, OPTIONS");
+      }
+    };
+    try {
+      if (req.method === "OPTIONS") {
+        setCors();
+        res.status(204).send("");
+        return;
+      }
+      if (req.method !== "POST") {
+        setCors();
+        res.status(405).json({ error: "POST requerido" });
+        return;
+      }
+      setCors();
+      if (!ORIGINS.has(origin)) {
+        res.status(403).json({ error: "Origin no permitido" });
+        return;
+      }
+      const key = process.env["GOOGLE_MAPS_API_KEY"] || "";
+      res.status(200).json({
+        ok: true,
+        google_maps_api_key: key,
+        itinerary: "turno-amanecida",
+        nota: key ? "key_ok" : "GOOGLE_MAPS_API_KEY vacio en env de turnoAmanecidaConfig"
+      });
+    } catch (e) {
+      setCors();
+      res.status(500).json({ error: e instanceof Error ? e.message : "Error config" });
+    }
+  }
+);
+
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
   cerroVerdeClocator,
+  turnoAmanecidaClocator,
+  turnoAmanecidaConfig,
   handleClocatorRequest
 });
 /*! Bundled license information:

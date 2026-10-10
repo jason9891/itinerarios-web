@@ -1288,20 +1288,35 @@ export async function mount(container, runtime) {
   try {
     let key = mapsKey;
 
-    async function fetchMapsKeyFromClocator() {
+    async function fetchMapsKeyFromWork() {
       const user = auth.currentUser;
-      if (!user) return "";
-      const token = await user.getIdToken(false);
-      const r = await fetch(API.clocator, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ action: "map_config" }),
-      });
-      const j = await r.json().catch(() => ({}));
-      return j.google_maps_api_key || "";
+      const headers = { "Content-Type": "application/json" };
+      if (user) headers.Authorization = `Bearer ${await user.getIdToken(false)}`;
+      // 1) Config TN independiente
+      try {
+        const r = await fetch(API.config, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ action: "map_config" }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (j.google_maps_api_key) return j.google_maps_api_key;
+      } catch (e) {
+        console.warn("[TN] config Work", e);
+      }
+      // 2) map_config en clocator TN (mismo secret del proyecto)
+      try {
+        const r = await fetch(API.clocator, {
+          method: "POST",
+          headers,
+          body: JSON.stringify({ action: "map_config" }),
+        });
+        const j = await r.json().catch(() => ({}));
+        if (j.google_maps_api_key) return j.google_maps_api_key;
+      } catch (e) {
+        console.warn("[TN] clocator map_config", e);
+      }
+      return "";
     }
 
     try {
@@ -1328,7 +1343,7 @@ export async function mount(container, runtime) {
 
     if (!key) {
       try {
-        key = await fetchMapsKeyFromClocator();
+        key = await fetchMapsKeyFromWork();
         if (key) mapsKey = key;
       } catch (e) {
         console.warn("[TN] map_config Work", e);
@@ -1337,7 +1352,7 @@ export async function mount(container, runtime) {
 
     if (!key) {
       throw new Error(
-        "Sin GOOGLE_MAPS_API_KEY. En Firebase Functions (cerroVerdeClocator) debe existir el secret GOOGLE_MAPS_API_KEY y responder en action=map_config.",
+        "Sin GOOGLE_MAPS_API_KEY. Configura el secret en Firebase Function turnoAmanecidaConfig / turnoAmanecidaClocator (independiente de Cerro Verde).",
       );
     }
     await loadGoogleMaps(key);
