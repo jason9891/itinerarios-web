@@ -43,7 +43,7 @@ let mapsPromise = null;
 
 async function loadGoogleMaps(key) {
   if (window.google?.maps) return;
-  if (!key) throw new Error("Falta GOOGLE_MAPS_API_KEY (secret Firebase Work)");
+  if (!key) throw new Error("Falta GOOGLE_MAPS_API_KEY (Worker clocator-proxy)");
   mapsKey = key;
   mapsPromise ||= new Promise((ok, no) => {
     const s = document.createElement("script");
@@ -1289,34 +1289,19 @@ export async function mount(container, runtime) {
     let key = mapsKey;
 
     async function fetchMapsKeyFromWork() {
+      // Cloudflare Worker clocator-proxy (secretos ya configurados en Work)
       const user = auth.currentUser;
-      const headers = { "Content-Type": "application/json" };
-      if (user) headers.Authorization = `Bearer ${await user.getIdToken(false)}`;
-      // 1) Config TN independiente
-      try {
-        const r = await fetch(API.config, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ action: "map_config" }),
-        });
-        const j = await r.json().catch(() => ({}));
-        if (j.google_maps_api_key) return j.google_maps_api_key;
-      } catch (e) {
-        console.warn("[TN] config Work", e);
-      }
-      // 2) map_config en clocator TN (mismo secret del proyecto)
-      try {
-        const r = await fetch(API.clocator, {
-          method: "POST",
-          headers,
-          body: JSON.stringify({ action: "map_config" }),
-        });
-        const j = await r.json().catch(() => ({}));
-        if (j.google_maps_api_key) return j.google_maps_api_key;
-      } catch (e) {
-        console.warn("[TN] clocator map_config", e);
-      }
-      return "";
+      if (!user) return "";
+      const r = await fetch(API.config, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${await user.getIdToken(false)}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "map_config" }),
+      });
+      const j = await r.json().catch(() => ({}));
+      return j.google_maps_api_key || "";
     }
 
     try {
@@ -1352,7 +1337,7 @@ export async function mount(container, runtime) {
 
     if (!key) {
       throw new Error(
-        "Sin GOOGLE_MAPS_API_KEY. Configura el secret en Firebase Function turnoAmanecidaConfig / turnoAmanecidaClocator (independiente de Cerro Verde).",
+        "Sin GOOGLE_MAPS_API_KEY desde clocator-proxy (Cloudflare Worker). Verifica action=map_config en Work.",
       );
     }
     await loadGoogleMaps(key);
