@@ -7,7 +7,8 @@
  * - Token Firebase una sola vez por lote
  * - unmount de UI NO detiene el motor
  */
-import { queryClocator, clocatorEndpoint } from "../shared/clocator-client.js";
+import { queryClocator } from "../shared/clocator-client.js";
+import { API } from "./registry.js";
 import { auth } from "../shared/auth.js";
 import { cacheGPS, gpsKey, readGPS } from "./gps-cache.js";
 
@@ -289,7 +290,7 @@ export async function startPrecarga(unidades, fechaTurno, opts = {}) {
         assertFechaPE(hastaStr, "hasta");
         // CLocator busca por placa; si no hay placa usar tracto solo como último recurso
         const data = await queryClocator({
-          endpoint: clocatorEndpoint("cemento"),
+          endpoint: API.clocator,
           token,
           placa: placa || tracto,
           tracto: tracto || placa,

@@ -66,6 +66,21 @@ function gMarkerIcon(color, scale = 7) {
   };
 }
 
+/** Halo en píxeles (proporcional al punto, visible a cualquier zoom). */
+function gHaloIcon(urg) {
+  const rojo = urg === "rojo";
+  return {
+    path: google.maps.SymbolPath.CIRCLE,
+    // punto base scale 7 → halo ~3× para verse sin acercarse
+    scale: rojo ? 24 : 20,
+    fillColor: rojo ? "#ef4444" : "#eab308",
+    fillOpacity: rojo ? 0.35 : 0.32,
+    strokeColor: rojo ? "#f87171" : "#facc15",
+    strokeOpacity: 0.95,
+    strokeWeight: 3,
+  };
+}
+
 
 function loadClasificaciones() {
   try {
@@ -613,6 +628,7 @@ export async function mount(container, runtime) {
         </div>
       </header>
 
+      <div class="tn-alerts" id="tn-alerts" aria-live="polite"></div>
       <div class="tn-track-toolbar">
         <div class="tn-filters" id="tn-filters">
           <button type="button" data-f="Pendientes" class="active">POR CLASIFICAR</button>
@@ -738,6 +754,46 @@ export async function mount(container, runtime) {
   });
 
 
+
+  function contarAlertas() {
+    let grave = 0;
+    let leve = 0;
+    let sinGps = 0;
+    let pend = 0;
+    for (const u of unidades) {
+      if (u.halo_nocturno === "rojo") grave += 1;
+      else if (u.halo_nocturno === "amarillo") leve += 1;
+      const col = String(u.color_html || u.reporte_gps || "").toUpperCase();
+      if (col.includes("ROJO") || col === "NO_REPORTA" || u.clase_html === "fila-rojo-opaco") {
+        sinGps += 1;
+      }
+      if ((u.estado_clasificacion || "PENDIENTE") === "PENDIENTE") pend += 1;
+    }
+    return { grave, leve, sinGps, pend };
+  }
+
+  function paintAlerts() {
+    const el = container.querySelector("#tn-alerts");
+    if (!el) return;
+    const a = contarAlertas();
+    const parts = [];
+    if (a.grave) {
+      parts.push(`<span class="tn-alert tn-alert-grave"><b>${a.grave}</b> tránsito ≥23h</span>`);
+    }
+    if (a.leve) {
+      parts.push(`<span class="tn-alert tn-alert-leve"><b>${a.leve}</b> tránsito 22–23h</span>`);
+    }
+    if (a.sinGps) {
+      parts.push(`<span class="tn-alert tn-alert-gps"><b>${a.sinGps}</b> sin reporte GPS</span>`);
+    }
+    if (a.pend) {
+      parts.push(`<span class="tn-alert tn-alert-pend"><b>${a.pend}</b> por clasificar</span>`);
+    }
+    el.innerHTML = parts.length
+      ? `<span class="tn-alerts-label">ALERTAS</span>${parts.join("")}`
+      : `<span class="tn-alerts-label">ALERTAS</span><span class="tn-alert tn-alert-ok">Sin alertas activas</span>`;
+  }
+
   function renderCounters() {
     if (!countersEl) return;
     const { p, c, r, t: tot } = contadores();
@@ -747,6 +803,7 @@ export async function mount(container, runtime) {
       <span class="tn-chip rev"><b>${r}</b> revisar</span>
       <span class="tn-chip"><b>${tot}</b> total</span>
     `;
+    paintAlerts();
   }
 
   function renderList() {
@@ -760,7 +817,13 @@ export async function mount(container, runtime) {
         <button type="button" class="tn-list-item ${active}" data-code="${esc(u.codigo)}">
           <span class="tn-li-status" style="background:${colorClasif(u.estado_clasificacion)}"></span>
           <span class="tn-li-main">
-            <b>${esc(u.codigo)}</b>
+            <b>${esc(u.codigo)}${
+              u.halo_nocturno === "rojo"
+                ? '<i class="tn-pip grave" title="Tránsito ≥23h"></i>'
+                : u.halo_nocturno === "amarillo"
+                  ? '<i class="tn-pip leve" title="Tránsito 22–23h"></i>'
+                  : ""
+            }</b>
             <small>${esc(u.placa || "—")} · ${esc(u.piloto || "—")}</small>
           </span>
           <span class="tn-li-meta">
@@ -804,17 +867,14 @@ export async function mount(container, runtime) {
       });
       marker.addListener("click", () => selectUnit(u.codigo));
       if (urg) {
-        marker.__halo = new google.maps.Circle({
+        // Contorno en píxeles (no metros): se ve a zoom lejano, proporción al punto
+        marker.__halo = new google.maps.Marker({
           map,
-          center: pos,
-          radius: 450,
-          fillColor: urg === "rojo" ? "#ef4444" : "#eab308",
-          fillOpacity: 0.28,
-          strokeColor: urg === "rojo" ? "#ef4444" : "#eab308",
-          strokeOpacity: 0.7,
-          strokeWeight: 2,
+          position: pos,
+          icon: gHaloIcon(urg),
           clickable: false,
-          zIndex: 100,
+          zIndex: 150,
+          optimized: false,
         });
       }
       markersByCode.set(u.codigo, marker);
@@ -1136,42 +1196,15 @@ export async function mount(container, runtime) {
     setTimeout(() => dot.classList.remove("pulse"), 800);
   }
 
-  // Google Maps — key desde secret GOOGLE_MAPS_API_KEY vía snapshot
+  // Google Maps — key solo desde Work (snapshot Firebase), cero Supabase
   try {
     let key = mapsKey;
-    // 1) Key desde secret GOOGLE_MAPS_API_KEY (vía editor-geocercas, función ya en prod)
-    if (!key) {
-      try {
-        const user = auth.currentUser;
-        if (!user) throw new Error("Sin sesión");
-        const r = await fetch(
-          "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1/editor-geocercas",
-          {
-            method: "POST",
-            headers: {
-              Authorization: `Bearer ${await user.getIdToken(false)}`,
-              "Content-Type": "application/json",
-            },
-            body: JSON.stringify({ action: "leer_maestro" }),
-          },
-        );
-        const j = await r.json().catch(() => ({}));
-        key = j.google_maps_api_key || "";
-        if (!key) console.warn("[TN] Sin google_maps_api_key en respuesta", Object.keys(j || {}));
-      } catch (e) {
-        console.warn("[TN] maps key", e);
-      }
-    }
-    if (!key) {
-      throw new Error(
-        "No hay GOOGLE_MAPS_API_KEY en Supabase (secret del proyecto). Configúrala y redespliega editor-geocercas / snapshot.",
-      );
-    }
-    await loadGoogleMaps(key);
-    // 2) Posiciones frescas (no bloquea el mapa si falla)
     try {
       const boot = await apiPost(API.snapshot, { action: "snapshot" });
-      if (boot?.google_maps_api_key) mapsKey = boot.google_maps_api_key;
+      if (boot?.google_maps_api_key) {
+        key = boot.google_maps_api_key;
+        mapsKey = key;
+      }
       if (boot?.ok && Array.isArray(boot.unidades)) {
         const byCode = new Map(boot.unidades.map((x) => [x.codigo, x]));
         for (const u of unidades) {
@@ -1185,8 +1218,14 @@ export async function mount(container, runtime) {
         }
       }
     } catch (e) {
-      console.warn("[TN] boot snapshot", e);
+      console.warn("[TN] boot snapshot Work", e);
     }
+    if (!key) {
+      throw new Error(
+        "Sin GOOGLE_MAPS_API_KEY en respuesta de snapshot (Work/Firebase). Configura el secret en la Cloud Function.",
+      );
+    }
+    await loadGoogleMaps(key);
     if (disposed) return;
     map = new google.maps.Map(container.querySelector("#tn-map"), {
       center: { lat: -16.4, lng: -71.5 },

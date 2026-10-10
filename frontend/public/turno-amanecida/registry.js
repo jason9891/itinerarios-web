@@ -1,8 +1,13 @@
 /**
  * Registry de módulos de TURNO AMANECIDA.
  * Independiente de Cemento y Cerro Verde.
+ *
+ * Endpoints: Firebase Cloud Functions (Work) — sin Supabase.
  */
-const V = "tn23";
+const V = "tn24";
+
+/** Base Work / Firebase Functions del proyecto itinerarios-2fa6f */
+const WORK = "https://us-central1-itinerarios-2fa6f.cloudfunctions.net";
 
 export const modules = {
   home:          () => import(`./modules/home.js?v=${V}`),
@@ -14,8 +19,12 @@ export const modules = {
   reporte:       () => import(`./modules/reporte.js?v=${V}`),
 };
 
-/** Endpoints exclusivos de Turno Amanecida. */
+/** Endpoints exclusivos de Turno Amanecida (Firebase Work, cero Supabase). */
 export const API = {
-  maestros: "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1/turno-amanecida-maestros",
-  snapshot: "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1/turno-amanecida-snapshot",
+  maestros: `${WORK}/turnoAmanecidaMaestros`,
+  snapshot: `${WORK}/turnoAmanecidaSnapshot`,
+  /** Proxy CLocator ya en Firebase (mismo backend Comsatel) */
+  clocator: `${WORK}/cerroVerdeClocator`,
 };
+
+export { WORK, V };

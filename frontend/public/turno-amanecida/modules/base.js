@@ -334,7 +334,7 @@ export async function mount(container) {
     } catch (e) {
       log(`ERROR: ${e.message || e}`);
       resultEl.innerHTML = `<p class="tn-badge err">${esc(e.message || e)}</p>
-        <p class="muted" style="margin-top:8px">Si la function aún no está desplegada: <code>supabase functions deploy turno-amanecida-snapshot --no-verify-jwt</code></p>`;
+        <p class="muted" style="margin-top:8px">Verifica el endpoint Work (Firebase) <code>turnoAmanecidaSnapshot</code>.</p>`;
     } finally {
       btn.disabled = false;
       btn.textContent = "GENERAR SNAPSHOT REAL";
