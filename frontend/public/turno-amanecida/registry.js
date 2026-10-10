@@ -5,7 +5,7 @@
  * Backend: Cloudflare Worker clocator-proxy (Work) — secretos y deploy ya operativos.
  * NO apuntar a Firebase Functions ni a Supabase desde este itinerario.
  */
-const V = "tn29";
+const V = "tn30";
 
 /** Cloudflare Worker — clocator-proxy (producción TN) */
 const WORK = "https://clocator-proxy.jasontupayachihurtado.workers.dev";

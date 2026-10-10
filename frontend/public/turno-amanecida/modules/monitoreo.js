@@ -746,14 +746,39 @@ export async function mount(container, runtime) {
 
   container.querySelector("#tn-back")?.addEventListener("click", () => {
     document.body.classList.remove("tn-fs-monitoreo");
-    // Volver a Base del turno (flujo natural) o home
     const btn =
       document.querySelector('nav button[data-route="base"]') ||
       document.querySelector('nav button[data-route="home"]');
     btn?.click();
   });
 
-
+  // Alertas: Lista / Desestimar / Ir a unidad (delegación; sobrevive a re-paint)
+  container.querySelector("#tn-alerts")?.addEventListener("click", (e) => {
+    const dis = e.target.closest("[data-dismiss]");
+    if (dis) {
+      e.preventDefault();
+      e.stopPropagation();
+      dismissAlert(dis.getAttribute("data-dismiss"));
+      return;
+    }
+    const go = e.target.closest(".tn-alert-goto");
+    if (go?.dataset?.code) {
+      e.preventDefault();
+      selectUnit(go.dataset.code);
+      return;
+    }
+    const tog = e.target.closest("#tn-alerts-toggle, .tn-alerts-toggle");
+    if (tog) {
+      e.preventDefault();
+      const box = container.querySelector("#tn-alerts");
+      if (!box) return;
+      box.dataset.userToggled = "1";
+      box.classList.toggle("open");
+      const open = box.classList.contains("open");
+      const btn = container.querySelector("#tn-alerts-toggle");
+      if (btn) btn.textContent = open ? "Ocultar" : "Lista";
+    }
+  });
 
   const ALERTS_DISMISS_KEY = "tn_alerts_dismissed_v1";
 
@@ -841,6 +866,7 @@ export async function mount(container, runtime) {
   function paintAlerts() {
     const el = container.querySelector("#tn-alerts");
     if (!el) return;
+    const wasOpen = el.classList.contains("open");
     const list = buildAlertList();
     const nGrave = list.filter((x) => x.nivel === "grave").length;
     const nLeve = list.filter((x) => x.nivel === "leve").length;
@@ -852,8 +878,8 @@ export async function mount(container, runtime) {
     if (nGps) summary.push(`<span class="tn-alert tn-alert-gps"><b>${nGps}</b> sin GPS</span>`);
 
     if (!list.length) {
-      el.innerHTML = `<span class="tn-alerts-label">ALERTAS</span><span class="tn-alert tn-alert-ok">Sin alertas pendientes</span>`;
-      el.classList.remove("has-list");
+      el.innerHTML = `<div class="tn-alerts-head"><span class="tn-alerts-label">ALERTAS</span><span class="tn-alert tn-alert-ok">Sin alertas pendientes</span></div>`;
+      el.classList.remove("has-list", "open");
       return;
     }
 
@@ -871,14 +897,17 @@ export async function mount(container, runtime) {
       )
       .join("");
 
+    // Lista abierta por defecto la primera vez; respeta si el usuario la cerró
+    const open = wasOpen || !el.dataset.userToggled;
     el.innerHTML = `
       <div class="tn-alerts-head">
         <span class="tn-alerts-label">ALERTAS · ${list.length}</span>
         ${summary.join("")}
-        <button type="button" class="tn-alerts-toggle" id="tn-alerts-toggle">Lista</button>
+        <button type="button" class="tn-alerts-toggle" id="tn-alerts-toggle">${open ? "Ocultar" : "Lista"}</button>
       </div>
       <div class="tn-alerts-list" id="tn-alerts-list">${rows}</div>`;
     el.classList.add("has-list");
+    el.classList.toggle("open", open);
   }
 
   function renderCounters() {
