@@ -43,7 +43,7 @@ let mapsPromise = null;
 
 async function loadGoogleMaps(key) {
   if (window.google?.maps) return;
-  if (!key) throw new Error("Falta GOOGLE_MAPS_API_KEY (Supabase secret)");
+  if (!key) throw new Error("Falta GOOGLE_MAPS_API_KEY (secret Firebase Work)");
   mapsKey = key;
   mapsPromise ||= new Promise((ok, no) => {
     const s = document.createElement("script");
@@ -1284,9 +1284,26 @@ export async function mount(container, runtime) {
     setTimeout(() => dot.classList.remove("pulse"), 800);
   }
 
-  // Google Maps — key solo desde Work (snapshot Firebase), cero Supabase
+  // Google Maps — key desde Work: snapshot y/o clocator map_config (secret Firebase)
   try {
     let key = mapsKey;
+
+    async function fetchMapsKeyFromClocator() {
+      const user = auth.currentUser;
+      if (!user) return "";
+      const token = await user.getIdToken(false);
+      const r = await fetch(API.clocator, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${token}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ action: "map_config" }),
+      });
+      const j = await r.json().catch(() => ({}));
+      return j.google_maps_api_key || "";
+    }
+
     try {
       const boot = await apiPost(API.snapshot, { action: "snapshot" });
       if (boot?.google_maps_api_key) {
@@ -1308,9 +1325,19 @@ export async function mount(container, runtime) {
     } catch (e) {
       console.warn("[TN] boot snapshot Work", e);
     }
+
+    if (!key) {
+      try {
+        key = await fetchMapsKeyFromClocator();
+        if (key) mapsKey = key;
+      } catch (e) {
+        console.warn("[TN] map_config Work", e);
+      }
+    }
+
     if (!key) {
       throw new Error(
-        "Sin GOOGLE_MAPS_API_KEY en respuesta de snapshot (Work/Firebase). Configura el secret en la Cloud Function.",
+        "Sin GOOGLE_MAPS_API_KEY. En Firebase Functions (cerroVerdeClocator) debe existir el secret GOOGLE_MAPS_API_KEY y responder en action=map_config.",
       );
     }
     await loadGoogleMaps(key);

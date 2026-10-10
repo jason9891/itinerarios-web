@@ -4,7 +4,7 @@
  *
  * Endpoints: Firebase Cloud Functions (Work) — sin Supabase.
  */
-const V = "tn25";
+const V = "tn26";
 
 /** Base Work / Firebase Functions del proyecto itinerarios-2fa6f */
 const WORK = "https://us-central1-itinerarios-2fa6f.cloudfunctions.net";

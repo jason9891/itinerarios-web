@@ -1017,7 +1017,13 @@ async function handleClocatorRequest(req) {
     const { db, user } = await secure(req), cartography = await publishedCartography(db), fences = cartography.fences, eventFences = cartography.eventFences;
     const body = await req.json().catch(() => ({}));
     if (body.action === "map_config") {
-      const out = { ok: true,geocercas,cartografia,google_maps_api_key, analisis_version: "CV_DESKTOP_RULES_20261009_1" };
+      const out = {
+        ok: true,
+        geocercas,
+        cartografia,
+        google_maps_api_key: process.env["GOOGLE_MAPS_API_KEY"] || "",
+        analisis_version: "CV_DESKTOP_RULES_20261009_1",
+      };
       await registrarEgress(db, user, "CLOCATOR_MAPA", out); return reply(req, out);
     }
     if (body.action === "reanalyze") {
