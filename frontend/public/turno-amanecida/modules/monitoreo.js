@@ -1046,7 +1046,7 @@ export async function mount(container, runtime) {
   async function refrescarPosiciones() {
     const data = await apiPost(API.snapshot, { action: "snapshot" });
     if (!data?.ok || !Array.isArray(data.unidades)) throw new Error(data?.error || "Snapshot falló");
-    if (data.google_maps_api_key) mapsKey = data.google_maps_api_key;
+    if (data.google_maps_api_key || data.googleMapsApiKey || data.maps_api_key) mapsKey = data.google_maps_api_key || data.googleMapsApiKey || data.maps_api_key;
     const byCode = new Map(data.unidades.map((x) => [x.codigo, x]));
     let moved = 0;
     for (const u of unidades) {
@@ -1284,30 +1284,82 @@ export async function mount(container, runtime) {
     setTimeout(() => dot.classList.remove("pulse"), 800);
   }
 
-  // Google Maps — key desde Work: snapshot y/o clocator map_config (secret Firebase)
+  // Google Maps — key desde Worker clocator-proxy (secret GOOGLE_MAPS_API_KEY ya en Work)
   try {
     let key = mapsKey;
 
-    async function fetchMapsKeyFromWork() {
-      // Cloudflare Worker clocator-proxy (secretos ya configurados en Work)
+    function pickMapsKey(j) {
+      if (!j || typeof j !== "object") return "";
+      return (
+        j.google_maps_api_key ||
+        j.googleMapsApiKey ||
+        j.maps_api_key ||
+        j.mapsApiKey ||
+        j.GOOGLE_MAPS_API_KEY ||
+        (j.config && (j.config.google_maps_api_key || j.config.maps_api_key)) ||
+        ""
+      );
+    }
+
+    async function workerPost(body) {
       const user = auth.currentUser;
-      if (!user) return "";
-      const r = await fetch(API.config, {
+      if (!user) throw new Error("Sin sesión");
+      const r = await fetch(API.clocator, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${await user.getIdToken(false)}`,
           "Content-Type": "application/json",
         },
-        body: JSON.stringify({ action: "map_config" }),
+        body: JSON.stringify(body),
       });
       const j = await r.json().catch(() => ({}));
-      return j.google_maps_api_key || "";
+      if (!r.ok) {
+        const err = new Error(j.error || j.message || `HTTP ${r.status}`);
+        err.status = r.status;
+        err.data = j;
+        throw err;
+      }
+      return j;
+    }
+
+    /** Extrae key del Worker sin inventar endpoints nuevos. */
+    async function fetchMapsKeyFromWork() {
+      // 1) Acciones livianas que el Worker puede soportar
+      for (const action of ["map_config", "config", "health"]) {
+        try {
+          const j = await workerPost({ action });
+          const k = pickMapsKey(j);
+          if (k) return k;
+        } catch (e) {
+          console.warn("[TN] worker action", action, e.message || e);
+        }
+      }
+      // 2) Recorrido mínimo con include_map (mismo patrón del proxy: trae la key)
+      const u0 = unidades.find((u) => u.placa) || unidades[0];
+      if (u0?.placa) {
+        try {
+          const j = await workerPost({
+            placa: String(u0.placa).trim().toUpperCase(),
+            tracto: String(u0.codigo || "").trim().toUpperCase(),
+            include_map: true,
+            // ventana mínima para no saturar
+            desde: "01/01/2020 00:00:00",
+            hasta: "01/01/2020 00:05:00",
+          });
+          const k = pickMapsKey(j);
+          if (k) return k;
+        } catch (e) {
+          console.warn("[TN] worker include_map key", e.message || e);
+        }
+      }
+      return "";
     }
 
     try {
       const boot = await apiPost(API.snapshot, { action: "snapshot" });
-      if (boot?.google_maps_api_key) {
-        key = boot.google_maps_api_key;
+      const kBoot = pickMapsKey(boot);
+      if (kBoot) {
+        key = kBoot;
         mapsKey = key;
       }
       if (boot?.ok && Array.isArray(boot.unidades)) {
@@ -1331,13 +1383,13 @@ export async function mount(container, runtime) {
         key = await fetchMapsKeyFromWork();
         if (key) mapsKey = key;
       } catch (e) {
-        console.warn("[TN] map_config Work", e);
+        console.warn("[TN] key Work", e);
       }
     }
 
     if (!key) {
       throw new Error(
-        "Sin GOOGLE_MAPS_API_KEY desde clocator-proxy (Cloudflare Worker). Verifica action=map_config en Work.",
+        "Sin GOOGLE_MAPS_API_KEY en respuestas del Worker clocator-proxy (secret existe; el Worker debe incluirla en snapshot o en include_map).",
       );
     }
     await loadGoogleMaps(key);
