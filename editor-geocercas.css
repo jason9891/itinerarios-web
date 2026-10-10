@@ -1,0 +1,248 @@
+.geo-body {
+  background: #061321;
+  color: #eaf4ff;
+  min-height: 100vh;
+}
+.geo-logo {
+  background: #7c3aed;
+}
+.geo-workspace {
+  height: calc(100vh - 72px);
+  display: grid;
+  grid-template-columns: 300px minmax(420px, 1fr) 310px;
+}
+.geo-sidebar,
+.geo-properties {
+  background: #091a2b;
+  border-right: 1px solid #243b51;
+  padding: 16px;
+  overflow: auto;
+}
+.geo-properties {
+  border-right: 0;
+  border-left: 1px solid #243b51;
+}
+.geo-project label span,
+.geo-properties label span {
+  display: block;
+  color: #82a4c2;
+  font-size: 12px;
+  font-weight: 800;
+  margin-bottom: 6px;
+}
+.geo-project select,
+.geo-properties input {
+  width: 100%;
+  box-sizing: border-box;
+}
+.geo-state {
+  margin-top: 10px;
+  border-radius: 8px;
+  background: #132d43;
+  color: #7dd3fc;
+  padding: 10px;
+  font-weight: 900;
+  font-size: 12px;
+}
+.geo-tabs {
+  display: grid;
+  grid-template-columns: 1fr;
+  margin-top: 18px;
+}
+.geo-tabs button {
+  text-align: left;
+  border-radius: 0;
+  border-bottom: 1px solid #243b51;
+}
+.geo-tabs button.active {
+  background: #164e74;
+  color: white;
+}
+.geo-toolbar,
+.geo-command,
+.geo-property-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.geo-toolbar {
+  margin: 14px 0;
+}
+.geo-toolbar button {
+  font-size: 11px;
+}
+.geo-tree {
+  display: grid;
+  gap: 6px;
+}
+.geo-tree-item {
+  display: grid;
+  grid-template-columns: 30px 1fr 28px;
+  align-items: center;
+  gap: 5px;
+  background: #0e2438;
+  border: 1px solid #203c55;
+  border-radius: 8px;
+  padding: 7px;
+}
+.geo-tree-item.selected {
+  border-color: #38bdf8;
+  background: #123450;
+}
+.geo-tree-item.assigned {
+  border-color: #34d399;
+  background: #0d302f;
+}
+.geo-tree-item button {
+  padding: 5px;
+  border: 0;
+  background: transparent;
+}
+.geo-eye {
+  color: #7dd3fc;
+}
+.geo-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: left;
+  white-space: nowrap;
+}
+.geo-main {
+  display: grid;
+  grid-template-rows: auto 1fr;
+  min-width: 0;
+}
+.geo-command {
+  padding: 12px;
+  background: #0a1b2c;
+  border-bottom: 1px solid #284158;
+  align-items: center;
+}
+.geo-command button {
+  font-size: 12px;
+}
+.geo-publish {
+  background: #047857 !important;
+  color: white !important;
+}
+.geo-command #geo-message {
+  color: #9fc0dc;
+  font-size: 12px;
+}
+.geo-command #geo-message.error {
+  color: #fca5a5;
+}
+#geo-map {
+  width: 100%;
+  height: 100%;
+  background: #dbe7ef;
+}
+.geo-properties h2 {
+  font-size: 18px;
+  margin-top: 0;
+}
+.geo-properties label {
+  display: block;
+  margin-bottom: 13px;
+}
+.geo-properties input[readonly] {
+  background: #10283b;
+  color: #9fc0dc;
+}
+.geo-property-actions {
+  margin-top: 12px;
+}
+.geo-property-actions button {
+  width: 100%;
+  font-size: 12px;
+}
+.geo-assignment {
+  margin: 18px 0;
+  padding: 13px;
+  border: 1px solid #285374;
+  border-radius: 8px;
+  background: #0d2438;
+}
+.geo-assignment > b {
+  display: block;
+  color: #7dd3fc;
+  margin-bottom: 12px;
+}
+.geo-assignment .geo-check {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #eaf4ff;
+  font-weight: 800;
+}
+.geo-assignment .geo-check input {
+  width: auto;
+}
+.geo-assignment p {
+  font-size: 12px;
+  color: #9fc0dc;
+  line-height: 1.45;
+}
+.geo-empty,
+.geo-rules {
+  color: #91abc2;
+  font-size: 13px;
+  line-height: 1.5;
+}
+.geo-rules {
+  margin-top: 28px;
+  border-top: 1px solid #294158;
+  padding-top: 18px;
+}
+.geo-rules b {
+  color: #7dd3fc;
+}
+.geo-drawing {
+  background: #92400e !important;
+  color: #fde68a !important;
+}
+.geo-tabs button:disabled,
+.geo-toolbar button:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+@media (max-width: 1000px) {
+  .geo-workspace {
+    height: auto;
+    min-height: calc(100vh - 72px);
+    grid-template-columns: 240px 1fr;
+  }
+  .geo-properties {
+    grid-column: 1/-1;
+    border-left: 0;
+    border-top: 1px solid #243b51;
+  }
+  .geo-main {
+    min-height: 650px;
+  }
+}
+@media (max-width: 700px) {
+  .geo-workspace {
+    display: block;
+  }
+  .geo-sidebar,
+  .geo-properties {
+    border: 0;
+  }
+  .geo-main {
+    min-height: 620px;
+  }
+  .geo-command {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+  }
+  #geo-map {
+    min-height: 540px;
+  }
+}
+
+/* DETALLES_1: el botón verde debe comportarse visualmente como acción real. */
+.geo-publish:not(:disabled) { cursor: pointer !important; }
+.geo-publish:not(:disabled):hover { filter: brightness(1.12); transform: translateY(-1px); }
+.geo-publish:disabled { cursor: not-allowed !important; opacity: .55; }
