@@ -136,7 +136,7 @@ Deno.serve(async(req)=>{
   try{
     const{db,email}=await secure(req),b=await req.json(),action=String(b.action||"");
     const isPreview=req.headers.get("origin")==="https://5000-cs-a2a47bf9-3b6a-4a54-b115-36fc3cb753b5.cs-us-east1-vpcf.cloudshell.dev";
-    if(isPreview&&!["lista","detalle","cerradas_por_tracto","guardar","marcar_revisada","desmarcar_revisada","guardar_cerrada"].includes(action)){
+    if(isPreview&&!["lista","bootstrap","detalle","cerradas_por_tracto","guardar","marcar_revisada","desmarcar_revisada","guardar_cerrada"].includes(action)){
       return reply(req,{error:"MODO REVISION · SOLO LECTURA. Los guardados y cierres están deshabilitados en la vista previa."},403);
     }
 
@@ -158,13 +158,56 @@ Deno.serve(async(req)=>{
       return reply(req,{placas:[...groups.values()],total_ocs:rows?.length||0,borradores,revisadas:[...groups.values()].filter((x:any)=>x.revisada).length});
     }
 
-    if(action==="detalle"){
-      const key=norm(b.placa),[{data:daily,error},{data:hist,error:he},{data:drafts,error:de}]=await Promise.all([
+    // Una sola lectura DIARIO+drafts para todo el módulo (evita N×detalle = N×tabla completa)
+    if(action==="bootstrap"){
+      const[{data:daily,error},{data:drafts,error:de}]=await Promise.all([
         db.from("seguimiento_staging").select("id,orden_carga,payload,observacion_migracion").eq("itinerario","CEMENTO").eq("origen","DIARIO").order("id"),
-        db.from("seguimiento_staging").select("id,orden_carga,payload").eq("itinerario","CEMENTO").eq("origen","HISTORICO").order("id",{ascending:false}).limit(1000),
         db.from("seguimiento_sesion_web").select("seguimiento_id,cambios,accion,revisada").eq("itinerario","CEMENTO").eq("usuario",email)
       ]);
-      if(error)throw error;if(he)throw he;if(de)throw de;
+      if(error)throw error;if(de)throw de;
+      const dm:Map<number,any>=new Map((drafts||[]).map((x:any)=>[x.seguimiento_id,x]));
+      const byPlate:Map<string,any>=new Map();
+      for(const x of daily||[]){
+        const original={...(x.payload||{})};
+        const key=norm(plate(original));
+        if(!key)continue;
+        const d=dm.get(x.id);
+        const p={...original,...(d?.cambios||{})};
+        const obs=String(x.observacion_migracion||"");
+        const reabierta=/REASIGNAD|REABIERT|VALIDAR/i.test(obs);
+        const oc={id:x.id,orden_carga:x.orden_carga,payload:p,original_payload:original,borrador:d||null,observacion_migracion:obs,reabierta};
+        if(!byPlate.has(key)){
+          byPlate.set(key,{
+            placa:plate(p),
+            tracto:p.TRACTO||"",
+            conductor:p.CONDUCTOR||"",
+            ocs:[],
+            revisada:false,
+            ultima_oc_cerrada:null
+          });
+        }
+        const g=byPlate.get(key);
+        g.ocs.push(oc);
+        if(d?.revisada)g.revisada=true;
+      }
+      const units=[...byPlate.values()];
+      return reply(req,{
+        units,
+        total_ocs:(daily||[]).length,
+        total_placas:units.length,
+        borradores:(drafts||[]).filter((d:any)=>d.accion==="CERRAR"||Object.keys(d.cambios||{}).length).length,
+        revisadas:units.filter((u:any)=>u.revisada).length
+      });
+    }
+
+    if(action==="detalle"){
+      // Solo OCs de la placa pedida: lee DIARIO una vez y filtra (sin HISTORICO masivo)
+      const key=norm(b.placa);
+      const[{data:daily,error},{data:drafts,error:de}]=await Promise.all([
+        db.from("seguimiento_staging").select("id,orden_carga,payload,observacion_migracion").eq("itinerario","CEMENTO").eq("origen","DIARIO").order("id"),
+        db.from("seguimiento_sesion_web").select("seguimiento_id,cambios,accion,revisada").eq("itinerario","CEMENTO").eq("usuario",email)
+      ]);
+      if(error)throw error;if(de)throw de;
       const dm:Map<number,any>=new Map((drafts||[]).map((x:any)=>[x.seguimiento_id,x]));
       const ocs=(daily||[]).filter((x:any)=>norm(plate(x.payload))===key).map((x:any)=>{
         const d=dm.get(x.id),original={...(x.payload||{})},p={...original,...(d?.cambios||{})};
@@ -173,8 +216,8 @@ Deno.serve(async(req)=>{
         return{id:x.id,orden_carga:x.orden_carga,payload:p,original_payload:original,borrador:d||null,observacion_migracion:obs,reabierta};
       });
       if(!ocs.length)return reply(req,{error:"Unidad sin OCs abiertas"},404);
-      const last=(hist||[]).find((x:any)=>norm(plate(x.payload))===key);
-      return reply(req,{placa:plate(ocs[0].payload),tracto:ocs[0].payload.TRACTO||"",conductor:ocs[0].payload.CONDUCTOR||"",ocs,ultima_oc_cerrada:last?{orden_carga:last.orden_carga,ruta:last.payload?.Ruta||""}:null,revisada:ocs.some((x:any)=>x.borrador?.revisada===true)});
+      // ultima_oc_cerrada bajo demanda vía cerradas_por_tracto; no traer 1000 históricos aquí
+      return reply(req,{placa:plate(ocs[0].payload),tracto:ocs[0].payload.TRACTO||"",conductor:ocs[0].payload.CONDUCTOR||"",ocs,ultima_oc_cerrada:null,revisada:ocs.some((x:any)=>x.borrador?.revisada===true)});
     }
 
     if(action==="cerradas_por_tracto"){

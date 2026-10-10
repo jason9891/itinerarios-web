@@ -961,18 +961,23 @@ export function unmount() {
 }
 
 async function loadData(onProgress) {
-  const lista = await trackApi({ action: "lista" });
-  const plates = lista.placas || [];
+  // UNA sola lectura servidor (antes: 1 lista + N detalle = N× tabla DIARIO)
+  if (typeof onProgress === "function") onProgress(5);
+  const boot = await trackApi({ action: "bootstrap" });
+  if (typeof onProgress === "function") onProgress(70);
+  const plates = (boot.units || []).map((u) => ({
+    placa: u.placa,
+    tracto: u.tracto,
+    conductor: u.conductor || "",
+    revisada: !!u.revisada,
+  }));
   const metaPre = loadMeta();
   const results = metaPre?.resultados || {};
   const reviewed = new Set();
   const toMark = [];
   const toUnmark = [];
 
-  // REVISADAS se reconstruye desde la precarga ACTUAL (no marcas viejas de sesión):
-  // - 0 puntos / sin movimiento → revisada (auto)
-  // - con puntos y marcada en servidor → se respeta (revisión manual de una unidad con ruta)
-  // - marcada en servidor pero sin resultado de precarga o ya con puntos y era auto → se limpia
+  // REVISADAS se reconstruye desde la precarga ACTUAL (no marcas viejas de sesión)
   for (const p of plates) {
     const k = nplate(p.placa);
     const r = results[k];
@@ -994,16 +999,15 @@ async function loadData(onProgress) {
       continue;
     }
     if (r && doneOk && pts > 0 && p.revisada) {
-      // Manual: unidad con recorrido que el operador marcó ✓
       reviewed.add(k);
       continue;
     }
     if (p.revisada) {
-      // Marca vieja (p.ej. auto de una precarga anterior) → limpiar
       toUnmark.push(p.placa);
     }
   }
 
+  // Marcas en segundo plano (no bloquean apertura)
   if (toMark.length) {
     Promise.all(
       toMark.map((placa) => trackApi({ action: "marcar_revisada", placa }).catch(() => null)),
@@ -1015,41 +1019,20 @@ async function loadData(onProgress) {
     ).catch(() => null);
   }
 
-  const units = [];
-  const batch = 8;
-  for (let i = 0; i < plates.length; i += batch) {
-    const slice = plates.slice(i, i + batch);
-    const details = await Promise.all(
-      slice.map(async (u) => {
-        try {
-          const d = await trackApi({ action: "detalle", placa: u.placa });
-          return {
-            placa: d.placa || u.placa,
-            tracto: d.tracto || u.tracto,
-            conductor: d.conductor || u.conductor || "",
-            ocs: (d.ocs || []).map((oc) => ({
-              ...oc,
-              reabierta: oc.reabierta === true || /REASIGNAD|REABIERT|VALIDAR/i.test(String(oc.observacion_migracion || "")),
-              observacion_migracion: oc.observacion_migracion || "",
-            })),
-            ultima_oc_cerrada: d.ultima_oc_cerrada || null,
-          };
-        } catch (e) {
-          return {
-            placa: u.placa,
-            tracto: u.tracto,
-            conductor: u.conductor || "",
-            ocs: [],
-            error: e.message,
-          };
-        }
-      }),
-    );
-    units.push(...details);
-    if (typeof onProgress === "function") {
-      onProgress(Math.round((100 * units.length) / Math.max(plates.length, 1)));
-    }
-  }
+  const units = (boot.units || []).map((u) => ({
+    placa: u.placa,
+    tracto: u.tracto,
+    conductor: u.conductor || "",
+    ocs: (u.ocs || []).map((oc) => ({
+      ...oc,
+      reabierta:
+        oc.reabierta === true ||
+        /REASIGNAD|REABIERT|VALIDAR/i.test(String(oc.observacion_migracion || "")),
+      observacion_migracion: oc.observacion_migracion || "",
+    })),
+    ultima_oc_cerrada: u.ultima_oc_cerrada || null,
+  }));
+  if (typeof onProgress === "function") onProgress(90);
 
   // Mismo orden que la cola de precarga (meta.orden). Si no hay, orden de lista API.
   const orden = getOrdenPlacas();
@@ -1058,7 +1041,6 @@ async function loadData(onProgress) {
     const ia = rank.has(nplate(a.placa)) ? rank.get(nplate(a.placa)) : 1e9;
     const ib = rank.has(nplate(b.placa)) ? rank.get(nplate(b.placa)) : 1e9;
     if (ia !== ib) return ia - ib;
-    // fallback estable: posición original en lista de placas
     const pa = plates.findIndex((p) => nplate(p.placa) === nplate(a.placa));
     const pb = plates.findIndex((p) => nplate(p.placa) === nplate(b.placa));
     if (pa !== pb) return pa - pb;
@@ -1088,7 +1070,7 @@ async function loadData(onProgress) {
     }
   } catch (_) {}
 
-  return { units, reviewed, montadosMap, total_ocs: lista.total_ocs || 0 };
+  return { units, reviewed, montadosMap, total_ocs: boot.total_ocs || units.reduce((n, u) => n + (u.ocs?.length || 0), 0) };
 }
 
 

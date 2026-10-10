@@ -1,0 +1,10 @@
+{
+  "tasks": {
+    "start": "deno run -A main.ts",
+    "deploy": "deployctl deploy --project=itinerarios-cv-clocator --entrypoint=main.ts"
+  },
+  "compilerOptions": {
+    "strict": false,
+    "lib": ["deno.window", "deno.unstable"]
+  }
+}

@@ -9,7 +9,7 @@
  * No tocar cerro-verde/ ni shared/ (salvo que sea infraestructura común).
  * No importar desde módulos de Cerro Verde.
  */
-const V = "popup-precarga-fast";
+const V = "egress-opt-1";
 
 export const modules = {
   home:        () => import(`./modules/home.js?v=${V}`),
