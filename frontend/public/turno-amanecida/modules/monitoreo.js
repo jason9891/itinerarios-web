@@ -71,13 +71,13 @@ function gHaloIcon(urg) {
   const rojo = urg === "rojo";
   return {
     path: google.maps.SymbolPath.CIRCLE,
-    // punto base scale 7 → halo ~3× para verse sin acercarse
-    scale: rojo ? 24 : 20,
+    // Punto scale 7 → anillo ~5× visible en zoom regional
+    scale: rojo ? 34 : 28,
     fillColor: rojo ? "#ef4444" : "#eab308",
-    fillOpacity: rojo ? 0.35 : 0.32,
-    strokeColor: rojo ? "#f87171" : "#facc15",
-    strokeOpacity: 0.95,
-    strokeWeight: 3,
+    fillOpacity: rojo ? 0.22 : 0.2,
+    strokeColor: rojo ? "#ff3b3b" : "#fbbf24",
+    strokeOpacity: 1,
+    strokeWeight: 5,
   };
 }
 
@@ -755,43 +755,130 @@ export async function mount(container, runtime) {
 
 
 
-  function contarAlertas() {
-    let grave = 0;
-    let leve = 0;
-    let sinGps = 0;
-    let pend = 0;
+  const ALERTS_DISMISS_KEY = "tn_alerts_dismissed_v1";
+
+  function fechaAlertas() {
+    return container.querySelector("#tn-fecha")?.value || fechaTurnoDefault();
+  }
+
+  function loadDismissed() {
+    try {
+      const all = JSON.parse(localStorage.getItem(ALERTS_DISMISS_KEY) || "{}");
+      return all[fechaAlertas()] || {};
+    } catch {
+      return {};
+    }
+  }
+
+  function saveDismissed(map) {
+    try {
+      const all = JSON.parse(localStorage.getItem(ALERTS_DISMISS_KEY) || "{}");
+      all[fechaAlertas()] = map;
+      localStorage.setItem(ALERTS_DISMISS_KEY, JSON.stringify(all));
+    } catch {
+      /* ignore */
+    }
+  }
+
+  function dismissAlert(id) {
+    const m = loadDismissed();
+    m[id] = { at: new Date().toISOString() };
+    saveDismissed(m);
+    paintAlerts();
+  }
+
+  /** Lista de alertas activas (no desestimadas). Persisten hasta desestimar. */
+  function buildAlertList() {
+    const dismissed = loadDismissed();
+    const list = [];
     for (const u of unidades) {
-      if (u.halo_nocturno === "rojo") grave += 1;
-      else if (u.halo_nocturno === "amarillo") leve += 1;
+      const code = u.codigo;
+      if (u.halo_nocturno === "rojo") {
+        const id = `${code}|grave`;
+        if (!dismissed[id]) {
+          list.push({
+            id,
+            nivel: "grave",
+            codigo: code,
+            placa: u.placa || "",
+            texto: `Tránsito ≥23h · ${u.movimiento_nocturno_m || "?"} m`,
+          });
+        }
+      } else if (u.halo_nocturno === "amarillo") {
+        const id = `${code}|leve`;
+        if (!dismissed[id]) {
+          list.push({
+            id,
+            nivel: "leve",
+            codigo: code,
+            placa: u.placa || "",
+            texto: `Tránsito 22–23h · ${u.movimiento_nocturno_m || "?"} m`,
+          });
+        }
+      }
       const col = String(u.color_html || u.reporte_gps || "").toUpperCase();
       if (col.includes("ROJO") || col === "NO_REPORTA" || u.clase_html === "fila-rojo-opaco") {
-        sinGps += 1;
+        const id = `${code}|gps`;
+        if (!dismissed[id]) {
+          list.push({
+            id,
+            nivel: "gps",
+            codigo: code,
+            placa: u.placa || "",
+            texto: "Sin reporte GPS (rojo/plomo largo)",
+          });
+        }
       }
-      if ((u.estado_clasificacion || "PENDIENTE") === "PENDIENTE") pend += 1;
     }
-    return { grave, leve, sinGps, pend };
+    // graves primero
+    list.sort((a, b) => {
+      const o = { grave: 0, leve: 1, gps: 2 };
+      return (o[a.nivel] ?? 9) - (o[b.nivel] ?? 9) || a.codigo.localeCompare(b.codigo);
+    });
+    return list;
   }
 
   function paintAlerts() {
     const el = container.querySelector("#tn-alerts");
     if (!el) return;
-    const a = contarAlertas();
-    const parts = [];
-    if (a.grave) {
-      parts.push(`<span class="tn-alert tn-alert-grave"><b>${a.grave}</b> tránsito ≥23h</span>`);
+    const list = buildAlertList();
+    const nGrave = list.filter((x) => x.nivel === "grave").length;
+    const nLeve = list.filter((x) => x.nivel === "leve").length;
+    const nGps = list.filter((x) => x.nivel === "gps").length;
+
+    const summary = [];
+    if (nGrave) summary.push(`<span class="tn-alert tn-alert-grave"><b>${nGrave}</b> ≥23h</span>`);
+    if (nLeve) summary.push(`<span class="tn-alert tn-alert-leve"><b>${nLeve}</b> 22–23h</span>`);
+    if (nGps) summary.push(`<span class="tn-alert tn-alert-gps"><b>${nGps}</b> sin GPS</span>`);
+
+    if (!list.length) {
+      el.innerHTML = `<span class="tn-alerts-label">ALERTAS</span><span class="tn-alert tn-alert-ok">Sin alertas pendientes</span>`;
+      el.classList.remove("has-list");
+      return;
     }
-    if (a.leve) {
-      parts.push(`<span class="tn-alert tn-alert-leve"><b>${a.leve}</b> tránsito 22–23h</span>`);
-    }
-    if (a.sinGps) {
-      parts.push(`<span class="tn-alert tn-alert-gps"><b>${a.sinGps}</b> sin reporte GPS</span>`);
-    }
-    if (a.pend) {
-      parts.push(`<span class="tn-alert tn-alert-pend"><b>${a.pend}</b> por clasificar</span>`);
-    }
-    el.innerHTML = parts.length
-      ? `<span class="tn-alerts-label">ALERTAS</span>${parts.join("")}`
-      : `<span class="tn-alerts-label">ALERTAS</span><span class="tn-alert tn-alert-ok">Sin alertas activas</span>`;
+
+    const rows = list
+      .map(
+        (a) => `
+      <div class="tn-alert-row nivel-${esc(a.nivel)}" data-alert-id="${esc(a.id)}">
+        <button type="button" class="tn-alert-goto" data-code="${esc(a.codigo)}" title="Ir a unidad">
+          <b>${esc(a.codigo)}</b>
+          <small>${esc(a.placa)}</small>
+          <span>${esc(a.texto)}</span>
+        </button>
+        <button type="button" class="tn-alert-dismiss" data-dismiss="${esc(a.id)}" title="Desestimar">DESESTIMAR</button>
+      </div>`,
+      )
+      .join("");
+
+    el.innerHTML = `
+      <div class="tn-alerts-head">
+        <span class="tn-alerts-label">ALERTAS · ${list.length}</span>
+        ${summary.join("")}
+        <button type="button" class="tn-alerts-toggle" id="tn-alerts-toggle">Lista</button>
+      </div>
+      <div class="tn-alerts-list" id="tn-alerts-list">${rows}</div>`;
+    el.classList.add("has-list");
   }
 
   function renderCounters() {
@@ -873,8 +960,9 @@ export async function mount(container, runtime) {
           position: pos,
           icon: gHaloIcon(urg),
           clickable: false,
-          zIndex: 150,
+          zIndex: 140,
           optimized: false,
+          title: urg === "rojo" ? "Tránsito ≥23h" : "Tránsito 22–23h",
         });
       }
       markersByCode.set(u.codigo, marker);
@@ -1276,10 +1364,10 @@ export async function mount(container, runtime) {
         /* ignore */
       }
     }
-    if (changed) {
-      renderList();
-      syncMarkers();
-    }
+    renderList();
+    paintAlerts();
+    // Siempre re-sincronizar marcadores para aplicar/quitar halos tras precarga
+    syncMarkers();
   }
 
   function paintPrecarga() {
