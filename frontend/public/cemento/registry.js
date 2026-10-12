@@ -9,11 +9,12 @@
  * No tocar cerro-verde/ ni shared/ (salvo que sea infraestructura común).
  * No importar desde módulos de Cerro Verde.
  */
-const V = "egress-opt-1";
+const V = "route-audit-1";
 
 export const modules = {
   home:        () => import(`./modules/home.js?v=${V}`),
   sap:         () => import(`./modules/sap.js?v=${V}`),
+  rutas:       () => import(`./modules/rutas.js?v=${V}`),
   precarga:    () => import(`./modules/precarga.js?v=${V}`),
   seguimiento: () => import(`./modules/seguimiento.js?v=${V}`),
   archivos:    () => import(`./modules/archivos.js?v=${V}`),
