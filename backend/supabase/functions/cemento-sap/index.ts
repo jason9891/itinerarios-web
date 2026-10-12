@@ -260,6 +260,46 @@ Deno.serve(async (req: Request) => {
       const rules = await routeRules(db);
       return reply(req, { reglas: Object.fromEntries(rules), columna: "Descripción Ruta", ventana_dias: SAP_WINDOW_DAYS });
     }
+    if (action === "auditar_reglas_rutas") {
+      // Solo auditoría: no modifica reglas ni registros históricos.
+      const bundled = new Map<string, boolean>();
+      for (const [description, decision] of Object.entries((bundledRouteRules as any).rutas || {})) {
+        bundled.set(routeKey(description), String(decision).trim().toUpperCase() === "SI");
+      }
+      const { data: dbRules, error: rulesError } = await db.from("sap_rutas_reglas")
+        .select("descripcion,descripcion_normalizada,usar,actualizado_por,actualizado_en")
+        .eq("itinerario", "CEMENTO")
+        .order("descripcion_normalizada");
+      if (rulesError) throw rulesError;
+      const discrepancies = (dbRules || []).flatMap((row: any) => {
+        const key = routeKey(row.descripcion_normalizada || row.descripcion);
+        const hasCanonical = bundled.has(key);
+        const canonicalUse = bundled.get(key);
+        let motivo = "";
+        if (row.usar === true && !hasCanonical) motivo = "ACEPTADA_FUERA_CATALOGO_BASE";
+        else if (row.usar === true && canonicalUse === false) motivo = "ACEPTADA_PERO_CATALOGO_BASE_DICE_NO";
+        else if (row.usar === false && canonicalUse === true) motivo = "RECHAZADA_PERO_CATALOGO_BASE_DICE_SI";
+        if (!motivo) return [];
+        return [{
+          descripcion: row.descripcion,
+          descripcion_normalizada: key,
+          usar_actual: row.usar,
+          decision_catalogo_base: hasCanonical ? (canonicalUse ? "SI" : "NO") : "SIN_REGISTRO",
+          motivo,
+          actualizado_por: row.actualizado_por,
+          actualizado_en: row.actualizado_en,
+        }];
+      });
+      return reply(req, {
+        ok: true,
+        modo: "solo_auditoria",
+        mensaje: "Las discrepancias requieren revisión; esta acción no cambia ninguna regla.",
+        total_reglas_bd: (dbRules || []).length,
+        total_catalogo_base: bundled.size,
+        total_discrepancias: discrepancies.length,
+        discrepancias: discrepancies,
+      });
+    }
     if (action === "guardar_regla_ruta") {
       const description = String(body.descripcion || "").replace(/\u00a0/g, " ").replace(/\s+/g, " ").trim();
       const normalized = routeKey(description);
