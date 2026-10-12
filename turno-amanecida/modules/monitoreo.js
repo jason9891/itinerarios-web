@@ -43,7 +43,7 @@ let mapsPromise = null;
 
 async function loadGoogleMaps(key) {
   if (window.google?.maps) return;
-  if (!key) throw new Error("Falta GOOGLE_MAPS_API_KEY (Supabase secret)");
+  if (!key) throw new Error("Falta GOOGLE_MAPS_API_KEY (Worker clocator-proxy)");
   mapsKey = key;
   mapsPromise ||= new Promise((ok, no) => {
     const s = document.createElement("script");
@@ -746,14 +746,39 @@ export async function mount(container, runtime) {
 
   container.querySelector("#tn-back")?.addEventListener("click", () => {
     document.body.classList.remove("tn-fs-monitoreo");
-    // Volver a Base del turno (flujo natural) o home
     const btn =
       document.querySelector('nav button[data-route="base"]') ||
       document.querySelector('nav button[data-route="home"]');
     btn?.click();
   });
 
-
+  // Alertas: Lista / Desestimar / Ir a unidad (delegación; sobrevive a re-paint)
+  container.querySelector("#tn-alerts")?.addEventListener("click", (e) => {
+    const dis = e.target.closest("[data-dismiss]");
+    if (dis) {
+      e.preventDefault();
+      e.stopPropagation();
+      dismissAlert(dis.getAttribute("data-dismiss"));
+      return;
+    }
+    const go = e.target.closest(".tn-alert-goto");
+    if (go?.dataset?.code) {
+      e.preventDefault();
+      selectUnit(go.dataset.code);
+      return;
+    }
+    const tog = e.target.closest("#tn-alerts-toggle, .tn-alerts-toggle");
+    if (tog) {
+      e.preventDefault();
+      const box = container.querySelector("#tn-alerts");
+      if (!box) return;
+      box.dataset.userToggled = "1";
+      box.classList.toggle("open");
+      const open = box.classList.contains("open");
+      const btn = container.querySelector("#tn-alerts-toggle");
+      if (btn) btn.textContent = open ? "Ocultar" : "Lista";
+    }
+  });
 
   const ALERTS_DISMISS_KEY = "tn_alerts_dismissed_v1";
 
@@ -841,6 +866,7 @@ export async function mount(container, runtime) {
   function paintAlerts() {
     const el = container.querySelector("#tn-alerts");
     if (!el) return;
+    const wasOpen = el.classList.contains("open");
     const list = buildAlertList();
     const nGrave = list.filter((x) => x.nivel === "grave").length;
     const nLeve = list.filter((x) => x.nivel === "leve").length;
@@ -852,8 +878,8 @@ export async function mount(container, runtime) {
     if (nGps) summary.push(`<span class="tn-alert tn-alert-gps"><b>${nGps}</b> sin GPS</span>`);
 
     if (!list.length) {
-      el.innerHTML = `<span class="tn-alerts-label">ALERTAS</span><span class="tn-alert tn-alert-ok">Sin alertas pendientes</span>`;
-      el.classList.remove("has-list");
+      el.innerHTML = `<div class="tn-alerts-head"><span class="tn-alerts-label">ALERTAS</span><span class="tn-alert tn-alert-ok">Sin alertas pendientes</span></div>`;
+      el.classList.remove("has-list", "open");
       return;
     }
 
@@ -871,14 +897,17 @@ export async function mount(container, runtime) {
       )
       .join("");
 
+    // Lista abierta por defecto la primera vez; respeta si el usuario la cerró
+    const open = wasOpen || !el.dataset.userToggled;
     el.innerHTML = `
       <div class="tn-alerts-head">
         <span class="tn-alerts-label">ALERTAS · ${list.length}</span>
         ${summary.join("")}
-        <button type="button" class="tn-alerts-toggle" id="tn-alerts-toggle">Lista</button>
+        <button type="button" class="tn-alerts-toggle" id="tn-alerts-toggle">${open ? "Ocultar" : "Lista"}</button>
       </div>
       <div class="tn-alerts-list" id="tn-alerts-list">${rows}</div>`;
     el.classList.add("has-list");
+    el.classList.toggle("open", open);
   }
 
   function renderCounters() {
@@ -1046,7 +1075,7 @@ export async function mount(container, runtime) {
   async function refrescarPosiciones() {
     const data = await apiPost(API.snapshot, { action: "snapshot" });
     if (!data?.ok || !Array.isArray(data.unidades)) throw new Error(data?.error || "Snapshot falló");
-    if (data.google_maps_api_key) mapsKey = data.google_maps_api_key;
+    if (data.google_maps_api_key || data.googleMapsApiKey || data.maps_api_key) mapsKey = data.google_maps_api_key || data.googleMapsApiKey || data.maps_api_key;
     const byCode = new Map(data.unidades.map((x) => [x.codigo, x]));
     let moved = 0;
     for (const u of unidades) {
@@ -1284,13 +1313,82 @@ export async function mount(container, runtime) {
     setTimeout(() => dot.classList.remove("pulse"), 800);
   }
 
-  // Google Maps — key solo desde Work (snapshot Firebase), cero Supabase
+  // Google Maps — key desde Worker clocator-proxy (secret GOOGLE_MAPS_API_KEY ya en Work)
   try {
     let key = mapsKey;
+
+    function pickMapsKey(j) {
+      if (!j || typeof j !== "object") return "";
+      return (
+        j.google_maps_api_key ||
+        j.googleMapsApiKey ||
+        j.maps_api_key ||
+        j.mapsApiKey ||
+        j.GOOGLE_MAPS_API_KEY ||
+        (j.config && (j.config.google_maps_api_key || j.config.maps_api_key)) ||
+        ""
+      );
+    }
+
+    async function workerPost(body) {
+      const user = auth.currentUser;
+      if (!user) throw new Error("Sin sesión");
+      const r = await fetch(API.clocator, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${await user.getIdToken(false)}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(body),
+      });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        const err = new Error(j.error || j.message || `HTTP ${r.status}`);
+        err.status = r.status;
+        err.data = j;
+        throw err;
+      }
+      return j;
+    }
+
+    /** Extrae key del Worker sin inventar endpoints nuevos. */
+    async function fetchMapsKeyFromWork() {
+      // 1) Acciones livianas que el Worker puede soportar
+      for (const action of ["map_config", "config", "health"]) {
+        try {
+          const j = await workerPost({ action });
+          const k = pickMapsKey(j);
+          if (k) return k;
+        } catch (e) {
+          console.warn("[TN] worker action", action, e.message || e);
+        }
+      }
+      // 2) Recorrido mínimo con include_map (mismo patrón del proxy: trae la key)
+      const u0 = unidades.find((u) => u.placa) || unidades[0];
+      if (u0?.placa) {
+        try {
+          const j = await workerPost({
+            placa: String(u0.placa).trim().toUpperCase(),
+            tracto: String(u0.codigo || "").trim().toUpperCase(),
+            include_map: true,
+            // ventana mínima para no saturar
+            desde: "01/01/2020 00:00:00",
+            hasta: "01/01/2020 00:05:00",
+          });
+          const k = pickMapsKey(j);
+          if (k) return k;
+        } catch (e) {
+          console.warn("[TN] worker include_map key", e.message || e);
+        }
+      }
+      return "";
+    }
+
     try {
       const boot = await apiPost(API.snapshot, { action: "snapshot" });
-      if (boot?.google_maps_api_key) {
-        key = boot.google_maps_api_key;
+      const kBoot = pickMapsKey(boot);
+      if (kBoot) {
+        key = kBoot;
         mapsKey = key;
       }
       if (boot?.ok && Array.isArray(boot.unidades)) {
@@ -1308,9 +1406,19 @@ export async function mount(container, runtime) {
     } catch (e) {
       console.warn("[TN] boot snapshot Work", e);
     }
+
+    if (!key) {
+      try {
+        key = await fetchMapsKeyFromWork();
+        if (key) mapsKey = key;
+      } catch (e) {
+        console.warn("[TN] key Work", e);
+      }
+    }
+
     if (!key) {
       throw new Error(
-        "Sin GOOGLE_MAPS_API_KEY en respuesta de snapshot (Work/Firebase). Configura el secret en la Cloud Function.",
+        "Sin GOOGLE_MAPS_API_KEY en respuestas del Worker clocator-proxy (secret existe; el Worker debe incluirla en snapshot o en include_map).",
       );
     }
     await loadGoogleMaps(key);

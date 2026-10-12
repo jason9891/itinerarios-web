@@ -2,12 +2,13 @@
  * Registry de módulos de TURNO AMANECIDA.
  * Independiente de Cemento y Cerro Verde.
  *
- * Endpoints: Firebase Cloud Functions (Work) — sin Supabase.
+ * Backend: Cloudflare Worker clocator-proxy (Work) — secretos y deploy ya operativos.
+ * NO apuntar a Firebase Functions ni a Supabase desde este itinerario.
  */
-const V = "tn25";
+const V = "tn30-sync-1012";
 
-/** Base Work / Firebase Functions del proyecto itinerarios-2fa6f */
-const WORK = "https://us-central1-itinerarios-2fa6f.cloudfunctions.net";
+/** Cloudflare Worker — clocator-proxy (producción TN) */
+const WORK = "https://clocator-proxy.jasontupayachihurtado.workers.dev";
 
 export const modules = {
   home:          () => import(`./modules/home.js?v=${V}`),
@@ -19,12 +20,15 @@ export const modules = {
   reporte:       () => import(`./modules/reporte.js?v=${V}`),
 };
 
-/** Endpoints exclusivos de Turno Amanecida (Firebase Work, cero Supabase). */
+/**
+ * Todos los servicios TN pasan por el mismo Worker.
+ * El body { action: "..." } discrimina snapshot / maestros / map_config / GPS.
+ */
 export const API = {
-  maestros: `${WORK}/turnoAmanecidaMaestros`,
-  snapshot: `${WORK}/turnoAmanecidaSnapshot`,
-  /** Proxy CLocator ya en Firebase (mismo backend Comsatel) */
-  clocator: `${WORK}/cerroVerdeClocator`,
+  maestros: WORK,
+  snapshot: WORK,
+  clocator: WORK,
+  config: WORK,
 };
 
 export { WORK, V };
