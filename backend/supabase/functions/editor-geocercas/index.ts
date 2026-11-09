@@ -1,7 +1,9 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2.57.4";
 import { createRemoteJWKSet, jwtVerify } from "npm:jose@6.1.0";
-import seed from "./seed/MAESTRO_GEOCERCAS.json" with { type: "json" };
+// Base mínima: solo lo que el Maestro de Supabase aún no trae (geocercas _TN).
+// El Maestro completo (111+ geocercas) vive en la base de datos.
+import seed from "./seed/BASE_TN.json" with { type: "json" };
 
 const PROJECT = "itinerarios-2fa6f";
 const DETAIL_VERSION = "VERSION_2";
@@ -20,6 +22,23 @@ const JWKS = createRemoteJWKSet(
 const TYPES = ["geocercas", "rutas_madre", "geocerca_tramo"] as const;
 type MasterType = (typeof TYPES)[number];
 const ITINERARIES = ["CEMENTO", "CERRO VERDE", "TURNO AMANECIDA"];
+
+// Geocercas OPERATIVAS PROTEGIDAS: el análisis de cada itinerario las busca por
+// identificador. Se pueden EDITAR (geometría), pero nunca quitar ni desactivar
+// del itinerario ni borrar del Maestro. Todo lo demás es libre.
+const PROTECTED: Record<string, Record<string, { rol: string; nombre: string }>> = {
+  "CERRO VERDE": {
+    ZG0001: { rol: "PLANTA", nombre: "PLANTA YURA" },
+    ZG0005: { rol: "PLANTA", nombre: "CALCESUR" },
+    ZG0202: { rol: "PLANTA", nombre: "SAN JOSE SMCV" },
+    GEO_mtlitif9_6: { rol: "PLANTA", nombre: "SMCV" },
+    ZG0009: { rol: "PLANTA", nombre: "RACIEMSA AREQUIPA" },
+    GEO_mtsuxu4x_2: { rol: "PLANTA", nombre: "PLANTA CALCESUR" },
+  },
+  "TURNO AMANECIDA": {
+    ZGTN01: { rol: "PRINCIPAL", nombre: "Filtro_Macro_Sur_TN" },
+  },
+};
 
 function reply(req: Request, body: unknown, status = 200) {
   const origin = req.headers.get("origin") || "";
@@ -250,6 +269,40 @@ function upgradeMaster(raw: any) {
         }
       }
     }
+    // TURNO AMANECIDA: primera carga. Si el Maestro ya existía en Supabase sin
+    // asignaciones para este itinerario (caso de un Maestro anterior a las
+    // geocercas _TN), se siembran las 13 geocercas _TN del seed. Si ya hay
+    // asignaciones, no se toca nada: se respeta lo que el usuario dejó.
+    if (itinerary === "TURNO AMANECIDA" && currentAssignments.length === 0) {
+      for (const a of base.asignaciones[itinerary] || []) {
+        const key = `${a.tipo}|${a.maestro_id}`;
+        if (!keys.has(key)) {
+          currentAssignments.push({ ...a });
+          keys.add(key);
+        }
+      }
+    }
+    // Protegidas: siempre presentes, activas y con su nombre operativo fijo.
+    for (const [id, rule] of Object.entries(PROTECTED[itinerary] || {})) {
+      if (!objetos.geocercas.some((x: any) => x.id === id))
+        throw Error(
+          `La geocerca protegida ${rule.nombre} (${id}) no existe en el Maestro y no puede eliminarse.`,
+        );
+      const found = currentAssignments.find(
+        (a: any) => a.tipo === "geocercas" && a.maestro_id === id,
+      );
+      if (found) {
+        found.activa = true;
+        found.nombre_operativo = rule.nombre;
+      } else {
+        currentAssignments.push({
+          maestro_id: id,
+          nombre_operativo: rule.nombre,
+          tipo: "geocercas",
+          activa: true,
+        });
+      }
+    }
     asignaciones[itinerary] = currentAssignments;
   }
 
@@ -276,6 +329,8 @@ function publication(master: any, itinerary: string) {
           id: source.id,
           maestro_id: source.id,
           name: a.nombre_operativo,
+          protegida: !!PROTECTED[itinerary]?.[source.id],
+          rol_operativo: PROTECTED[itinerary]?.[source.id]?.rol || "ADICIONAL",
         };
       });
     docs[type] = {
@@ -326,6 +381,12 @@ Deno.serve(async (req: Request) => {
         maestro: current,
         ...summary(row, current),
         itinerarios: ITINERARIES,
+        protegidas: Object.fromEntries(
+          Object.entries(PROTECTED).map(([it, m]) => [
+            it,
+            Object.fromEntries(Object.entries(m).map(([id, r]) => [id, r.rol])),
+          ]),
+        ),
         rol: user.rol,
         google_maps_api_key: Deno.env.get("GOOGLE_MAPS_API_KEY") || "",
         origen_inicial: row ? "SUPABASE" : "MAESTRO_ADJUNTO_12_09_2026",

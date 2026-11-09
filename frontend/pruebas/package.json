@@ -1,0 +1,2 @@
+{ "name": "pruebas-frontend", "private": true, "type": "module",
+  "scripts": { "test": "node cemento-v3-local-track.test.mjs && node --import ./registrar-stubs.mjs cemento-v3-integracion.test.mjs" } }

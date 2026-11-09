@@ -7,11 +7,13 @@
  *
  * Mapa persistente: se crea una vez; al cambiar de viaje solo se redibujan capas.
  */
-import { esc, moduleHead, apiPost } from "../api-client.js";
-import { API } from "../registry.js";
+import {esc, moduleHead, apiPost, workApi} from "../api-client.js";
+import { API, MULTI_CUENTA } from "../registry.js";
 import { auth } from "../../shared/auth.js";
 import { queryClocator } from "../../shared/clocator-client.js";
+import { effectiveClocator } from "../../shared/multi-cuenta.js";
 import { readLegacyGPS, putLegacyGPS } from "../gps-cache.js";
+import { loadSession } from "../session-store.js";
 
 /** Corredor autorizado de pernocte (solo informativo para el validador SI/NO). */
 const RUTA_PERNOCTE_AUTORIZADA = [
@@ -23,6 +25,63 @@ const RUTA_PERNOCTE_AUTORIZADA = [
   "YURA",
   "RACIEMSA",
 ];
+
+
+function pointInRing(lat, lng, ring) {
+  if (!Array.isArray(ring) || ring.length < 3) return false;
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = Number(ring[i][0] ?? ring[i].lng ?? ring[i].lon);
+    const yi = Number(ring[i][1] ?? ring[i].lat);
+    const xj = Number(ring[j][0] ?? ring[j].lng ?? ring[j].lon);
+    const yj = Number(ring[j][1] ?? ring[j].lat);
+    if (!Number.isFinite(xi) || !Number.isFinite(yi) || !Number.isFinite(xj) || !Number.isFinite(yj)) continue;
+    const intersect = yi > lat !== yj > lat && lng < ((xj - xi) * (lat - yi)) / (yj - yi + 1e-12) + xi;
+    if (intersect) inside = !inside;
+  }
+  return inside;
+}
+
+function fenceRings(f) {
+  const g = f?.geometry || f?.geojson?.geometry || f;
+  const out = [];
+  if (!g) return out;
+  if (g.type === "Polygon" && Array.isArray(g.coordinates)) out.push(g.coordinates[0] || []);
+  else if (g.type === "MultiPolygon" && Array.isArray(g.coordinates)) {
+    for (const poly of g.coordinates) out.push(poly[0] || []);
+  } else if (Array.isArray(f.ring)) out.push(f.ring);
+  else if (Array.isArray(f.coordinates) && typeof f.coordinates[0]?.[0] === "number") out.push(f.coordinates);
+  return out;
+}
+
+function fenceName(f) {
+  return String(f?.name || f?.nombre || f?.properties?.name || f?.id || "").trim();
+}
+
+/** Si el análisis trajo FUERA DE GEOCERCA, reetiquetar con geocercas del bootstrap local. */
+function enrichStopsWithSessionGeocercas(route, geocercas) {
+  if (!route || !Array.isArray(geocercas) || !geocercas.length) return route;
+  const stops = route?.analisis?.paradas_candidatas;
+  if (!Array.isArray(stops) || !stops.length) return route;
+  for (const s of stops) {
+    const geo = String(s.geocerca || "").toUpperCase();
+    if (geo && geo !== "FUERA DE GEOCERCA") continue;
+    const lat = Number(s.lat), lng = Number(s.lng);
+    if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+    for (const f of geocercas) {
+      const name = fenceName(f);
+      if (!name) continue;
+      for (const ring of fenceRings(f)) {
+        if (pointInRing(lat, lng, ring)) {
+          s.geocerca = name;
+          break;
+        }
+      }
+      if (s.geocerca && String(s.geocerca).toUpperCase() !== "FUERA DE GEOCERCA") break;
+    }
+  }
+  return route;
+}
 
 function rutaPernocteGuideHtml() {
   const steps = RUTA_PERNOCTE_AUTORIZADA.map(
@@ -180,7 +239,7 @@ async function loadMaps(key) {
 
 async function ensureMap(host, center, zoom = 9) {
   await loadMaps(
-    (await apiPost(API.clocator, { action: "map_config" })).google_maps_api_key,
+    (await apiPost(effectiveClocator(API.clocatorPrincipal || API.clocator, MULTI_CUENTA, auth.currentUser, "cerro-verde"), { action: "map_config" })).google_maps_api_key,
   );
   const options = {
     center,
@@ -462,38 +521,51 @@ function toggleHours(btn) {
 /* ───────── API ───────── */
 
 async function fetchFaltantes() {
-  return apiPost(API.report, { action: "pernoctes_sin_registro" });
+  // Siempre maestro: evita lista stale de sesión local tras registrar
+  return apiPost(
+    workApi().report,
+    { action: "pernoctes_sin_registro" },
+    { forceNetwork: true },
+  );
 }
 
 async function fetchParadasEstado() {
-  return apiPost(API.report, { action: "paradas_estado" });
+  // Siempre red: el bootstrap cachea paradas_estado y si no forzamos,
+  // tras GUARDAR VALIDACIONES la lista reaparece idéntica.
+  return apiPost(
+    workApi().report,
+    { action: "paradas_estado" },
+    { forceNetwork: true },
+  );
 }
 
 async function loadRouteForItem(item) {
-  // 1) Caché local (precarga / seguimiento): cero egress Supabase
-  const cached = await readLegacyGPS(item.placa).catch(() => null);
-  if (cached && (cached.puntos_gps?.length || cached.ok)) {
-    return {
-      ...cached,
-      desde_cache_local: true,
-      nota: cached.nota || "GPS desde caché local del navegador (sin Supabase)",
-    };
-  }
-  // 2) Red solo si no hay puntos guardados
+  // Ventana: salida Caracoto → llegada SMCV (o ahora). Análisis CON geocercas.
+  let desde = item.ventana_gps_desde || item.salida_caracoto || "";
+  let hasta = item.ventana_gps_hasta || item.llegada_smcv || "";
   if (!auth.currentUser) throw new Error("No hay sesión activa");
   const token = await auth.currentUser.getIdToken(true);
-  const route = await queryClocator({
-    endpoint: API.clocator,
-        fallbackEndpoint: API.clocatorSupabase || "",
+  // includeMap true: el servidor analiza con fences y puede devolver geocercas
+  let route = await queryClocator({
+    endpoint: effectiveClocator(
+      API.clocatorPrincipal || API.clocator,
+      MULTI_CUENTA,
+      auth.currentUser,
+      "cerro-verde",
+    ),
+    fallbackEndpoint: "",
     token,
     placa: item.placa,
     tracto: item.codigo_tracto,
-    desde: item.ventana_gps_desde,
-    hasta: item.ventana_gps_hasta,
-    includeMap: false,
+    desde,
+    hasta,
+    includeMap: true,
   });
+  // Reetiquetar candidatos con geocercas del bootstrap local (sesión)
   try {
-    await putLegacyGPS(item.placa, { ...route, run: "paradas" });
+    const s = await loadSession();
+    const geos = s?.geocercas || [];
+    route = enrichStopsWithSessionGeocercas(route, geos);
   } catch (_) {}
   return route;
 }
@@ -524,29 +596,38 @@ async function registerPernocte(item, form) {
   const llegada_smcv = llegadaRaw
     ? fmtPE(llegadaRaw).replace(/^—$/, "") || llegadaRaw
     : "";
-  return apiPost(API.report, {
-    action: "pernocte_registrar",
-    entrega_sap: item.entrega_sap,
-    placa: item.placa,
-    codigo_tracto: item.codigo_tracto,
-    conductor: item.conductor,
-    fecha_carga: item.fecha_carga,
-    llegada_smcv: llegada_smcv || undefined,
-    parada: {
-      tipo: "PERNOCTE",
-      inicio,
-      fin,
-      duracion_min,
-      geocerca,
-      descripcion,
-      lat: Number.isFinite(lat) ? lat : null,
-      lng: Number.isFinite(lng) ? lng : null,
+  const salidaRaw = String(fd.get("salida_caracoto") || "").trim();
+  const salida_caracoto = salidaRaw
+    ? fmtPE(salidaRaw).replace(/^—$/, "") || salidaRaw
+    : "";
+  return apiPost(
+    workApi().report,
+    {
+      action: "pernocte_registrar",
+      entrega_sap: item.entrega_sap,
+      placa: item.placa,
+      codigo_tracto: item.codigo_tracto,
+      conductor: item.conductor,
+      fecha_carga: item.fecha_carga,
+      salida_caracoto: salida_caracoto || undefined,
+      llegada_smcv: llegada_smcv || undefined,
+      parada: {
+        tipo: "PERNOCTE",
+        inicio,
+        fin,
+        duracion_min,
+        geocerca,
+        descripcion,
+        lat: Number.isFinite(lat) ? lat : null,
+        lng: Number.isFinite(lng) ? lng : null,
+      },
     },
-  });
+    { forceNetwork: true },
+  );
 }
 
 async function downloadReport(action, filename) {
-  const x = await apiPost(API.report, { action }, { binary: true });
+  const x = await apiPost(workApi().report, { action }, { binary: true });
   if (!x?.blob || x.blob.size < 64) {
     throw new Error("El servidor no devolvió un Excel válido. Revise pendientes SI/NO o reintente.");
   }
@@ -748,6 +829,9 @@ async function renderSinRegistro(panel, root) {
             <label class="full"><span>LUGAR / ZONA DE PERNOCTE</span>
               <input name="geocerca" list="cv-zonas-pernocte" required placeholder="AREQUIPA, PLANTA YURA…">
             </label>
+            <label class="full"><span>SALIDA DE CARACOTO (editable)</span>
+              <input name="salida_caracoto" type="text" placeholder="dd/mm/yyyy hh:mm:ss">
+            </label>
             <label class="full"><span>LLEGADA A SMCV (editable)</span>
               <input name="llegada_smcv" type="text" placeholder="dd/mm/yyyy hh:mm:ss — opcional si aún en tránsito">
             </label>
@@ -778,7 +862,60 @@ async function renderSinRegistro(panel, root) {
 
   hoursBtn?.addEventListener("click", () => toggleHours(hoursBtn));
 
-  const selectStop = (stop) => {
+  const reloadRouteBtn = panel.querySelector("#cv-paradas-reload-route");
+  reloadRouteBtn?.addEventListener("click", async () => {
+    if (!currentItem) {
+      if (formMsg) formMsg.textContent = "Seleccione un viaje primero";
+      return;
+    }
+    const d = String(panel.querySelector("#cv-paradas-desde")?.value || "").trim();
+    const h = String(panel.querySelector("#cv-paradas-hasta")?.value || "").trim();
+    const desde = d ? (fmtPE(d).replace(/^—$/, "") || d) : "";
+    const hasta = h ? (fmtPE(h).replace(/^—$/, "") || h) : "";
+    if (!desde || !hasta) {
+      if (formMsg) formMsg.textContent = "Indique DESDE y HASTA (dd/mm/yyyy hh:mm:ss)";
+      return;
+    }
+    currentItem = {
+      ...currentItem,
+      ventana_gps_desde: desde,
+      ventana_gps_hasta: hasta,
+      _rango_manual: true,
+    };
+    if (statusEl) statusEl.textContent = `Recargando recorrido ${desde} → ${hasta}…`;
+    if (candHost) candHost.innerHTML = `<p class="muted">Consultando GPS con rango manual…</p>`;
+    try {
+      const map = await ensureMap(mapHost, { lat: -16.4, lng: -71.55 }, 9);
+      const route = await loadRouteForItem(currentItem);
+      currentRoute = route;
+      const drawn = drawRoute(map, route, (stop) => selectStop(stop));
+      const pernoctes =
+        drawn.candidatos?.length
+          ? drawn.candidatos
+          : (route?.analisis?.paradas_candidatas || []).filter(
+              (x) => String(x.tipo).toUpperCase() === "PERNOCTE",
+            );
+      if (candHost) {
+        candHost.innerHTML = candidatesHtml(pernoctes);
+        candHost.querySelectorAll("[data-stop-id]").forEach((btn) => {
+          btn.onclick = () => {
+            const id = btn.dataset.stopId;
+            const stop = pernoctes.find(
+              (x) => String(x.id || `${x.inicio}|${x.fin}`) === String(id),
+            );
+            if (stop) selectStop(stop);
+          };
+        });
+      }
+      if (statusEl)
+        statusEl.textContent = `Rango manual · ${route?.puntos_gps?.length || route?.puntos || drawn.puntos || 0} pts`;
+    } catch (e) {
+      if (statusEl) statusEl.textContent = e.message || String(e);
+      if (candHost) candHost.innerHTML = `<p class="error">${esc(e.message || e)}</p>`;
+    }
+  });
+
+  function selectStop(stop) {
     selectedStop = stop;
     fillFormFromStop(form, stop);
     candHost?.querySelectorAll(".candidate").forEach((btn) => {
@@ -793,7 +930,7 @@ async function renderSinRegistro(panel, root) {
         if ((mapRuntime.map.getZoom() || 0) < 16) mapRuntime.map.setZoom(16);
       }
     }
-  };
+  }
 
   const selectItem = async (it) => {
     selectedKey = itemKey(it);
@@ -804,6 +941,12 @@ async function renderSinRegistro(panel, root) {
     });
     form?.reset();
     if (form) {
+      const sal = form.querySelector('[name="salida_caracoto"]');
+      if (sal) {
+        sal.value = it.salida_caracoto
+          ? fmtPE(it.salida_caracoto).replace(/^—$/, "")
+          : "";
+      }
       const lleg = form.querySelector('[name="llegada_smcv"]');
       if (lleg) {
         lleg.value =
@@ -811,6 +954,14 @@ async function renderSinRegistro(panel, root) {
             ? fmtPE(it.llegada_smcv).replace(/^—$/, "")
             : "";
       }
+    }
+    const inpDesde = panel.querySelector("#cv-paradas-desde");
+    const inpHasta = panel.querySelector("#cv-paradas-hasta");
+    if (inpDesde) {
+      inpDesde.value = fmtPE(it.ventana_gps_desde || it.salida_caracoto || "").replace(/^—$/, "") || String(it.ventana_gps_desde || it.salida_caracoto || "");
+    }
+    if (inpHasta) {
+      inpHasta.value = fmtPE(it.ventana_gps_hasta || it.llegada_smcv || "").replace(/^—$/, "") || String(it.ventana_gps_hasta || it.llegada_smcv || "");
     }
     if (formMsg) formMsg.textContent = "";
     if (candHost) candHost.innerHTML = `<p class="muted">Consultando GPS…</p>`;
@@ -1133,24 +1284,40 @@ async function renderValidacion(panel) {
         const val = (inp?.value || "").trim();
         if (draft && val) {
           try {
-            await apiPost(API.report, {
-              action: "actualizar_llegada_smcv",
-              entrega_sap: draft.entrega_sap,
-              llegada_smcv: fmtPE(val).replace(/^—$/, "") || val,
-            });
+            await apiPost(
+              workApi().report,
+              {
+                action: "actualizar_llegada_smcv",
+                entrega_sap: draft.entrega_sap,
+                llegada_smcv: fmtPE(val).replace(/^—$/, "") || val,
+              },
+              { forceNetwork: true },
+            );
           } catch (e) {
             console.warn("llegada_smcv", draft.entrega_sap, e);
           }
         }
       }
-      const out = await apiPost(API.report, {
-        action: "validar_pernoctes_lote",
-        validaciones: rows,
-      });
+      // Validación → maestro (auditoría / reporte real)
+      const out = await apiPost(
+        workApi().report,
+        {
+          action: "validar_pernoctes_lote",
+          validaciones: rows,
+        },
+        { forceNetwork: true },
+      );
       if (msg) {
         msg.textContent = `${out.guardadas || 0} guardadas · ${out.manuales || 0} manuales · ${out.sin_reporte_gps || 0} sin GPS`;
         msg.style.color = "#86efac";
       }
+      // Invalidar caché bootstrap de paradas para no volver a listar lo ya validado
+      try {
+        const { patchSession } = await import("../session-store.js");
+        if (typeof patchSession === "function") {
+          await patchSession({ paradas_estado: null, pernoctes_sin_registro: null });
+        }
+      } catch (_) {}
       await renderValidacion(panel);
     } catch (e) {
       if (msg) {
@@ -1221,7 +1388,7 @@ async function renderValidacion(panel) {
       if (!confirm("¿Reabrir validación de este caso SIN REPORTE GPS?")) return;
       btn.disabled = true;
       try {
-        await apiPost(API.report, { action: "reabrir_pernocte_sin_gps", id });
+        await apiPost(workApi().report, { action: "reabrir_pernocte_sin_gps", id });
         await renderValidacion(panel);
       } catch (e) {
         alert(e.message || e);

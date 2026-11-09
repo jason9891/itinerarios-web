@@ -1,0 +1,6 @@
+name = "clocator-proxy"
+main = "src/index.js"
+compatibility_date = "2025-09-01"
+
+[observability]
+enabled = true

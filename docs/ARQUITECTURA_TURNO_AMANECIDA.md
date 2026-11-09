@@ -20,14 +20,14 @@ frontend/public/
     ├── api-client.js
     ├── turno-amanecida.css
     └── modules/
-        ├── home.js
-        ├── maestros.js      # carga única OC + TIPO_ACOPLE
+        ├── home.js          # Inicio: estado + flujo de uso paso a paso
+        ├── maestros.js      # OC (por sesión) + TIPO_ACOPLE
         ├── acoples.js       # grilla CRUD catálogo
-        ├── base.js          # (próx.) snapshot
-        ├── monitoreo.js     # (próx.) poll 3 min
-        ├── clasificacion.js # (próx.)
-        ├── historico.js
-        └── reporte.js
+        ├── base.js          # snapshot CLocator + cruce con OC/acoples
+        ├── monitoreo.js     # mapa + lista + ficha de clasificación, poll 1 min, alertas
+        └── reporte.js       # Excel base_pernocta (17 columnas)
+
+Los módulos «Clasificación» e «Histórico» se eliminaron: la clasificación vive dentro de Monitoreo.
 ```
 
 ## Geocercas `_TN`
@@ -93,3 +93,14 @@ Misma lógica que `snapshot_base_clocator.cargar_oc`:
 2. Monitoreo (poll 3 min) + mapa.
 3. Clasificación (status, riesgo, punto autorizado, cobertura GPS, tipo lugar, punto pernocte, obs).
 4. Cierre de turno + export Excel.
+
+## Maestro de geocercas: protegidas vs libres
+
+El Editor de geocercas mantiene un Maestro único; cada itinerario solo asigna, edita o quita geocercas de él.
+Hay geocercas **operativas protegidas** (se editan, no se quitan ni se borran; validado en el servidor, función `editor-geocercas`, constante `PROTECTED`):
+
+- CERRO VERDE: las 6 plantas (ZG0001, ZG0005, ZG0202, GEO_mtlitif9_6, ZG0009, GEO_mtsuxu4x_2). Las geocercas adicionales asignadas entran al análisis de pernocte.
+- TURNO AMANECIDA: la principal ZGTN01 `Filtro_Macro_Sur_TN`. Las 12 subgeocercas `_TN` son libres.
+- CEMENTO: sin protegidas.
+
+Nota: la función `turno-amanecida-snapshot` usa su propio `geocercas_tn.json` embebido; no lee todavía las geocercas publicadas desde el editor.

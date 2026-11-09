@@ -18,6 +18,7 @@ import {
   sapApi,
   bufferToBase64,
 } from "../api-client.js";
+import { bootstrapCerroVerde } from "../bootstrap.js";
 import { loadSapFile, saveSapFile } from "../sap-store.js";
 
 /** Confirmación local (no window.confirm): no bloquea el hilo del navegador de forma opaca. */
@@ -587,13 +588,22 @@ async function render(container, runtime) {
       });
       validated = false;
       lastSummary = s;
+      let bootMsg = "";
+      try {
+        const boot = await bootstrapCerroVerde({ note: "post-aplicar-sap" });
+        bootMsg = ` · Sesión local activa (${boot.geocercas || 0} geocercas; ediciones se envían al finalizar reporte)`;
+        console.info("[cv] bootstrap local-first", boot);
+      } catch (bootErr) {
+        bootMsg = " · Bootstrap local pendiente: " + (bootErr.message || bootErr);
+        console.warn("[cv] bootstrap", bootErr);
+      }
       resultBox.innerHTML =
         renderSummary(s) +
         `<p class="notice" style="margin-top:12px"><b>APLICACIÓN COMPLETA:</b>
           ${s.agregadas_sap ?? 0} SAP ·
           ${s.agregadas_diario ?? 0} ciclos abiertos ·
           ${s.unidades_grupo_actualizadas ?? 0} unidades del grupo actualizadas.
-          ${s.mensaje ? " · " + esc(s.mensaje) : ""}
+          ${s.mensaje ? " · " + esc(s.mensaje) : ""}${bootMsg}
         </p>`;
       runtime.state.set("sap.lastApplied", {
         fileName: current.nombre,

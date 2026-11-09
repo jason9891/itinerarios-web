@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1d30">
+  <title>Prueba · Itinerarios · RACIEMSA</title>
+  <link rel="stylesheet" href="styles.css">
+  <link rel="stylesheet" href="prueba.css?v=1">
+</head>
+<body class="auth-pending" data-itinerary="prueba">
+<header class="top">
+  <div class="logo" id="platform-logo">R</div>
+  <div class="brand">
+    <b id="platform-brand">RACIEMSA</b>
+    <small id="platform-subtitle">PRUEBA · MULTI-SUPABASE</small>
+  </div>
+  <div class="grow"></div>
+  <a class="itinerary-link" href="index.html">VOLVER A ITINERARIOS</a>
+</header>
+
+<main id="login" class="login">
+  <div class="login-icon">▰</div>
+  <p class="eyebrow">ITINERARIO DE PRUEBA</p>
+  <h1>Prueba</h1>
+  <p>Misma cuenta de la plataforma. Tras ingresar, las consultas GPS usan <b>tu</b> Supabase.</p>
+  <div class="login-form">
+    <label><span>USUARIO</span><input id="login-user" type="text" autocomplete="username" placeholder="PRUEBA" autocapitalize="characters"></label>
+    <label><span>CONTRASEÑA</span><input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••"></label>
+    <button id="user-login" class="primary">INGRESAR</button>
+  </div>
+  <div class="login-separator"><span>o</span></div>
+  <button id="google-login" class="ghost login-google">CONTINUAR CON GOOGLE</button>
+  <p id="login-message" class="message"></p>
+</main>
+
+<div id="workspace" class="workspace hidden">
+  <aside>
+    <div class="side-title">
+      <span>PRUEBA</span>
+      <b>Mapa por placas</b>
+    </div>
+    <nav>
+      <button data-route="seguimiento" class="active"><i>▰</i><span>SEGUIMIENTO<small>LISTA + MAPA</small></span></button>
+      <button data-route="config"><i>⚙</i><span>MI SUPABASE<small>URL DEL OPERADOR</small></span></button>
+    </nav>
+    <div class="side-foot">
+      <b id="tenant-badge">SIN PROYECTO</b>
+      <small>Las consultas GPS van a tu cuenta</small>
+    </div>
+  </aside>
+  <main id="content" class="content"></main>
+</div>
+
+<script type="module" src="prueba/main.js?v=2"></script>
+</body>
+</html>

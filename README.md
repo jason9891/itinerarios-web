@@ -1,5 +1,7 @@
 # Itinerarios · plataforma modular
 
+> ⚠️ **Antes de desplegar lee [`LEEME_ANTES_DE_DESPLEGAR.md`](LEEME_ANTES_DE_DESPLEGAR.md)**: un despliegue reemplaza el sitio completo y puede pisar el trabajo de otro itinerario.
+
 ## Cemento (versión definitiva)
 
 Código canónico del itinerario Cemento:

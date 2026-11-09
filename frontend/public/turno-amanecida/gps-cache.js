@@ -40,3 +40,14 @@ export async function readGPS(key) {
     req.onerror = () => reject(req.error);
   });
 }
+
+/** Borra TODAS las rutas guardadas en la caché local (IndexedDB). */
+export async function limpiarRutas() {
+  const db = await openDB();
+  return new Promise((resolve, reject) => {
+    const tx = db.transaction(STORE, "readwrite");
+    tx.objectStore(STORE).clear();
+    tx.oncomplete = () => resolve(true);
+    tx.onerror = () => reject(tx.error);
+  });
+}

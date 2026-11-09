@@ -1,10 +1,8 @@
 /**
  * Registry de módulos de CERRO VERDE.
- *
- * Independiente de Cemento. Agregar un módulo aquí no afecta a Cemento.
- * ?v= en imports: fuerza recarga tras deploys (Hosting cachea JS 1h).
+ * Sin módulo MI SUPABASE: el destino sale del email de login (TENANT_DIRECTORY).
  */
-const V = "cv25proxy";
+const V = "cv-restaurado-4";
 
 export const modules = {
   home:        () => import(`./modules/home.js?v=${V}`),
@@ -17,15 +15,27 @@ export const modules = {
   reporte:     () => import(`./modules/reporte.js?v=${V}`),
 };
 
-/** Endpoints exclusivos de Cerro Verde. */
+/**
+ * Multi-cuenta ON.
+ * Usuario en TENANT_DIRECTORY (email login) → su proyecto Supabase.
+ * GPS y funciones de trabajo resueltas en runtime (ver api-client / workApi).
+ * Consolidado final → siempre PRINCIPAL (otvdwqbrqvxahyzfkhds).
+ */
+export const MULTI_CUENTA = {
+  enabled: true,
+  itinerary: "cerro-verde",
+};
+
+const PRINCIPAL = "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1";
+
+/** Endpoints PRINCIPAL (consolidado / dueño / fallback sin tenant) */
 export const API = {
-  consulta:  "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1/cerro-verde-consulta",
+  consulta:  `${PRINCIPAL}/cerro-verde-consulta`,
+  clocator:  `${PRINCIPAL}/cerro-verde-clocator`,
+  clocatorPrincipal: `${PRINCIPAL}/cerro-verde-clocator`,
+  clocatorSupabase: `${PRINCIPAL}/cerro-verde-clocator`,
   clocatorFirebase: "https://us-central1-itinerarios-2fa6f.cloudfunctions.net/cerroVerdeClocator",
-  /** Temporal: mientras Firebase Functions (Blaze) no esté activo */
-  clocatorSupabase: "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1/cerro-verde-clocator",
-  /** Preferir Firebase; el cliente puede hacer fallback */
-  clocator:  "https://us-central1-itinerarios-2fa6f.cloudfunctions.net/cerroVerdeClocator",
-  track:     "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1/cerro-verde-seguimiento",
-  report:    "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1/cerro-verde-reporte",
-  sap:       "https://otvdwqbrqvxahyzfkhds.supabase.co/functions/v1/cerro-verde-sap",
+  track:     `${PRINCIPAL}/cerro-verde-seguimiento`,
+  report:    `${PRINCIPAL}/cerro-verde-reporte`,
+  sap:       `${PRINCIPAL}/cerro-verde-sap`,
 };

@@ -57,11 +57,48 @@ function inputToPE(value){const m=String(value||"").match(/^(\d{4})-(\d{2})-(\d{
 function parseAny(v){if(v instanceof Date)return v.getTime();const s=String(v||"").trim();if(!s)return NaN;let m=s.match(/^(\d{2})\/(\d{2})\/(\d{4})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/);if(m)return Date.UTC(+m[3],+m[2]-1,+m[1],+m[4],+m[5],+(m[6]||0));m=s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?/);if(m)return Date.UTC(+m[1],+m[2]-1,+m[3],+(m[4]||0),+(m[5]||0),+(m[6]||0));const d=Date.parse(s);return Number.isFinite(d)?d:NaN}
 function displayTs(value){const s=String(value??"").trim();if(!s)return"";let m=s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})(?:[ ,T]+(\d{1,2}):(\d{2})(?::(\d{2}))?)?$/);if(m){const d=String(m[1]).padStart(2,"0"),mo=String(m[2]).padStart(2,"0"),y=m[3];return m[4]?`${d}/${mo}/${y} ${String(m[4]).padStart(2,"0")}:${m[5]}:${m[6]||"00"}`:`${d}/${mo}/${y}`}m=s.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}):(\d{2})(?::(\d{2}))?)?$/);if(m)return m[4]?`${m[3]}/${m[2]}/${m[1]} ${m[4]}:${m[5]}:${m[6]||"00"}`:`${m[3]}/${m[2]}/${m[1]}`;if(/[zZ]$|[+-]\d{2}:?\d{2}$/.test(s)){const d=new Date(s);if(!Number.isNaN(d.getTime()))return serverToPE(s)}return s}
 function formatDur(min){const n=Number(min||0);if(n>=60){const h=Math.floor(n/60),m=Math.round(n%60);return`${h} h ${String(m).padStart(2,"0")} min`}return`${n.toFixed(1)} min`}
-function meta(){for(const key of[META,"cv_precarga_activa_v4"]){try{const raw=localStorage.getItem(key);if(raw){const value=JSON.parse(raw);if(value)return value}}catch{}}return null}
+function meta(){
+  // Preferir motor modular local (cerro_verde_precarga_v1); luego legacies del tracking monolito.
+  for(const key of["cerro_verde_precarga_v1",META,"cv_precarga_activa_v4","cv_precarga_activa_v5"]){
+    try{
+      const raw=localStorage.getItem(key);
+      if(!raw)continue;
+      const value=JSON.parse(raw);
+      if(!value)continue;
+      // Normalizar forma modular → {resultados,total,completo,actual}
+      if(value.resultados&&!value.actual&&value.orden){
+        const pending=Object.entries(value.resultados).find(([,r])=>!r||!["COMPLETO","SIN MOVIMIENTO","SIN PUNTOS","ERROR FINAL"].includes(String(r.estado||"").toUpperCase()));
+        value.actual=pending?pending[0]:"";
+      }
+      return value;
+    }catch{}
+  }
+  return null;
+}
 function save(m){bg.meta=m;localStorage.setItem(META,JSON.stringify(m));renderProgress()}
 function stateOf(g){const p=(g?.puntos_gps||[]).filter(x=>Number.isFinite(+x.lat)&&Number.isFinite(+x.lng));if(p.length<2)return"SIN MOVIMIENTO";const a=p[0],rad=Math.PI/180,dist=x=>{const d1=(+x.lat-a.lat)*rad,d2=(+x.lng-a.lng)*rad,q=Math.sin(d1/2)**2+Math.cos(a.lat*rad)*Math.cos(+x.lat*rad)*Math.sin(d2/2)**2;return 12742000*Math.asin(Math.sqrt(q))};return p.some(x=>dist(x)>=100)?"COMPLETO":"SIN MOVIMIENTO"}
-function counts(){const m=bg.meta||meta()||{},values=Object.values(m.resultados||{}),done=values.filter(x=>["COMPLETO","SIN MOVIMIENTO"].includes(x.estado)).length,retry=values.filter(x=>["REINTENTO","SEGUNDO INTENTO"].includes(x.estado)).length,errors=values.filter(x=>x.estado==="ERROR FINAL").length,total=bg.units.length||m.total||0,pending=Math.max(0,total-done-errors);return{done,retry,errors,pending,total,current:m.actual||"",complete:!!m.completo}}
-function label(){const c=counts();return bg.running?`PRECARGA ${c.done}/${c.total}${c.retry?` · ${c.retry} REINTENTO`:""}${c.current?` · ${c.current}`:""}`:c.total?`PRECARGA ${c.done}/${c.total}${c.errors?` · ${c.errors} ERROR`:""}`:"PRECARGA PENDIENTE"}
+function counts(){
+  const m=bg.meta||meta()||{};
+  const values=Object.values(m.resultados||{});
+  const done=values.filter(x=>["COMPLETO","SIN MOVIMIENTO","SIN PUNTOS"].includes(String(x.estado||"").toUpperCase())).length;
+  const retry=values.filter(x=>["REINTENTO","SEGUNDO INTENTO","EN COLA","DESCARGANDO"].includes(String(x.estado||"").toUpperCase())).length;
+  const errors=values.filter(x=>String(x.estado||"").toUpperCase()==="ERROR FINAL").length;
+  const total=bg.units.length||m.total||values.length||0;
+  const pending=Math.max(0,total-done-errors);
+  const complete=!!m.completo||(total>0&&pending===0&&retry===0);
+  return{done,retry,errors,pending,total,current:m.actual||"",complete};
+}
+function label(){
+  const c=counts();
+  // Si el motor modular está activo (storage), reflejarlo aunque bg.running del monolito esté false
+  const modularRunning=!c.complete&&c.total>0&&(c.pending>0||c.retry>0);
+  if(bg.running||modularRunning){
+    return `PRECARGA ${c.done}/${c.total}${c.retry?` · ${c.retry} en curso`:""}${c.current?` · ${c.current}`:""}`;
+  }
+  if(c.complete&&c.total)return `PRECARGA LISTA ${c.done}/${c.total}${c.errors?` · ${c.errors} error`:""}`;
+  if(c.total)return `PRECARGA ${c.done}/${c.total}${c.errors?` · ${c.errors} ERROR`:""}`;
+  return "PRECARGA PENDIENTE · local";
+}
 function renderProgress(){
   const c=counts();
   for(const id of["cv-preload-global","cv-home-preload"]){
@@ -458,7 +495,7 @@ function cycleCard(c,o,analysis,index,total,schemaReady=true){
     <div class="hours-grid">${rows}</div>
     <button type="button" class="use-all" data-use-all>USAR TODAS LAS SUGERENCIAS GPS</button>
     ${(()=>{const monitSug=String(a?.monitoreo_sugerido||analysis?.monitoreo_sugerido||a?.ultima_geocerca||analysis?.ultima_geocerca||"").trim();const monitVal=String(p.MONITOREO||"").trim()||monitSug;const sugNote=monitSug&&!String(p.MONITOREO||"").trim()?`<small class="monit-sug">Sugerido por GPS (punto F): ${c.esc(monitSug)}</small>`:monitSug&&String(p.MONITOREO||"").trim()&&String(p.MONITOREO).trim()!==monitSug?`<small class="monit-sug">GPS sugiere: ${c.esc(monitSug)}</small>`:"";return`<div class="state-grid compact-state"><label>ESTADO${estadoSelect(c,p.ESTADO||"")}</label><label>MONITOREO<input data-field="monitoreo" value="${c.esc(monitVal)}">${sugNote}</label><label>OBSERVACIÓN<textarea data-field="observacion">${c.esc(p.OBSERVACION||"")}</textarea></label></div>`})()}
-    <div class="cv-actions"><button type="button" data-save>GUARDAR AVANCE</button><button type="button" data-close ${o.preparado_cierre||!schemaReady?"disabled":""}>${o.preparado_cierre?"CIERRE PREPARADO":!schemaReady?"BASE PENDIENTE":"CERRAR OC"}</button></div>
+    <div class="cv-actions"><button type="button" data-save>GUARDAR AVANCE</button><button type="button" data-close ${o.preparado_cierre||!schemaReady?"disabled":""}>${o.preparado_cierre?"CIERRE PREPARADO":!schemaReady?"BASE PENDIENTE":"CERRAR OC"}</button><span data-saved-badge class="cv-saved-badge" hidden style="margin-left:8px;font-size:12px;font-weight:700;color:#4ade80">✓ Guardado local</span></div>
   </article>`;
 }
 function paradasV3(c){return async()=>{
@@ -1351,7 +1388,13 @@ function tracking(c){return async()=>{
   const captureUi=plate=>{const key=norm(plate);if(!key)return;const state=uiDrafts.get(key)||{cycles:{},range:{},closedOpen:false};const from=c.$("from"),to=c.$("to");if(from)state.range.from=from.value;if(to)state.range.to=to.value;document.querySelectorAll(".cycle-card[data-id]").forEach(card=>{const id=String(card.dataset.id||"");if(!id)return;const values={};card.querySelectorAll("[data-field]").forEach(input=>{values[input.dataset.field]=input.value});state.cycles[id]=values});const closed=c.$("closed-list");if(closed)state.closedOpen=!closed.hidden;const desc=c.$("stop-desc");if(desc&&selectedStopId!=null)stopDrafts.set(`${key}:${selectedStopId}`,desc.value);uiDrafts.set(key,state)};
   const restoreUi=plate=>{const key=norm(plate),state=uiDrafts.get(key);if(!state)return;const from=c.$("from"),to=c.$("to");if(from&&state.range?.from)from.value=state.range.from;if(to&&state.range?.to)to.value=state.range.to;for(const [id,values] of Object.entries(state.cycles||{})){const card=document.querySelector(`.cycle-card[data-id="${id}"]`);if(!card)continue;for(const [field,value] of Object.entries(values||{})){const input=card.querySelector(`[data-field="${field}"]`);if(input)input.value=value}}const closed=c.$("closed-list");if(closed&&state.closedOpen){closed.hidden=false;const b=c.$("closed-toggle");if(b)b.textContent=`${closed.querySelectorAll(".closed-cycle-row").length} CERRADO${closed.querySelectorAll(".closed-cycle-row").length===1?"":"S"} · OCULTAR CERRADOS`}};
   const focusStop=stop=>{const map=mapRuntime.map,lat=+stop?.lat,lng=+stop?.lng;if(!map||!Number.isFinite(lat)||!Number.isFinite(lng))return;const pos={lat,lng};map.panTo(pos);if((map.getZoom?.()||0)<17)map.setZoom(17);try{mapRuntime.stopMarkers?.get(stop.id)?.setAnimation?.(google.maps.Animation.BOUNCE);setTimeout(()=>{try{mapRuntime.stopMarkers?.get(stop.id)?.setAnimation?.(null)}catch{}},650)}catch{}};
-  c.$("content").innerHTML=`<div class="tracking-shell">${schemaReady?"":`<div class="tracking-schema-warning"><b>BASE WEB PENDIENTE DE RECONCILIACIÓN.</b> La vista puede abrirse, pero cierre/revisión/consolidación quedan bloqueados hasta aplicar la migración CERRO VERDE.</div>`}<header class="tracking-top"><b>CERRO VERDE · SEGUIMIENTO POR PLACA</b><span id="cv-preload-global" class="preload-top-state">${label()}</span><span id="pos">PLACA 0/0</span><span id="count">REVISADAS: 0/0</span><span id="oc-count">DESPACHOS: 0</span><button id="pause">PAUSAR Y VOLVER</button><button id="finish" ${schemaReady?"":"disabled"}>TERMINAR SEGUIMIENTO</button></header><div id="tracking-body"><section class="tracking-left"><div id="plate-nav"></div><div class="range-row"><input id="from" placeholder="DESDE"><input id="to" placeholder="HASTA"><button id="refresh">ACTUALIZAR PLACA</button></div><div class="map-wrap"><div id="cv-map">Seleccione una unidad.</div><button id="hours">VER HORAS</button></div><footer><span>AZUL: RECORRIDO</span><span>ROJO: ÚLTIMOS PUNTOS</span><span>P: PARADA</span><strong>GPS PROPONE · OPERADOR CONFIRMA</strong></footer></section><main class="tracking-center" id="cycle"></main><aside class="tracking-right" id="stops"></aside></div></div>`;
+  c.$("content").innerHTML=`<div class="tracking-shell">${schemaReady?"":`<div class="tracking-schema-warning"><b>BASE WEB PENDIENTE DE RECONCILIACIÓN.</b> La vista puede abrirse, pero cierre/revisión/consolidación quedan bloqueados hasta aplicar la migración CERRO VERDE.</div>`}<header class="tracking-top"><b>CERRO VERDE · SEGUIMIENTO POR PLACA</b><span id="cv-preload-global" class="preload-top-state">${label()}</span><span id="pos">PLACA 0/0</span><span id="count">REVISADAS: 0/0</span><span id="oc-count">DESPACHOS: 0</span><button id="pause">PAUSAR Y VOLVER</button><button id="upload-master" ${schemaReady?"":"disabled"}>SUBIR DATA AL MAESTRO</button><button id="finish" ${schemaReady?"":"disabled"}>TERMINAR SEGUIMIENTO</button></header><div id="tracking-body"><section class="tracking-left"><div id="plate-nav"></div><div class="range-row"><input id="from" placeholder="DESDE"><input id="to" placeholder="HASTA"><button id="refresh">ACTUALIZAR PLACA</button></div><div class="map-wrap"><div id="cv-map">Seleccione una unidad.</div><button id="hours">VER HORAS</button></div><footer><span>AZUL: RECORRIDO</span><span>ROJO: ÚLTIMOS PUNTOS</span><span>P: PARADA</span><strong>GPS PROPONE · OPERADOR CONFIRMA</strong></footer></section><main class="tracking-center" id="cycle"></main><aside class="tracking-right" id="stops"></aside></div></div>`;
+  // Indicador precarga LOCAL en vivo (motor modular + legacy)
+  try{renderProgress()}catch{}
+  if(!window.__cvPreloadPoll){
+    window.__cvPreloadPoll=setInterval(()=>{try{renderProgress()}catch{}},1500);
+  }
+
   const render=async({forceMap=false}={})=>{
     captureUi(renderedPlate);
     if(!unitList.length){resetMapVisual("SIN RECORRIDO DISPONIBLE");c.$("pos").textContent="PLACA 0/0";c.$("count").textContent="REVISADAS: 0/0";c.$("oc-count").textContent="DESPACHOS: 0";c.$("plate-nav").innerHTML='<div class="empty-cycle">No hay unidades activas en GRUPO_SMCV.</div>';c.$("cycle").innerHTML='<article class="empty-cycle"><h3>SIN UNIDADES PENDIENTES</h3></article>';c.$("stops").innerHTML="";return}
@@ -1430,14 +1473,115 @@ function tracking(c){return async()=>{
     const selectStop=id=>{const priorDesc=c.$("stop-desc");if(priorDesc&&selectedStopId!=null)stopDrafts.set(`${norm(u.placa)}:${selectedStopId}`,priorDesc.value);selectedStopId=id;const stop=candidates.find(v=>String(v.id)===String(id)),box=c.$("candidate-editor");document.querySelectorAll("[data-stop]").forEach(b=>b.classList.toggle("selected",String(b.dataset.stop)===String(id)));if(!stop||!box)return;focusStop(stop);const owner=cycleOwner(stop,openOcs),draftKey=`${norm(u.placa)}:${stop.id}`;box.innerHTML=`<h3>${stop.tipo==="PERNOCTE"?"POSIBLE PERNOCTE":"POSIBLE PAUSA ACTIVA"}</h3><div class="stop-detail"><b>INICIO</b><span>${c.esc(stop.inicio)}</span><b>FIN</b><span>${c.esc(stop.fin)}</span><b>DURACIÓN</b><span>${c.esc(formatDur(stop.duracion_min))}</span><b>ZONA</b><span>${c.esc(stop.geocerca||"FUERA DE GEOCERCA")}</span><b>DESPACHO</b><span>${c.esc(owner?.orden_carga||"SIN DESPACHO ABIERTO")}</span></div><input id="stop-desc" placeholder="Descripción opcional" value="${c.esc(stopDrafts.get(draftKey)||"")}"><div class="stop-actions"><button id="validate-stop" ${owner?"":"disabled"}>VALIDAR</button><button id="ignore-stop">IGNORAR</button></div>${owner?"":'<p class="stop-warning">Sin despacho abierto relacionado: el candidato se conserva solo para revisión visual.</p>'}`;const desc=c.$("stop-desc");if(desc)desc.oninput=()=>stopDrafts.set(draftKey,desc.value);if(owner)c.$("validate-stop").onclick=async()=>{const b=c.$("validate-stop");b.disabled=true;try{await c.post(c.END.track,{action:"parada_validar",id:owner.id,parada:{...stop,descripcion:c.$("stop-desc").value}});ignored.add(stop.id);localStorage.setItem(ignoredKey,JSON.stringify([...ignored]));stopDrafts.delete(draftKey);try{mapRuntime.stopMarkers?.get(stop.id)?.setMap?.(null);mapRuntime.stopMarkers?.delete(stop.id)}catch{}selectedStopId=null;await render()}catch(e){await notice("NO SE PUDO VALIDAR",e.message||String(e));b.disabled=false}};c.$("ignore-stop").onclick=()=>{ignored.add(stop.id);localStorage.setItem(ignoredKey,JSON.stringify([...ignored]));stopDrafts.delete(draftKey);try{mapRuntime.stopMarkers?.get(stop.id)?.setMap?.(null);mapRuntime.stopMarkers?.delete(stop.id)}catch{}selectedStopId=null;render()}};
     document.querySelectorAll("[data-stop]").forEach(b=>b.onclick=()=>selectStop(b.dataset.stop));
     renderedPlate=norm(u.placa);restoreUi(u.placa);
-    document.querySelectorAll(".cycle-card").forEach(cardEl=>{const oid=+cardEl.dataset.id,o=openOcs.find(z=>z.id===oid),windowAnalysis=analysisWindow(analysis,o),sug=cycleSuggestions(o?.payload||{},windowAnalysis);cardEl.querySelectorAll("[data-use]").forEach(b=>b.onclick=()=>{const v=sug[b.dataset.use];if(v)cardEl.querySelector(`[data-field="${b.dataset.use}"]`).value=v});cardEl.querySelector("[data-use-all]").onclick=()=>cardEl.querySelectorAll("[data-use]:not(:disabled)").forEach(b=>b.click());const collect=()=>{const datos={};cardEl.querySelectorAll("[data-field]").forEach(i=>{const v=i.value.trim();if(v)datos[i.dataset.field]=v});return datos};cardEl.querySelector("[data-save]").onclick=async()=>{try{await c.post(c.END.track,{action:"guardar",id:oid,datos:collect()});await notice("AVANCE GUARDADO","Los cambios quedaron guardados en la sesión.");await render()}catch(e){await notice("NO SE PUDO GUARDAR",e.message||String(e))}};const close=cardEl.querySelector("[data-close]");if(close&&!close.disabled)close.onclick=async()=>{const older=!!o.tiene_despacho_posterior,msg=older?`Existe el despacho posterior ${o.siguiente_entrega}. Este ciclo debe dejar de estar abierto. Se guardarán únicamente los hitos realmente observados; no se inventará ninguna fecha GPS.`:"El ciclo quedará preparado para cierre y se consolidará al terminar el seguimiento.";if(!await ask("CERRAR OC",msg,"CERRAR OC",true))return;try{const r=await c.post(c.END.track,{action:"cerrar",id:oid,datos:collect(),motivo_cierre:older?"NUEVO_DESPACHO_POSTERIOR":"CIERRE_MANUAL_WEB"});if(r.placa_revisada){await refreshList(u.placa);idx=nextIndex(idx);selectedStopId=null;await render();await notice("PLACA COMPLETA","Todos los despachos de la placa quedaron preparados. La unidad fue marcada REVISADA.")}else{await refreshList(u.placa);selectedStopId=null;await render()}}catch(e){await notice("NO SE PUDO CERRAR",e.message||String(e))}}});
-    const review=c.$("review");review.onclick=async()=>{if(!schemaReady)return notice("BASE PENDIENTE","Aplique primero la migración CERRO VERDE para habilitar REVISADA y cierres.");if(x.revisada){idx=nextIndex(idx);selectedStopId=null;return render()}try{await c.post(c.END.track,{action:"marcar_revisada",placa:u.placa});await refreshList(u.placa);reviewed.add(u.placa);idx=nextIndex(idx);selectedStopId=null;await render()}catch(e){await notice("PLACA AÚN PENDIENTE",e.message||String(e))}};
+    document.querySelectorAll(".cycle-card").forEach(cardEl=>{const oid=+cardEl.dataset.id,o=openOcs.find(z=>z.id===oid),windowAnalysis=analysisWindow(analysis,o),sug=cycleSuggestions(o?.payload||{},windowAnalysis);cardEl.querySelectorAll("[data-use]").forEach(b=>b.onclick=()=>{const v=sug[b.dataset.use];if(v)cardEl.querySelector(`[data-field="${b.dataset.use}"]`).value=v});cardEl.querySelector("[data-use-all]").onclick=()=>cardEl.querySelectorAll("[data-use]:not(:disabled)").forEach(b=>b.click());const collect=()=>{const datos={};cardEl.querySelectorAll("[data-field]").forEach(i=>{const v=i.value.trim();if(v)datos[i.dataset.field]=v});return datos};cardEl.querySelector("[data-save]").onclick=async()=>{
+      const btn=cardEl.querySelector("[data-save]");
+      const badge=cardEl.querySelector("[data-saved-badge]");
+      try{
+        if(btn)btn.disabled=true;
+        await c.post(c.END.track,{action:"guardar",id:oid,datos:collect()});
+        if(badge){badge.hidden=false;badge.textContent="✓ Guardado local";}
+        // sin modal: check informativo
+      }catch(e){
+        if(badge){badge.hidden=false;badge.style.color="#f87171";badge.textContent="✗ No guardado";}
+        await notice("NO SE PUDO GUARDAR",e.message||String(e));
+      }finally{if(btn&&btn.isConnected)btn.disabled=false}
+    };
+    const close=cardEl.querySelector("[data-close]");
+    if(close&&!close.disabled)close.onclick=async()=>{
+      const older=!!o.tiene_despacho_posterior;
+      const msg=older
+        ?`Existe el despacho posterior ${o.siguiente_entrega}. Este ciclo debe dejar de estar abierto. Se guardarán únicamente los hitos realmente observados; no se inventará ninguna fecha GPS.`
+        :"El ciclo quedará preparado para cierre (local). Puede retirar la unidad del reporte o marcar REVISADA cuando corresponda.";
+      if(!await ask("CERRAR OC",msg,"CERRAR OC",true))return;
+      try{
+        await c.post(c.END.track,{action:"cerrar",id:oid,datos:collect(),motivo_cierre:older?"NUEVO_DESPACHO_POSTERIOR":"CIERRE_MANUAL_WEB"});
+        // NO avanzar: permitir sacar de operación / revisar a mano sobre la misma placa
+        await refreshList(u.placa);
+        selectedStopId=null;
+        await render();
+        const badge=document.querySelector("[data-saved-badge]");
+        if(badge){badge.hidden=false;badge.textContent="✓ Cierre local · pulse REVISADA para seguir";}
+      }catch(e){await notice("NO SE PUDO CERRAR",e.message||String(e))}
+    };
+    }); // fin forEach .cycle-card
+    const review=c.$("review");
+    review.onclick=async()=>{
+      if(!schemaReady)return notice("BASE PENDIENTE","Aplique primero la migración CERRO VERDE para habilitar REVISADA y cierres.");
+      if(x.revisada){idx=nextIndex(idx);selectedStopId=null;return render()}
+      try{
+        // Auto-guardar hitos visibles de cada OC abierta antes de marcar revisada
+        const allDatos={};
+        document.querySelectorAll("[data-field]").forEach(i=>{
+          const v=String(i.value||"").trim();
+          if(v)allDatos[i.dataset.field]=v;
+        });
+        for(const oc of (openOcs||[])){
+          if(oc.preparado_cierre)continue;
+          try{
+            await c.post(c.END.track,{action:"guardar",id:oc.id,datos:allDatos,orden_carga:oc.orden_carga,placa:u.placa});
+          }catch(_){}
+        }
+        await c.post(c.END.track,{action:"marcar_revisada",placa:u.placa});
+        await refreshList(u.placa);
+        reviewed.add(u.placa);
+        idx=nextIndex(idx);
+        selectedStopId=null;
+        await render();
+      }catch(e){await notice("PLACA AÚN PENDIENTE",e.message||String(e))}
+    };
     c.$("other-operation").onclick=async()=>{if(!schemaReady)return notice("BASE PENDIENTE","Aplique primero la migración CERRO VERDE para retirar unidades del reporte.");const extra=openForOther?` Además se prepararán para cierre administrativo ${openForOther} despacho(s) abierto(s), conservando únicamente la información ya registrada y sin inventar hitos GPS.`:"";if(!await ask("RETIRAR DEL REPORTE",`La unidad ${u.tracto} · ${u.placa} dejará de pertenecer al GRUPO_SMCV activo.${extra} El histórico no se borrará y una futura carga SAP válida podrá reincorporarla.`,"CAMBIO DE OPERACIÓN",true))return;try{const out=await c.post(c.END.track,{action:"otra_operacion",placa:u.placa,motivo:"CAMBIO_DE_OPERACION"});await refreshList("");idx=Math.min(idx,Math.max(0,unitList.length-1));selectedStopId=null;await notice("UNIDAD RETIRADA",`La unidad salió del reporte por CAMBIO DE OPERACIÓN. ${out.cierres_preparados||0} despacho(s) quedaron preparados para cierre administrativo. El histórico permanece intacto.`);await render()}catch(e){await notice("NO SE PUDO RETIRAR",e.message||String(e))}};
     c.$("refresh").onclick=async()=>{const b=c.$("refresh"),old=b.textContent;b.disabled=true;b.textContent="ACTUALIZANDO…";try{const fresh=await c.post(c.END.gps,{placa:u.placa,tracto:u.tracto,desde:c.$("from").value,hasta:c.$("to").value||nowPE(),include_map:false});await c.put("gps",u.placa,{...fresh,run:"manual"});await render({forceMap:true})}catch(e){await notice("ACTUALIZAR RECORRIDO",e.message||String(e))}finally{if(b.isConnected){b.disabled=false;b.textContent=old}}};
     if(plateChanged||forceMap){if(g)draw(g,c,c.$,selectStop).catch(e=>resetMapVisual(`No se pudo mostrar el mapa.\n${e.message||String(e)}`));else resetMapVisual("SIN RECORRIDO DISPONIBLE")}if(selectedStopId&&candidates.some(v=>String(v.id)===String(selectedStopId)))selectStop(selectedStopId);
   };
   await autoReviewNoMovement();
-  c.$("finish").onclick=async()=>{if(!schemaReady)return notice("BASE PENDIENTE","Aplique primero la migración CERRO VERDE para consolidar el seguimiento.");if(!await ask("TERMINAR SEGUIMIENTO",`Se consolidará la sesión únicamente si las ${unitList.length} placas activas están revisadas.`,"TERMINAR",false))return;try{const r=await c.post(c.END.track,{action:"consolidar"});localStorage.removeItem("cv_revisadas");await notice("SEGUIMIENTO COMPLETO",`${r.revisadas}/${r.total_placas} placas consolidadas. Puede ir al reporte o volver a itinerarios.`);const top=document.querySelector(".tracking-top");if(top){const fin=c.$("finish");if(fin){fin.textContent="IR A REPORTE";fin.onclick=()=>c.go("reporte")}let back=c.$("back-itinerarios");if(!back){back=document.createElement("button");back.id="back-itinerarios";back.type="button";back.textContent="VOLVER A ITINERARIOS";top.appendChild(back)}back.onclick=()=>{document.body.classList.remove("tracking-active");location.href="index.html"};const pause=c.$("pause");if(pause){pause.textContent="VOLVER A ITINERARIOS";pause.onclick=()=>{document.body.classList.remove("tracking-active");location.href="index.html"}}}}catch(e){await notice("NO SE PUDO TERMINAR",e.message||String(e))}};
+  const subirDataMaestro=async(titulo="SUBIR DATA AL MAESTRO")=>{
+    try{
+      const {consolidarSesionCv}=await import("./cerro-verde/consolidar.js");
+      const r=await consolidarSesionCv({includeSummary:true});
+      const soft=r.soft?` · ${r.soft} omitida(s)`:"";
+      if(r.consolidado){
+        await notice(titulo,`Cola local aplicada al maestro: ${r.ok} ok${soft}. El reporte usará data real del maestro.`);
+      }else{
+        await notice(titulo,`Parcial: ${r.ok} ok · ${r.soft||0} omitidas · ${r.failed} fallos. Reintente SUBIR DATA.`);
+      }
+      return r;
+    }catch(e){
+      await notice("NO SE PUDO SUBIR",e.message||String(e));
+      return null;
+    }
+  };
+  c.$("upload-master")&&(c.$("upload-master").onclick=async()=>{
+    if(!schemaReady)return notice("BASE PENDIENTE","Aplique primero la migración CERRO VERDE.");
+    if(!await ask("SUBIR DATA AL MAESTRO","Envía la cola local (cierres, guardados, revisadas) al Supabase maestro. No sube GPS. Puede usarlo si hubo errores a mitad del turno.","SUBIR",false))return;
+    const btn=c.$("upload-master");if(btn){btn.disabled=true;btn.textContent="SUBIENDO…"}
+    await subirDataMaestro("DATA EN MAESTRO");
+    if(btn){btn.disabled=false;btn.textContent="SUBIR DATA AL MAESTRO"}
+  });
+  c.$("finish").onclick=async()=>{
+    if(!schemaReady)return notice("BASE PENDIENTE","Aplique primero la migración CERRO VERDE.");
+    if(!await ask("TERMINAR SEGUIMIENTO","1) Sube toda la cola local al maestro.\\n2) Consolida la sesión en el servidor.\\nNo exige que todas las placas estén revisadas.\\nDespués puede generar el reporte con data del maestro.","TERMINAR",false))return;
+    try{
+      const local=await subirDataMaestro("COLA LOCAL → MAESTRO");
+      if(local&&local.failed>0){
+        if(!await ask("HAY FALLOS","Quedaron ediciones sin aplicar en el maestro. ¿Continuar igual con consolidar servidor?","CONTINUAR",false))return;
+      }
+      let r={revisadas:reviewed.size,total_placas:unitList.length};
+      try{r=await c.post(c.END.track,{action:"consolidar",forzar:true})}catch(e){console.warn("[CV] consolidar servidor",e)}
+      localStorage.removeItem("cv_revisadas");
+      await notice("SEGUIMIENTO LISTO",`Local→maestro ok. Servidor: ${r.revisadas??reviewed.size}/${r.total_placas??unitList.length}. Genere el reporte (data maestro).`);
+      const top=document.querySelector(".tracking-top");
+      if(top){
+        const fin=c.$("finish");
+        if(fin){fin.textContent="IR A REPORTE";fin.onclick=()=>c.go("reporte")}
+        let back=c.$("back-itinerarios");
+        if(!back){back=document.createElement("button");back.id="back-itinerarios";back.type="button";back.textContent="VOLVER A ITINERARIOS";top.appendChild(back)}
+        back.onclick=()=>{document.body.classList.remove("tracking-active");location.href="index.html"};
+        const pause=c.$("pause");
+        if(pause){pause.textContent="VOLVER A ITINERARIOS";pause.onclick=()=>{document.body.classList.remove("tracking-active");location.href="index.html"}}
+      }
+    }catch(e){await notice("NO SE PUDO TERMINAR",e.message||String(e))}
+  };
+
   c.$("pause").onclick=(ev)=>{
     try{ev?.preventDefault?.()}catch(_){}
     document.body.classList.remove("tracking-active");

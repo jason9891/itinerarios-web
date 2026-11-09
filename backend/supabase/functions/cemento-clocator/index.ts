@@ -476,14 +476,7 @@ const bundledTramos = (routeFallback.geocerca_tramo || []).filter((x)=>[
     id: x.maestro_id || x.id,
     kind: "geocerca_tramo"
   }));
-let cartographyCache = null;
-let cartographyCacheAt = 0;
-const CARTO_TTL_MS = 10 * 60 * 1000;
-
 async function publishedCartography(db) {
-  if (cartographyCache && Date.now() - cartographyCacheAt < CARTO_TTL_MS) {
-    return cartographyCache;
-  }
   try {
     const { data, error } = await db.from("editor_geocercas_proyectos").select("publicado").eq("itinerario", "CEMENTO").maybeSingle();
     if (error) throw error;
@@ -775,12 +768,6 @@ async function recorrido(plate, tracto, from, to, cartography) {
   view = viewPartial(xml);
   if (!view) throw new Error("CLocator no abrió Mostrar Recorrido");
   const [startField, endField] = dateFields(xml);
-  if (!startField || !endField) {
-    throw new Error("CLocator no expuso campos de fecha de recorrido (start/end null)");
-  }
-  if (!from || !to) {
-    throw new Error(`Rango de fechas vacío (from='${from}' to='${to}') — evita NPE Java en getRecorridoAgregado`);
-  }
   r = await postForm(s.fetcher, MAIN, {
     "javax.faces.partial.ajax": "true",
     "javax.faces.source": "frmRecorrido:fnBuscarRecorridoDeVehiculo",
@@ -898,25 +885,6 @@ Deno.serve(async (req)=>{
     if (!includeMap) {
       delete result.geocercas;
       delete result.rutas_madre;
-      delete result.debug_fila;
-      // Slim analisis: solo lo útil para UI/seguimiento
-      if (result.analisis) {
-        const a = result.analisis;
-        result.analisis = {
-          visitas_confirmadas: a.visitas_confirmadas || [],
-          estado_final: a.estado_final || "",
-          ultima_geocerca: a.ultima_geocerca || "",
-          ubicacion_red: a.ubicacion_red || a.ubicacion_tramo || "",
-        };
-      }
-      // puntos ya son {lat,lng,fecha}; sin campos extra
-      if (Array.isArray(result.puntos_gps)) {
-        result.puntos_gps = result.puntos_gps.map((p) => ({
-          lat: p.lat,
-          lng: p.lng,
-          fecha: p.fecha || null,
-        }));
-      }
     }
     const out = {
       ok: true,

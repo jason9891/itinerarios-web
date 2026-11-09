@@ -3,7 +3,7 @@
  * Solo: shell + auth + router de módulos.
  * La lógica de cada pantalla vive en cemento/modules/*.js
  */
-import { applyPlatformShell } from "../shared/platform-shell.js";
+import { applyPlatformShell, bindActiveUser } from "../shared/platform-shell.js";
 import { auth, onAuthStateChanged, wireLoginForm } from "../shared/auth.js";
 import { createItineraryRuntime, loadModule } from "../shared/module-runtime.js";
 import { modules, API } from "./registry.js";
@@ -49,6 +49,7 @@ document.querySelectorAll("nav button[data-route]").forEach((b) => {
 
 // Auth → mostrar workspace y cargar módulo
 onAuthStateChanged(auth, async (user) => {
+  bindActiveUser(user);
   const login = document.getElementById("login");
   const workspace = document.getElementById("workspace");
   document.body.classList.remove("auth-pending");

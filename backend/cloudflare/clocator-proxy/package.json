@@ -1,0 +1,8 @@
+{
+  "name": "clocator-proxy",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node test/run.mjs && node test/alarmas-sesion.mjs"
+  }
+}

@@ -1,3 +1,4 @@
+import { effectiveClocator } from "../../shared/multi-cuenta.js";
 /**
  * Módulo CERRO VERDE · seguimiento
  *
@@ -7,8 +8,8 @@
  *
  * Independiente de Cemento. No importa nada de cemento/.
  */
-import { esc, trackApi, apiGet, apiPost, bufferToBase64 } from "../api-client.js";
-import { API } from "../registry.js";
+import {esc, trackApi, apiGet, apiPost, bufferToBase64, workApi} from "../api-client.js";
+import { API, MULTI_CUENTA } from "../registry.js";
 import { auth } from "../../shared/auth.js";
 import {
   bindRuntime,
@@ -16,9 +17,9 @@ import {
   counts,
   isRunning,
   nplate,
-} from "../precarga-engine.js";
+} from "../precarga-engine.js?v=cv-6d-2";
 import { readLegacyGPS, putLegacyGPS } from "../gps-cache.js";
-import { tracking } from "../../cerro-verde-tracking.js?v=cv-if-01";
+import { tracking } from "../../cerro-verde-tracking.js?v=cv-local-full-21";
 
 const MIN_ROUTES_TO_OPEN = 5;
 const PRECARGA_DONE = new Set([
@@ -197,22 +198,24 @@ function buildTrackingContext(runtime) {
   };
 
   async function post(url, body, binary = false, signal) {
-    try {
-      return await apiPost(url, body, { signal, binary: !!binary });
-    } catch (e) {
-      const isGps =
-        url === API.clocator ||
-        String(url).includes("cerroVerdeClocator") ||
-        String(url).includes("cerro-verde-clocator");
-      const fb = API.clocatorSupabase;
-      if (isGps && fb && fb !== url) {
-        console.warn("[seguimiento] GPS primary falló, fallback Supabase", e?.message || e);
-        return apiPost(fb, body, { signal, binary: !!binary });
-      }
-      throw e;
-    }
+    // Siempre por apiPost: local-first encola negocio; GPS solo clocator efectivo.
+    // SIN fallback al principal (evita doble egress).
+    return apiPost(url, body, { signal, binary: !!binary });
   }
   async function get(path) {
+    // El tracking clásico pide get("seguimiento") → { registros: [...] }.
+    // En modular la fuente es track action=lista (caché o red).
+    const p = String(path || "").replace(/^\//, "");
+    if (p === "seguimiento" || p === "lista") {
+      const lista = await trackApi({ action: "lista" });
+      const registros =
+        lista.registros ||
+        lista.placas ||
+        lista.unidades ||
+        lista.items ||
+        [];
+      return { ...lista, registros };
+    }
     return apiGet(path);
   }
   async function one(store, key) {
@@ -229,11 +232,11 @@ function buildTrackingContext(runtime) {
     $,
     esc,
     END: {
-      gps: API.clocator,
-      track: API.track,
-      sap: API.sap,
-      q: API.consulta,
-      report: API.report,
+      gps: workApi().clocator,
+      track: workApi().track,
+      sap: workApi().sap,
+      q: workApi().consulta,
+      report: workApi().report,
     },
     post,
     get,

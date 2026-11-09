@@ -1,32 +1,21 @@
 /**
  * Cliente HTTP exclusivo de TURNO AMANECIDA.
  */
-import { auth } from "../shared/auth.js";
-import { API } from "./registry.js";
+import { acoplesListar, acoplesGuardar } from "./worker-client.js?v=tn30";
 
-async function token() {
-  const u = auth.currentUser;
-  if (!u) throw new Error("No hay sesión activa");
-  return u.getIdToken(true);
-}
-
-export async function apiPost(url, body, { signal } = {}) {
-  const r = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${await token()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(body ?? {}),
-    signal,
-  });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(d.error || d.message || `HTTP ${r.status}`);
-  return d;
-}
-
-export function maestrosApi(body, opts) {
-  return apiPost(API.maestros, body, opts);
+/** Compatibilidad: las acciones de maestros ahora van al Worker (KV), no a Supabase. */
+export async function maestrosApi(body) {
+  const a = body?.action;
+  if (a === "listar_acoples") {
+    const r = await acoplesListar();
+    return { ok: true, ...r };
+  }
+  if (a === "guardar_acoples") return acoplesGuardar(body.filas);
+  if (a === "estado") {
+    const r = await acoplesListar();
+    return { ok: true, acoples: { filas: r.filas.length, actualizado_en: r.actualizado_en } };
+  }
+  throw new Error(`Acción no disponible: ${a}`);
 }
 
 export function esc(v) {

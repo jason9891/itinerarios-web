@@ -6,10 +6,11 @@
  * 4) Resultado → localStorage tn_base_turno_v1 → Monitoreo
  * Supabase no recibe el cruce intermedio; solo el resultado final si se sincroniza después.
  */
-import { moduleHead, esc, maestrosApi, fechaPE } from "../api-client.js";
+import { moduleHead, esc, maestrosApi, fechaPE } from "../api-client.js?v=tn30";
+import { obtenerSnapshot } from "../worker-client.js?v=tn30";
 import { auth } from "../../shared/auth.js";
 import { API } from "../registry.js";
-import { startPrecarga } from "../precarga-engine.js";
+import { startPrecarga, getProgress, fechaTurnoPE } from "../precarga-engine.js?v=tn32";
 
 const OC_KEY = "tn_oc_ultima_v1";
 const ACOPLE_KEY = "tn_acoples_v1";
@@ -29,7 +30,8 @@ function normalizarClave(v) {
 
 function loadOcLocal() {
   try {
-    const raw = JSON.parse(localStorage.getItem(OC_KEY) || "null");
+    // Solo la OC subida en esta sesión (sessionStorage); nunca una copia vieja de otro turno
+    const raw = JSON.parse(sessionStorage.getItem(OC_KEY) || "null");
     if (!raw?.filas?.length) return { filas: [], meta: null };
     // Solo equipos 20-R-
     const filas = raw.filas.filter((f) =>
@@ -122,24 +124,8 @@ function matchLocal(unidadesSnap, ocFilas, acoples) {
   return { unidades, conOc, conAcople };
 }
 
-async function token() {
-  const u = auth.currentUser;
-  if (!u) throw new Error("No hay sesión activa");
-  return u.getIdToken(true);
-}
-
 async function fetchSnapshot() {
-  const r = await fetch(API.snapshot, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${await token()}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({ action: "snapshot" }),
-  });
-  const d = await r.json().catch(() => ({}));
-  if (!r.ok) throw new Error(d.error || d.message || `HTTP ${r.status}`);
-  return d;
+  return obtenerSnapshot();
 }
 
 export async function mount(container) {
@@ -166,7 +152,7 @@ export async function mount(container) {
       </div>
       <div class="tn-grid" id="tn-prep">
         <div class="tn-card ${oc.filas.length ? "ok" : "warn"}">
-          <small>OC LOCAL (20-R-)</small>
+          <small>OC DE ESTA SESIÓN (20-R-)</small>
           <b>${oc.filas.length}</b>
           <span class="muted" style="font-size:12px">${
             oc.meta
@@ -231,9 +217,9 @@ export async function mount(container) {
     resultEl.innerHTML = "";
     try {
       if (!oc.filas.length) {
-        log("⚠ Sin OC local 20-R-. El snapshot saldrá sin piloto/ruta/acople. Carga OC en Maestros.");
+        log("⚠ No hay OC cargada en esta sesión. La base saldrá sin piloto/ruta/acople. Sube el Excel de OC en Maestros.");
       } else {
-        log(`OC local 20-R-: ${oc.filas.length} equipos (última por equipo)`);
+        log(`OC de esta sesión (20-R-): ${oc.filas.length} equipos (última por equipo)`);
       }
       log(`Acoples: ${acoples.length}`);
       log("Consultando snapshot CLocator (geocercas _TN)…");
@@ -275,25 +261,24 @@ export async function mount(container) {
         unidades,
       };
       localStorage.setItem(BASE_KEY, JSON.stringify(payload));
-      // Precarga de recorridos en 2º plano (caché) — mismo rango 16:00→ahora
+      // Precarga de recorridos (16:00 del turno → ahora, hora Lima) en caché local
       try {
-        const now = new Date();
-        // Fecha local (no UTC): madrugada → turno del día anterior
-        const turno = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        if (now.getHours() < 12) turno.setDate(turno.getDate() - 1);
-        const y = turno.getFullYear();
-        const mo = String(turno.getMonth() + 1).padStart(2, "0");
-        const d = String(turno.getDate()).padStart(2, "0");
-        const fechaTurno = `${y}-${mo}-${d}`;
+        const fechaT = fechaTurnoPE();
+        log(`Precargando rutas ${fechaT} 16:00 → ahora (caché local)…`);
+        const onProg = () => {
+          const g = getProgress();
+          if (g.total) log(`Rutas ${g.done}/${g.total}`);
+        };
+        window.addEventListener("turno-amanecida:precarga", onProg);
         startPrecarga(
-          unidades.map((u) => ({ codigo: u.codigo, placa: u.placa })).filter((u) => u.placa || u.codigo),
-          fechaTurno,
-          { reason: "base-turno" },
-        );
-        log(`Precarga rutas iniciada en 2º plano (16:00 ${fechaTurno} → ahora)`);
+          unidades.map((u) => ({ codigo: u.codigo, placa: u.placa, lat: u.lat, lng: u.lng })),
+          fechaT,
+          { reason: "base" },
+        )
+          .catch((err) => console.warn("[TN] precarga", err))
+          .finally(() => window.removeEventListener("turno-amanecida:precarga", onProg));
       } catch (err) {
         console.warn("[TN] precarga", err);
-        log(`Precarga: ${err.message || err}`);
       }
 
       cardBase.className = "tn-card ok";
@@ -334,7 +319,7 @@ export async function mount(container) {
     } catch (e) {
       log(`ERROR: ${e.message || e}`);
       resultEl.innerHTML = `<p class="tn-badge err">${esc(e.message || e)}</p>
-        <p class="muted" style="margin-top:8px">Verifica el endpoint Work (Firebase) <code>turnoAmanecidaSnapshot</code>.</p>`;
+        <p class="muted" style="margin-top:8px">Origen: Worker de Cloudflare (clocator-proxy). Revisa que esté desplegado y que ALLOWED_EMAILS incluya tu correo.</p>`;
     } finally {
       btn.disabled = false;
       btn.textContent = "GENERAR SNAPSHOT REAL";

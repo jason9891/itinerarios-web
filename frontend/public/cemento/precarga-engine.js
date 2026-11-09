@@ -14,8 +14,9 @@
  *   cemento:precarga-batch  { completo, done, ok, errors, total, running }
  *   cemento:precarga-progress { running, done, total, currentPlaca? }
  */
-import { API } from "./registry.js";
+import { API, MULTI_CUENTA } from "./registry.js";
 import { queryClocator } from "../shared/clocator-client.js";
+import { effectiveClocator } from "../shared/multi-cuenta.js";
 import { auth } from "../shared/auth.js";
 import { cacheGPS, gpsKey } from "./gps-cache.js";
 
@@ -255,7 +256,7 @@ export async function startPreload(units, opts = {}) {
       if (!auth.currentUser) throw new Error("Sesión cerrada");
       const token = await auth.currentUser.getIdToken(true);
       const data = await queryClocator({
-        endpoint: API.clocator,
+        endpoint: effectiveClocator(API.clocatorPrincipal || API.clocator, MULTI_CUENTA, auth.currentUser, "cemento"),
         token,
         placa: u.placa,
         tracto: u.tracto,

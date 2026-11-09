@@ -746,7 +746,8 @@ Deno.serve(async (req) => {
         },
       });
     }
-    // Repair pesado solo al generar Excel (no en cada "estado")
+    // Repara conductores en "-" desde SAP (DIARIO + HISTORICO) antes de leer el corte
+    await repairConductoresInStaging(db);
     const [rows, { data: sessionRows, error: de }] =
       await Promise.all([
         readTracking(db, "DIARIO"),
@@ -827,7 +828,6 @@ Deno.serve(async (req) => {
         },
       });
     if (action === "excel") {
-      await repairConductoresInStaging(db);
       const enriched = await enrichWithMaster(db, rows);
       const bytes = await workbook(enriched, true),
         name = `MONITOREO_CEMENTO_${stampPE()}.xlsx`;

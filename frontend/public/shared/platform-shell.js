@@ -79,3 +79,33 @@ export const HEADER_TEMPLATE = `
   <a class="itinerary-link" href="index.html">VOLVER A ITINERARIOS</a>
 </header>
 `.trim();
+
+/**
+ * Muestra el usuario activo en el header (fijo, junto a marca).
+ * Llamar tras auth o desde onAuthStateChanged.
+ */
+export function bindActiveUser(user) {
+  try {
+    let chip = document.getElementById("platform-user");
+    if (!chip) {
+      const top = document.querySelector("header.top");
+      if (!top) return;
+      chip = document.createElement("div");
+      chip.id = "platform-user";
+      chip.className = "platform-user";
+      const grow = top.querySelector(".grow");
+      if (grow) top.insertBefore(chip, grow.nextSibling);
+      else top.appendChild(chip);
+    }
+    if (!user) {
+      chip.hidden = true;
+      chip.textContent = "";
+      return;
+    }
+    chip.hidden = false;
+    const label = user.email || user.displayName || user.uid || "usuario";
+    chip.innerHTML = `<span class="platform-user-label">USUARIO</span><b title="${String(label).replace(/"/g, "&quot;")}">${String(label)}</b>`;
+  } catch (e) {
+    console.warn("[platform-shell] bindActiveUser", e);
+  }
+}
