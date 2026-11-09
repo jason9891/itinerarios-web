@@ -5,7 +5,15 @@
 import { applyPlatformShell } from "../shared/platform-shell.js";
 import { auth, onAuthStateChanged, wireLoginForm } from "../shared/auth.js";
 import { createItineraryRuntime, loadModule } from "../shared/module-runtime.js";
-import { modules, API } from "./registry.js";
+import { modules, API } from "./registry.js?v=tn31";
+
+// La OC ya NO se conserva entre sesiones (era una copia vieja en localStorage).
+// Ahora vive solo en sessionStorage: hay que subir el Excel de OC en cada turno.
+try {
+  localStorage.removeItem("tn_oc_ultima_v1");
+} catch {
+  /* ignore */
+}
 
 applyPlatformShell({ itinerary: "turno-amanecida", subtitle: "TURNO AMANECIDA" });
 wireLoginForm();
@@ -20,7 +28,8 @@ function navState(route) {
 }
 
 async function go(route) {
-  const r = route || "home";
+  // Rutas que ya no existen (p. ej. enlaces viejos a #/clasificacion o #/historico) → Inicio
+  const r = route && modules[route] ? route : "home";
   history.replaceState(null, "", `#/${r}`);
   navState(r);
   try {
@@ -46,6 +55,8 @@ onAuthStateChanged(auth, async (user) => {
   const login = document.getElementById("login");
   const workspace = document.getElementById("workspace");
   document.body.classList.remove("auth-pending");
+  const who = document.getElementById("tn-user");
+  if (who) who.textContent = user?.email || "";
   if (login) login.classList.toggle("hidden", !!user);
   if (workspace) workspace.classList.toggle("hidden", !user);
   if (user) {

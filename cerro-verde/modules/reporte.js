@@ -1,3 +1,4 @@
+import { effectiveClocator } from "../../shared/multi-cuenta.js";
 /**
  * Módulo CERRO VERDE · crear reporte / ENVIABLE de seguimiento
  *
@@ -5,8 +6,10 @@
  * - Previsualización editable CAL VACÍO / CAL CARGADO antes del Excel
  *   (corregir sección vacío→cargado, estado, hitos, llegada SMCV, etc.)
  */
-import { esc, apiGet, apiPost, bufferToBase64 } from "../api-client.js";
-import { API } from "../registry.js";
+import { esc, apiGet, apiPost, bufferToBase64, workApi } from "../api-client.js";
+import { consolidarSesionCv } from "../consolidar.js";
+import { sessionStatus, wipeLocalCerroVerde } from "../bootstrap.js";
+import { API, MULTI_CUENTA } from "../registry.js";
 import { auth } from "../../shared/auth.js";
 import { reportV3 } from "../../cerro-verde-tracking.js?v=cv-noconvoy-01";
 
@@ -19,6 +22,7 @@ export async function mount(container, runtime) {
     const ctx = buildContext(runtime);
     await reportV3(ctx)();
     await mountPreview(container);
+    mountFinalizarReporte(container);
   } catch (e) {
     console.error("[cerro-verde reporte]", e);
     container.innerHTML = `<section class="error-box"><h2>Error en reporte</h2><p>${esc(e.message)}</p></section>`;
@@ -46,7 +50,7 @@ function buildContext(runtime) {
   return {
     $,
     esc,
-    END: { gps: API.clocator, track: API.track, sap: API.sap, q: API.consulta, report: API.report },
+    END: (() => { const w = workApi(); return { gps: w.clocator, track: w.track, sap: w.sap, q: w.consulta, report: w.report }; })(),
     post,
     get: apiGet,
     one: async () => null,
@@ -59,7 +63,7 @@ function buildContext(runtime) {
 }
 
 async function downloadExcel() {
-  const x = await apiPost(API.report, { action: "excel" }, { binary: true });
+  const x = await apiPost(workApi().report, { action: "excel" }, { binary: true });
   if (!x?.blob || x.blob.size < 64) throw new Error("Excel vacío o inválido");
   const a = document.createElement("a");
   a.href = URL.createObjectURL(x.blob);
@@ -155,7 +159,7 @@ async function mountPreview(host) {
   async function render() {
     let data;
     try {
-      data = await apiPost(API.report, { action: "reporte_preview" });
+      data = await apiPost(workApi().report, { action: "reporte_preview" });
     } catch (e) {
       box.innerHTML = `<section class="error-box"><h2>Previsualización</h2><p>${esc(e.message)}</p></section>`;
       return;
@@ -224,7 +228,7 @@ async function mountPreview(host) {
       const btn = box.querySelector("#cv-rep-save");
       if (btn) { btn.disabled = true; btn.textContent = "GUARDANDO…"; }
       try {
-        const out = await apiPost(API.report, {
+        const out = await apiPost(workApi().report, {
           action: "reporte_actualizar_lote",
           filas: [...dirty.values()],
         });
@@ -246,7 +250,20 @@ async function mountPreview(host) {
       const btn = box.querySelector("#cv-rep-xlsx");
       if (btn) { btn.disabled = true; btn.textContent = "GENERANDO…"; }
       try {
+        let consMsg = "";
+        try {
+          const st = await sessionStatus();
+          if (st.localFirst && st.deltas > 0) {
+            const cons = await consolidarSesionCv();
+            consMsg = ` · consolidado principal ${cons.ok}/${cons.total}`;
+            if (cons.failed) throw new Error(`Consolidar: ${cons.failed} fallo(s)`);
+          }
+        } catch (ce) {
+          if (msg) { msg.textContent = ce.message || String(ce); msg.style.color = "#fca5a5"; }
+          throw ce;
+        }
         const name = await downloadExcel();
+        if (consMsg && msg) msg.textContent = (msg.textContent || "") + consMsg;
         if (msg) { msg.textContent = `Descargado: ${name}`; msg.style.color = "#86efac"; }
       } catch (e) {
         if (msg) { msg.textContent = e.message || String(e); msg.style.color = "#fca5a5"; }
@@ -259,3 +276,57 @@ async function mountPreview(host) {
 
   await render();
 }
+
+
+async function mountFinalizarReporte(container) {
+  const box = document.createElement("section");
+  box.className = "panel";
+  box.style.cssText = "margin-top:16px;border:1px solid #a3e635";
+  box.innerHTML = `
+    <div class="panel-title">
+      <div>
+        <h2>Finalizar reporte (cierre de turno)</h2>
+        <p class="muted" style="margin:6px 0 0;font-size:13px;max-width:52rem;line-height:1.45">
+          <b>1.</b> Genere y descargue el <b>Excel ENVIABLE</b> de este módulo (data del maestro).<br>
+          <b>2.</b> Si hay pernoctes, complete Paradas y su enviable si aplica.<br>
+          <b>3.</b> Pulse <b>FINALIZAR REPORTE</b>: sube cola local restante al maestro y <b>borra el caché local</b>
+          (queda listo el turno; el login se conserva).
+        </p>
+      </div>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:center;margin-top:12px">
+      <button type="button" id="cv-finalizar-reporte" class="primary">FINALIZAR REPORTE</button>
+      <span id="cv-finalizar-msg" class="muted" style="font-size:13px"></span>
+    </div>`;
+  container.appendChild(box);
+  const btn = box.querySelector("#cv-finalizar-reporte");
+  const msg = box.querySelector("#cv-finalizar-msg");
+  const onFin = async () => {
+    if (!confirm(
+      "FINALIZAR REPORTE:\\n1) Sube cola local restante al maestro.\\n2) Si queda vacía, borra caché local.\\n\\nHágalo DESPUÉS de descargar el Excel.\\n¿Continuar?"
+    )) return;
+    btn.disabled = true;
+    btn.textContent = "CERRANDO…";
+    msg.textContent = "";
+    try {
+      const st0 = await sessionStatus();
+      if ((st0.deltas || 0) > 0) {
+        msg.textContent = `Subiendo ${st0.deltas} cambio(s)…`;
+        const r = await consolidarSesionCv({ includeSummary: true });
+        if (!r.maestro_actualizado && (r.pendientes_sesion_web || 0) > 0) {
+          throw new Error(r.mensaje || "Aún hay data en camino al maestro");
+        }
+      }
+      await wipeLocalCerroVerde();
+      msg.innerHTML = `<span style="color:#166534;font-weight:700">Turno cerrado · caché local limpio.</span>`;
+      btn.textContent = "FINALIZADO";
+    } catch (e) {
+      msg.textContent = e.message || String(e);
+      btn.disabled = false;
+      btn.textContent = "FINALIZAR REPORTE";
+    }
+  };
+  btn.addEventListener("click", onFin);
+  cleanup.push(() => btn.removeEventListener("click", onFin));
+}
+

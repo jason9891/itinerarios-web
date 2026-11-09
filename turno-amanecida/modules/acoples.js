@@ -1,4 +1,4 @@
-import { moduleHead, esc, maestrosApi } from "../api-client.js";
+import { moduleHead, esc, maestrosApi } from "../api-client.js?v=tn30";
 
 let disposed = false;
 

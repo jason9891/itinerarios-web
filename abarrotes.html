@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#0b1d30">
+  <title>PRUEBA NO TOCAR · Itinerarios · RACIEMSA</title>
+  <link rel="stylesheet" href="abarrotes/base.css?v=ab3">
+  <link rel="stylesheet" href="abarrotes/abarrotes.css?v=ab3">
+</head>
+<body class="auth-pending" data-itinerary="abarrotes">
+
+<!-- SHELL CANÓNICO (ver docs/CONVENCIONES_SHELL_Y_CLOCATOR.md). Logo y marca: abarrotes/propio/platform-shell.js -->
+<header class="top">
+  <div class="logo" id="platform-logo">R</div>
+  <div class="brand">
+    <b id="platform-brand">RACIEMSA</b>
+    <small id="platform-subtitle">PRUEBA NO TOCAR</small>
+  </div>
+  <div class="grow"></div>
+  <small id="ab-user" title="Usuario activo en la sesión" style="margin-right:14px;opacity:.85;font-weight:600"></small>
+  <a class="itinerary-link" href="index.html">VOLVER A ITINERARIOS</a>
+</header>
+
+<main id="login" class="login">
+  <div class="login-icon">▰</div>
+  <p class="eyebrow">PLATAFORMA DE SEGUIMIENTO</p>
+  <h1>PRUEBA NO TOCAR</h1>
+  <p>Despachos y seguimiento GPS. Usa la misma cuenta autorizada de la plataforma.</p>
+  <div class="login-form">
+    <label><span>USUARIO</span><input id="login-user" type="text" autocomplete="username" placeholder="PRUEBA" autocapitalize="characters"></label>
+    <label><span>CONTRASEÑA</span><input id="login-password" type="password" autocomplete="current-password" placeholder="••••••••"></label>
+    <button id="user-login" class="primary">INGRESAR</button>
+  </div>
+  <div class="login-separator"><span>o</span></div>
+  <button id="google-login" class="ghost login-google">CONTINUAR CON GOOGLE</button>
+  <p id="login-message" class="message"></p>
+</main>
+
+<div id="workspace" class="workspace hidden">
+  <aside>
+    <div class="side-title">
+      <span>PRUEBA NO TOCAR</span>
+      <b>Consolidado y seguimiento</b>
+    </div>
+    <nav>
+      <button data-route="home"><i>⌂</i><span>INICIO<small>ESTADO Y FLUJO</small></span></button>
+      <button data-route="despachos"><i>⇧</i><span>CARGA<small>SAP + PROGRAMACIÓN TD</small></span></button>
+      <button data-route="seguimiento"><i>▰</i><span>SEGUIMIENTO<small>SUGERENCIAS POR GEOCERCA</small></span></button>
+      <button data-route="reporte"><i>▥</i><span>REPORTE<small>MONITOREO EN EXCEL</small></span></button>
+      <button data-route="tenant"><i>⚙</i><span>MI SUPABASE<small>RUTAS GPS · OPERADOR</small></span></button>
+    </nav>
+    <div class="side-foot">
+      <b>ÁREA SATELITAL</b>
+      <small>VERSIÓN INICIAL · SIN BASE DE DATOS</small>
+    </div>
+  </aside>
+  <main id="content" class="content"></main>
+</div>
+
+<script type="module" src="abarrotes/main.js?v=ab3"></script>
+</body>
+</html>

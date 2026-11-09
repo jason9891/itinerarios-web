@@ -1,10 +1,12 @@
+import { auth } from "../shared/auth.js";
+import { effectiveClocator } from "../shared/multi-cuenta.js";
 /**
  * Mapa de recorrido GPS para CEMENTO · Seguimiento
  * - map_config se consulta UNA sola vez
  * - I / F / U: hora solo al hacer clic
  * - Sin tramo en rango: marca U con último punto (gps.ultimo / Comsatel)
  */
-import { API } from "./registry.js";
+import { API, MULTI_CUENTA } from "./registry.js";
 
 let mapsReady = null;
 let mapInstance = null;
@@ -79,7 +81,7 @@ export async function ensureTrackingMap(mapEl, getToken) {
     return mapInstance;
   }
   const token = await getToken();
-  const r = await fetch(API.clocator, {
+  const r = await fetch(effectiveClocator(API.clocatorPrincipal || API.clocator, MULTI_CUENTA, auth.currentUser, "cemento"), {
     method: "POST",
     headers: {
       Authorization: `Bearer ${token}`,

@@ -1,9 +1,10 @@
+import { auth } from "../../shared/auth.js";
 /**
  * CEMENTO · Seguimiento
  * Lista vertical de unidades + formulario OC con inputs siempre visibles (inline styles)
  */
 import { esc, trackApi, montadosApi } from "../api-client.js";
-import { API } from "../registry.js";
+import { API, MULTI_CUENTA } from "../registry.js";
 import { limaTodayKey, shiftDateKey } from "../sap-parse.js";
 import {
   bindRuntime,
@@ -17,6 +18,7 @@ import {
 } from "../precarga-engine.js";
 import { readGPS, cacheGPS, gpsKey } from "../gps-cache.js";
 import { queryClocator } from "../../shared/clocator-client.js";
+import { effectiveClocator } from "../../shared/multi-cuenta.js";
 import { ensureTrackingMap, drawTrackingRoute, toggleInspection, resetMapState } from "../map-draw.js";
 
 let cleanup = [];
@@ -1535,7 +1537,7 @@ function wire(container, runtime) {
     try {
       const token = await runtime.auth.currentUser.getIdToken(false);
       const data = await queryClocator({
-        endpoint: API.clocator,
+        endpoint: effectiveClocator(API.clocatorPrincipal || API.clocator, MULTI_CUENTA, auth.currentUser, "cemento"),
         token,
         placa: unit.placa,
         tracto: unit.tracto,

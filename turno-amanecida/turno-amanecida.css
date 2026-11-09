@@ -629,147 +629,48 @@ body.tn-fs-monitoreo .content {
   color: #fff;
 }
 
-/* Alertas monitoreo */
-.tn-alerts {
+/* ── Inicio: flujo de uso paso a paso ── */
+.tn-steps { display: flex; flex-direction: column; gap: 14px; margin-top: 8px; }
+.tn-step {
   display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  background: #111c2e;
-  border-bottom: 1px solid #3b82f655;
-  flex: 0 0 auto;
-  z-index: 5;
-  min-height: 40px;
+  gap: 14px;
+  align-items: flex-start;
+  background: #0b1626;
+  border: 1px solid #ffffff1d;
+  border-radius: 12px;
+  padding: 14px 16px;
 }
-.tn-alerts-label {
+.tn-step-num {
+  flex: 0 0 34px;
+  height: 34px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  background: #1d4ed8;
+  color: #fff;
+  font-weight: 800;
+  font-size: 16px;
+}
+.tn-step-body { flex: 1; min-width: 0; line-height: 1.6; font-size: 13.5px; color: #dbe6f3; }
+.tn-step-body h3 { margin: 2px 0 8px; font-size: 16px; }
+.tn-step-mod {
+  margin-left: 8px;
   font-size: 10px;
   letter-spacing: 1px;
-  color: #7f93a8;
-  font-weight: 700;
-  margin-right: 4px;
-}
-.tn-alert {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  padding: 3px 10px;
+  color: #8aa0b8;
+  border: 1px solid #ffffff25;
   border-radius: 999px;
-  font-size: 12px;
-  font-weight: 600;
-  border: 1px solid transparent;
-}
-.tn-alert b { font-weight: 800; }
-.tn-alert-grave {
-  background: #7f1d1d55;
-  border-color: #ef444488;
-  color: #fecaca;
-}
-.tn-alert-leve {
-  background: #713f1255;
-  border-color: #eab30888;
-  color: #fde68a;
-}
-.tn-alert-gps {
-  background: #1e293b;
-  border-color: #64748b88;
-  color: #cbd5e1;
-}
-.tn-alert-pend {
-  background: #1e3a5f55;
-  border-color: #3b82f688;
-  color: #bfdbfe;
-}
-.tn-alert-ok {
-  background: #14532d44;
-  border-color: #22c55e55;
-  color: #86efac;
-}
-.tn-pip {
-  display: inline-block;
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  margin-left: 6px;
+  padding: 2px 8px;
   vertical-align: middle;
 }
-.tn-pip.grave {
-  background: #ef4444;
-  box-shadow: 0 0 0 2px #ef444455;
-}
-.tn-pip.leve {
-  background: #eab308;
-  box-shadow: 0 0 0 2px #eab30855;
-}
-
-.tn-alerts.has-list { flex-direction: column; align-items: stretch; gap: 4px; }
-.tn-alerts-head {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-}
-.tn-alerts-toggle {
-  margin-left: auto;
-  border: 1px solid #ffffff25;
-  background: #122033;
+.tn-step-body ol, .tn-step-body ul { margin: 6px 0 8px; padding-left: 20px; }
+.tn-step-body li { margin: 4px 0; }
+.tn-step-body p { margin: 8px 0 4px; }
+.tn-step-note {
+  background: #f59e0b14;
+  border-left: 3px solid #f59e0b;
+  border-radius: 6px;
+  padding: 6px 10px;
+  font-size: 12.5px;
   color: #cbd5e1;
-  border-radius: 6px;
-  padding: 3px 10px;
-  font-size: 11px;
-  font-weight: 700;
-  cursor: pointer;
 }
-.tn-alerts-list {
-  display: none;
-  max-height: 220px;
-  overflow-y: auto;
-  border-top: 1px solid #ffffff18;
-  padding-top: 6px;
-  width: 100%;
-}
-.tn-alerts.open .tn-alerts-list { display: block; }
-.tn-alerts.has-list {
-  background: #1a1020;
-  border-bottom-color: #ef444466;
-}
-.tn-alert-row {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 4px 6px;
-  border-radius: 6px;
-  margin-bottom: 2px;
-}
-.tn-alert-row.nivel-grave { background: #7f1d1d33; }
-.tn-alert-row.nivel-leve { background: #713f1233; }
-.tn-alert-row.nivel-gps { background: #1e293b55; }
-.tn-alert-goto {
-  flex: 1;
-  text-align: left;
-  border: 0;
-  background: transparent;
-  color: #e2e8f0;
-  cursor: pointer;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
-  align-items: baseline;
-  font-size: 12px;
-  padding: 2px 0;
-}
-.tn-alert-goto small { color: #94a3b8; }
-.tn-alert-goto span { color: #cbd5e1; font-weight: 500; }
-.tn-alert-dismiss {
-  border: 1px solid #ffffff30;
-  background: #0c1a28;
-  color: #f1f5f9;
-  border-radius: 5px;
-  padding: 4px 8px;
-  font-size: 10px;
-  font-weight: 800;
-  letter-spacing: 0.4px;
-  cursor: pointer;
-  white-space: nowrap;
-}
-.tn-alert-dismiss:hover { background: #1e293b; border-color: #94a3b8; }

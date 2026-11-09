@@ -5,7 +5,9 @@
 import { applyPlatformShell, bindActiveUser } from "../shared/platform-shell.js";
 import { auth, onAuthStateChanged, wireLoginForm } from "../shared/auth.js";
 import { createItineraryRuntime, loadModule } from "../shared/module-runtime.js";
-import { modules, API } from "./registry.js";
+import { modules, API, MULTI_CUENTA } from "./registry.js";
+import { isOperatorSession, tenantSummary } from "../shared/multi-cuenta.js";
+import { isLocalFirst, loadSession } from "./session-store.js";
 
 applyPlatformShell({ itinerary: "cerro-verde", subtitle: "CERRO VERDE" });
 wireLoginForm();
@@ -51,6 +53,22 @@ onAuthStateChanged(auth, async (user) => {
   if (login) login.classList.toggle("hidden", !!user);
   if (workspace) workspace.classList.toggle("hidden", !user);
   if (user) {
+    // Bootstrap 1× para TODOS: diario, geocercas, pernoctes → IndexedDB.
+    // Luego local-first: sin negocio a Supabase hasta consolidar reporte.
+    try {
+      await loadSession();
+      if (!isLocalFirst()) {
+        const { bootstrapCerroVerde } = await import("./bootstrap.js");
+        console.info(
+          "[cerro-verde] bootstrap auto →",
+          tenantSummary(user),
+          isOperatorSession(user, MULTI_CUENTA) ? "operador" : "principal",
+        );
+        await bootstrapCerroVerde({ note: "auto-login" });
+      }
+    } catch (e) {
+      console.warn("[cerro-verde] bootstrap auto", e);
+    }
     await go(location.hash.replace(/^#\/?/, "") || "home");
   }
 });

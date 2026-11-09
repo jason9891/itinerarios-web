@@ -3,7 +3,7 @@
  * - Solo se sube el Excel de OC (proceso LOCAL: última por equipo).
  * - Acoples: catálogo editable con “Añadir acople” (sin archivo Excel).
  */
-import { moduleHead, esc, maestrosApi, fechaPE } from "../api-client.js";
+import { moduleHead, esc, maestrosApi, fechaPE } from "../api-client.js?v=tn30";
 
 let disposed = false;
 let xlsxLib = null;
@@ -33,7 +33,7 @@ function parseFecTs(raw) {
     return Number.isFinite(ms) ? ms : 0;
   }
   const m = s.match(
-    /^(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/,
+    /^(\d{1,2})[\/\-.](\d{1,2})[\/\-.](\d{2,4})(?:\s+(\d{1,2}):(\d{2})(?::(\d{2}))?)?/,
   );
   if (m) {
     let yy = Number(m[3]);
@@ -107,10 +107,14 @@ function validateOc(rows0, rows1) {
       total++;
       const fecRaw = r[found["FecIniReal"]];
       const ts = parseFecTs(fecRaw);
+      const ordKey = findCol(r, "OrdCarga");
+      const ord = ordKey ? Number(String(r[ordKey] ?? "").replace(/\D/g, "")) || 0 : 0;
       const prev = best.get(equipo);
-      if (prev && prev._ts >= ts) continue;
+      // Gana la OC con FecIniReal más reciente; a igual fecha, la de mayor OrdCarga
+      if (prev && (prev._ts > ts || (prev._ts === ts && prev._ord >= ord))) continue;
       best.set(equipo, {
         _ts: ts,
+        _ord: ord,
         equipo,
         equipo_raw: String(r[eqKey] ?? equipo).trim(),
         fec_ini_real_raw: fecRaw != null ? String(fecRaw).trim() : "",
@@ -131,7 +135,7 @@ function validateOc(rows0, rows1) {
             : "",
       });
     }
-    const filas = [...best.values()].map(({ _ts, ...rest }) => rest);
+    const filas = [...best.values()].map(({ _ts, _ord, ...rest }) => rest);
     const sampleOut = filas.slice(0, 8).map((u) => ({
       equipo: u.equipo,
       fec: u.fec_ini_real_raw,
@@ -236,13 +240,13 @@ export async function mount(container) {
   container.innerHTML = `
     ${moduleHead(
       "Maestros",
-      "Solo Excel de OC (proceso local). Acoples: catálogo manual con «Añadir acople».",
+      "Sube el Excel de OC en cada turno (solo se usa en esta sesión). Acoples: catálogo manual con «Añadir acople».",
     )}
     <section class="panel">
       <div class="panel-title">
         <div>
           <h2>1 · Archivo OC</h2>
-          <p class="muted">Última OC por Equipo en el navegador. En el match con el snapshot solo se usan equipos <b>20-R-</b>.</p>
+          <p class="muted">Última OC por Equipo del archivo que subas ahora (no se conserva entre sesiones). En el match con el snapshot solo se usan equipos <b>20-R-</b>.</p>
         </div>
       </div>
       <div class="tn-upload">
@@ -250,7 +254,6 @@ export async function mount(container) {
           SELECCIONAR OC (.xlsx)
           <input id="tn-oc-file" type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
         </label>
-        <button type="button" id="tn-oc-upload" class="primary" disabled>SINCRONIZAR RESUMEN A SUPABASE</button>
         <span id="tn-oc-name" class="muted"></span>
       </div>
       <div id="tn-oc-result"><p class="muted">Al elegir el archivo se valida y se deja la última OC por equipo (local).</p></div>
@@ -288,7 +291,6 @@ export async function mount(container) {
   `;
 
   const ocInput = container.querySelector("#tn-oc-file");
-  const ocBtn = container.querySelector("#tn-oc-upload");
   const ocName = container.querySelector("#tn-oc-name");
   const ocRes = container.querySelector("#tn-oc-result");
   const acBody = container.querySelector("#tn-ac-body");
@@ -312,6 +314,7 @@ export async function mount(container) {
 
   async function persistAcoples() {
     saveAcoplesLocal(acoples);
+    refresh();
     try {
       await maestrosApi({ action: "guardar_acoples", filas: acoples });
       acMsg.innerHTML = `<span class="tn-badge ok">Acoples guardados (${acoples.length})</span>`;
@@ -358,7 +361,6 @@ export async function mount(container) {
     ocFile = e.target.files?.[0] || null;
     ocOk = false;
     ocFilasLocal = [];
-    ocBtn.disabled = true;
     if (!ocFile) {
       ocName.textContent = "";
       ocRes.innerHTML = `<p class="muted">Sin archivo.</p>`;
@@ -373,9 +375,8 @@ export async function mount(container) {
       const v = validateOc(rows0, rows1);
       ocOk = v.ok;
       ocFilasLocal = v.filas || [];
-      ocBtn.disabled = !v.ok;
       if (v.ok) {
-        localStorage.setItem(
+        sessionStorage.setItem(
           "tn_oc_ultima_v1",
           JSON.stringify({
             nombre_archivo: ocFile.name,
@@ -383,12 +384,13 @@ export async function mount(container) {
             filas: ocFilasLocal,
           }),
         );
+        refresh();
       }
       ocRes.innerHTML = `
         <div class="tn-card ${v.ok ? "ok" : "warn"}" style="margin-top:10px">
           <small>OC · PROCESO LOCAL</small>
-          <b>${v.ok ? "Última OC por equipo lista" : "Cabeceras incompletas"}</b>
-          <p class="muted" style="font-size:12px;margin:6px 0">No se sube el Excel. Solo el resumen al sincronizar.</p>
+          <b>${v.ok ? `✔ OC cargada para esta sesión · ${ocFilasLocal.length} equipos` : "Cabeceras incompletas"}</b>
+          <p class="muted" style="font-size:12px;margin:6px 0">Solo vive en esta pestaña: al cerrarla se descarta y hay que subir el Excel de nuevo. No se sube a Supabase.</p>
           ${renderHeaders(v.headers || [], v.found || {}, v.missing)}
           ${
             v.ok
@@ -403,48 +405,20 @@ export async function mount(container) {
     }
   });
 
-  ocBtn.addEventListener("click", async () => {
-    if (!ocOk || !ocFilasLocal.length) return;
-    ocBtn.disabled = true;
-    ocBtn.textContent = "SINCRONIZANDO…";
+  function refresh() {
+    if (disposed) return;
+    let oc = {};
     try {
-      const r = await maestrosApi({
-        action: "guardar_oc",
-        nombre_archivo: ocFile?.name || "oc.xlsx",
-        filas: ocFilasLocal,
-      });
-      ocRes.insertAdjacentHTML(
-        "beforeend",
-        `<p class="tn-badge ok" style="margin-top:8px">Sync · ${r.filas ?? ocFilasLocal.length} equipos</p>`,
-      );
-      await refresh();
-    } catch (e) {
-      ocRes.insertAdjacentHTML(
-        "beforeend",
-        `<p class="tn-badge warn" style="margin-top:8px">Local OK · sync: ${esc(e.message)}</p>`,
-      );
-    } finally {
-      ocBtn.disabled = !ocOk;
-      ocBtn.textContent = "SINCRONIZAR RESUMEN A SUPABASE";
+      oc = JSON.parse(sessionStorage.getItem("tn_oc_ultima_v1") || "{}") || {};
+    } catch {
+      oc = {};
     }
-  });
-
-  async function refresh() {
-    try {
-      const st = await maestrosApi({ action: "estado" });
-      if (disposed) return;
-      const oc = st.oc || {};
-      estado.innerHTML = `
-        <div class="tn-card ${oc.filas ? "ok" : "warn"}"><small>OC EN SUPABASE</small><b>${oc.filas ?? 0}</b>
-          <span class="muted" style="font-size:12px">${oc.filas ? fechaPE(oc.actualizado_en) : "Opcional"}</span></div>
-        <div class="tn-card ${acoples.length ? "ok" : "warn"}"><small>ACOPLES LOCAL</small><b>${acoples.length}</b>
-          <span class="muted" style="font-size:12px">Catálogo manual</span></div>`;
-    } catch (e) {
-      if (disposed) return;
-      estado.innerHTML = `
-        <div class="tn-card warn"><small>SUPABASE</small><b>—</b><span class="muted" style="font-size:12px">${esc(e.message)}</span></div>
-        <div class="tn-card ${acoples.length ? "ok" : "warn"}"><small>ACOPLES LOCAL</small><b>${acoples.length}</b></div>`;
-    }
+    const nOc = oc.filas?.length || 0;
+    estado.innerHTML = `
+      <div class="tn-card ${nOc ? "ok" : "warn"}"><small>OC DE ESTA SESIÓN</small><b>${nOc}</b>
+        <span class="muted" style="font-size:12px">${nOc ? `${esc(oc.nombre_archivo || "")} · ${esc(fechaPE(oc.actualizado_en))}` : "Carga el Excel de OC"}</span></div>
+      <div class="tn-card ${acoples.length ? "ok" : "warn"}"><small>ACOPLES LOCAL</small><b>${acoples.length}</b>
+        <span class="muted" style="font-size:12px">Catálogo manual</span></div>`;
   }
 
   // Cargar acoples remotos una vez si local vacío
